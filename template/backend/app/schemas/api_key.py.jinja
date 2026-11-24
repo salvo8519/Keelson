@@ -1,7 +1,7 @@
 {%- if enable_teams and use_postgresql %}
 """API key schemas (Keelson). The secret appears only in ``ApiKeyCreated``, once."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 from pydantic import Field, field_validator
@@ -26,6 +26,18 @@ class ApiKeyCreate(BaseSchema):
         if unknown:
             raise ValueError(f"unknown scopes: {', '.join(unknown)}")
         return sorted(set(scopes))
+
+    @field_validator("expires_at")
+    @classmethod
+    def future_and_aware(cls, expires_at: datetime | None) -> datetime | None:
+        """A time without zone is UTC; a time already past would create a dead key."""
+        if expires_at is None:
+            return None
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=UTC)
+        if expires_at <= datetime.now(UTC):
+            raise ValueError("must be in the future")
+        return expires_at
 
 
 class ApiKeyRotate(BaseSchema):

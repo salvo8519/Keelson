@@ -8,10 +8,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AuthorizationError, NotFoundError
 from app.db.models.knowledge_base import KBScope, KnowledgeBase
-from app.repositories import conversation_repo, knowledge_base_repo
+from app.repositories import conversation_repo, knowledge_base_repo, member_repo
 from app.schemas.knowledge_base import KnowledgeBaseCreate, KnowledgeBaseUpdate
+from app.services.rag.tenancy import APP_TENANT, TenantFilter, knowledge_base_tenant
 
 logger = logging.getLogger(__name__)
+
+
+async def collection_tenant(db: AsyncSession, collection_name: str) -> str:
+    """Tenant of the vectors written to ``collection_name``: its knowledge base's (Keelson).
+
+    A collection without a knowledge base exists only through administration (the CLI); its
+    vectors belong to the application. No request can search it: searches go through the
+    knowledge bases the user can see.
+    """
+    kb = await knowledge_base_repo.get_by_collection_name(db, collection_name)
+    if kb is None:
+        logger.warning("Collection %s has no knowledge base: vectors stored as app", collection_name)
+        return APP_TENANT
+    return knowledge_base_tenant(kb.scope, kb.organization_id, kb.owner_user_id)
 
 
 def _derive_collection_name(name: str) -> str:
@@ -23,6 +38,26 @@ def _derive_collection_name(name: str) -> str:
 class KnowledgeBaseService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
+
+    async def reader(self, user_id: UUID | None, organization_id: UUID | None) -> TenantFilter:
+        """The tenants this user may read through the agent, in an organization they belong to."""
+        return TenantFilter.for_reader(
+            user_id, await self._member_organization(organization_id, user_id)
+        )
+
+    async def _member_organization(
+        self, organization_id: UUID | None, user_id: UUID | None
+    ) -> UUID | None:
+        """``organization_id`` if the user is still a member of it, otherwise None.
+
+        Keelson: the organization reaches the agent from a stored conversation, which its owner
+        keeps after leaving the organization; without this check a former member kept searching
+        the organization's knowledge bases through the agent.
+        """
+        if organization_id is None or user_id is None:
+            return None
+        member = await member_repo.get(self.db, organization_id=organization_id, user_id=user_id)
+        return organization_id if member is not None else None
 
     async def list_accessible(
         self,
@@ -110,7 +145,7 @@ class KnowledgeBaseService:
             conv = await conversation_repo.get_conversation_by_id(self.db, conversation_id)
             if not conv:
                 return []
-            org_id = getattr(conv, "organization_id", None)
+            org_id = await self._member_organization(getattr(conv, "organization_id", None), user_id)
             active: list[UUID] = conv.active_knowledge_base_ids or []
             if not active:
                 if org_id:
@@ -149,7 +184,7 @@ class KnowledgeBaseService:
             accessible = await knowledge_base_repo.get_accessible(
                 self.db,
                 user_id=user_id,
-                organization_id=organization_id,
+                organization_id=await self._member_organization(organization_id, user_id),
             )
             wanted = {str(i) for i in kb_ids}
             return [kb.collection_name for kb in accessible if str(kb.id) in wanted]

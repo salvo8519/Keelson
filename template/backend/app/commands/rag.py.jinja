@@ -28,7 +28,9 @@ from app.services.rag.config import DocumentExtensions, RAGSettings
 from app.services.rag.documents import DocumentProcessor
 from app.services.rag.embeddings import EmbeddingService
 from app.services.rag.ingestion import IngestionService
+from app.services.knowledge_base import collection_tenant
 from app.services.rag.retrieval import RetrievalService
+from app.services.rag.tenancy import TenantFilter
 from app.services.rag.vectorstore import BaseVectorStore
 from app.services.rag_document import RAGDocumentService
 from app.services.rag_sync import RAGSyncService
@@ -176,6 +178,7 @@ async def ingest_path_async(
     skipped_count = 0
 
     async with get_db_context() as db:
+        tenant = await collection_tenant(db, collection)
         sync_log = await RAGSyncService(db).create_sync_log(
             source="local", collection_name=collection, mode=sync_mode
         )
@@ -224,7 +227,7 @@ async def ingest_path_async(
 
             try:
                 result = await ingestion.ingest_file(
-                    filepath=filepath, collection_name=collection, replace=replace
+                    filepath=filepath, collection_name=collection, tenant=tenant, replace=replace
                 )
                 if result.status.value == "done":
                     success_count += 1
@@ -313,6 +316,11 @@ def rag_ingest(path: str, collection: str, recursive: bool, replace: bool, sync_
     )
 
 
+async def _tenant(collection: str) -> str:
+    async with get_db_context() as db:
+        return await collection_tenant(db, collection)
+
+
 async def search_async(
     query: str,
     collection: str,
@@ -330,9 +338,11 @@ async def search_async(
     info(f"Searching collection '{collection}' for: \"{query}\"")
     click.echo()
 
+    # Administration: the CLI sees every tenant of the collection.
     results = await retrieval.retrieve(
         query=query,
         collection_name=collection,
+        tenants=TenantFilter.everything(),
         limit=top_k,
     )
 
@@ -491,6 +501,7 @@ def rag_sync_gdrive(collection: str, folder_id: str) -> None:
         result = await source.sync(
             collection_name=collection,
             ingestion_service=ingestion,
+            tenant=await _tenant(collection),
             path=folder_id,
         )
         success(f"Synced {result.ingested}/{result.total_files} files from Google Drive")
@@ -518,6 +529,7 @@ def rag_sync_s3(collection: str, prefix: str, bucket: str) -> None:
         result = await source.sync(
             collection_name=collection,
             ingestion_service=ingestion,
+            tenant=await _tenant(collection),
             path=prefix,
         )
         success(f"Synced {result.ingested}/{result.total_files} files from S3")

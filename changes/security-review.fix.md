@@ -1,0 +1,1 @@
+Security review fixes: emails escape user-supplied names, the frontend serves a Content Security Policy, API keys refuse past expiries, former members lose an organization's knowledge bases, and Qdrant search, pgvector collections and Taskiq uploads work again.

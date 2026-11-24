@@ -25,6 +25,22 @@ The isolated tables are listed in `app/db/tenancy.py`. A test fails when a table
 `organization_id` column is neither isolated nor exempted with a reason, so a new table cannot
 be forgotten.
 
+## Knowledge bases and vectors
+
+A knowledge base is personal (its owner only), of an organization (its members) or of the
+application (every user). The vector store has no row level security of its own, so it gets
+two barriers:
+
+1. **Which collections.** A search reaches only the collections of the knowledge bases the user
+   can see in the active organization; any other name is answered as not found. The agent
+   resolves its collections on the server from the conversation, never from the model or the
+   client, and drops an organization the user no longer belongs to.
+2. **Which vectors.** Every vector carries the tenant of its knowledge base (`user:<id>`,
+   `org:<id>` or `app`), and every search states the tenants of its reader: a filter in
+   Qdrant (a tenant index, Qdrant's multitenancy pattern), a `WHERE` clause in pgvector. A
+   search without a reader returns nothing. Only the command line, for administration, may
+   search every tenant.
+
 ## API keys
 
 An organization can create keys for other systems. Owners and administrators manage them on

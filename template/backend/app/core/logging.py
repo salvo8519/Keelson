@@ -21,6 +21,8 @@ request_id_var: ContextVar[str | None] = ContextVar("request_id", default=None)
 _SERVER_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access")
 # Attributes every LogRecord has; anything else was passed with ``extra=`` and is kept.
 _RECORD_FIELDS = frozenset(vars(logging.makeLogRecord({}))) | {"message", "asctime"}
+# Extra fields that only make sense in a terminal (uvicorn's ANSI-coloured copy of the message).
+_TERMINAL_FIELDS = frozenset({"color_message"})
 
 
 class PiiRedactionFilter(logging.Filter):
@@ -93,7 +95,7 @@ class JsonFormatter(logging.Formatter):
             "message": record.getMessage(),
         }
         for key, value in vars(record).items():
-            if key not in _RECORD_FIELDS and value is not None:
+            if key not in _RECORD_FIELDS and key not in _TERMINAL_FIELDS and value is not None:
                 entry[key] = value
         if record.exc_info:
             entry["exception"] = self.formatException(record.exc_info)

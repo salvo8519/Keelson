@@ -1,0 +1,164 @@
+{%- if enable_rag %}
+"""Vectors of one user or organization never reach another reader (Keelson).
+
+The vector store is the second barrier after the knowledge base check: every vector carries a
+tenant, every search states the reader's tenants, and a search without a reader sees nothing.
+"""
+
+import asyncio
+import uuid
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+from app.services.rag.models import Document, DocumentMetadata, DocumentPage, DocumentPageChunk
+from app.services.rag.tenancy import (
+    APP_TENANT,
+    TenantFilter,
+    current_reader,
+    knowledge_base_tenant,
+    organization_tenant,
+    set_reader,
+    user_tenant,
+)
+{%- if use_qdrant %}
+from app.services.rag.vectorstore import QdrantVectorStore
+{%- endif %}
+{%- if use_pgvector %}
+from app.services.rag.vectorstore import PgVectorStore
+from tests.postgres import require_postgres
+{%- endif %}
+
+ORG_A, ORG_B, USER_A, USER_B = (uuid.uuid4() for _ in range(4))
+
+
+def _document(text: str) -> Document:
+    page = DocumentPage(page_num=1, content=text)
+    chunk = DocumentPageChunk(page_num=1, content=text, chunk_content=text)
+    document = Document(
+        pages=[page],
+        chunked_pages=[chunk],
+        metadata=DocumentMetadata(filename=f"{text}.txt", filesize=len(text), filetype="txt"),
+    )
+    chunk.parent_doc_id = document.id
+    return document
+
+
+def _embedder() -> MagicMock:
+    """Every text gets the same vector: only the tenant filter decides what is returned."""
+    embedder = MagicMock()
+    embedder.embed_document = lambda document: [[1.0, 0.0, 0.0] for _ in document.chunked_pages]
+    embedder.embed_query = lambda query: [1.0, 0.0, 0.0]
+    return embedder
+
+
+def _settings() -> MagicMock:
+    settings = MagicMock()
+    settings.embeddings_config.dim = 3
+    return settings
+
+
+def test_tenant_of_a_knowledge_base_follows_its_scope() -> None:
+    assert knowledge_base_tenant("personal", ORG_A, USER_A) == user_tenant(USER_A)
+    assert knowledge_base_tenant("org", ORG_A, USER_A) == organization_tenant(ORG_A)
+    assert knowledge_base_tenant("app", None, None) == APP_TENANT
+    with pytest.raises(ValueError):
+        knowledge_base_tenant("org", None, USER_A)
+
+
+def test_a_reader_sees_itself_its_organization_and_the_application() -> None:
+    reader = TenantFilter.for_reader(USER_A, ORG_A)
+    assert reader.unrestricted is False
+    assert TenantFilter.nobody().unrestricted is False
+    assert TenantFilter.everything().unrestricted is True
+    assert reader.allows(user_tenant(USER_A)) and reader.allows(organization_tenant(ORG_A))
+    assert reader.allows(APP_TENANT)
+    assert not reader.allows(user_tenant(USER_B)) and not reader.allows(organization_tenant(ORG_B))
+    assert not reader.allows(None), "vectors without a tenant are never returned"
+
+
+def test_without_a_reader_nothing_is_visible() -> None:
+    async def fresh_task() -> TenantFilter:
+        return current_reader()
+
+    reader = asyncio.run(fresh_task())
+    assert not reader.unrestricted and not reader.tenants
+
+
+def test_the_reader_of_a_turn_stays_in_its_task() -> None:
+    async def turn() -> TenantFilter:
+        set_reader(TenantFilter.for_reader(USER_A, ORG_A))
+        return current_reader()
+
+    async def main() -> tuple[TenantFilter, TenantFilter]:
+        inside = await asyncio.create_task(turn())
+        return inside, current_reader()
+
+    inside, outside = asyncio.run(main())
+    assert inside.allows(organization_tenant(ORG_A))
+    assert not outside.tenants
+{%- if use_qdrant %}
+
+
+@pytest.mark.anyio
+async def test_qdrant_stores_the_tenant_and_filters_every_search() -> None:
+    store = QdrantVectorStore.__new__(QdrantVectorStore)
+    store.settings, store.embedder = _settings(), _embedder()
+    store.client = MagicMock()
+    store.client.get_collections = AsyncMock(return_value=MagicMock(collections=[MagicMock()]))
+    store.client.get_collections.return_value.collections[0].name = "kb"
+    store.client.upsert = AsyncMock()
+    store.client.query_points = AsyncMock(return_value=MagicMock(points=[]))
+
+    await store.insert_document("kb", _document("policy"), tenant=organization_tenant(ORG_A))
+    (point,) = store.client.upsert.await_args.kwargs["points"]
+    assert point.payload["tenant"] == organization_tenant(ORG_A)
+
+    assert await store.search("kb", "q", tenants=TenantFilter.nobody()) == []
+    store.client.query_points.assert_not_called()
+
+    await store.search("kb", "q", tenants=TenantFilter.for_reader(USER_A, ORG_A))
+    conditions = store.client.query_points.await_args.kwargs["query_filter"].must
+    tenant_condition = next(c for c in conditions if c.key == "tenant")
+    assert set(tenant_condition.match.any) == {APP_TENANT, user_tenant(USER_A), organization_tenant(ORG_A)}
+{%- endif %}
+{%- if use_pgvector %}
+
+
+@pytest.fixture
+async def pg_store():
+    await require_postgres("vector segregation")
+    store = PgVectorStore(_settings(), _embedder())
+    collection = f"t{uuid.uuid4().hex[:12]}"
+    try:
+        yield store, collection
+    finally:
+        await store.delete_collection(collection)
+        await store.aclose()
+
+
+@pytest.mark.anyio
+async def test_pgvector_returns_only_the_reader_vectors(pg_store) -> None:
+    store, collection = pg_store
+    await store.insert_document(collection, _document("a_secret"), tenant=organization_tenant(ORG_A))
+    await store.insert_document(collection, _document("b_secret"), tenant=organization_tenant(ORG_B))
+    await store.insert_document(collection, _document("mine"), tenant=user_tenant(USER_B))
+
+    as_a = await store.search(collection, "q", tenants=TenantFilter.for_reader(USER_A, ORG_A), limit=10)
+    assert {r.content for r in as_a} == {"a_secret"}
+    as_b = await store.search(collection, "q", tenants=TenantFilter.for_reader(USER_B, ORG_B), limit=10)
+    assert {r.content for r in as_b} == {"b_secret", "mine"}
+    assert await store.search(collection, "q", tenants=TenantFilter.nobody(), limit=10) == []
+    everything = await store.search(collection, "q", tenants=TenantFilter.everything(), limit=10)
+    assert len(everything) == 3
+
+
+@pytest.mark.anyio
+async def test_pgvector_collections_never_collide_with_application_tables(pg_store) -> None:
+    """Upstream mapped the collection "documents" onto the application's rag_documents table."""
+    store, _ = pg_store
+    assert store._table("documents") == "vectors_documents"
+    for name in await store.list_collections():
+        assert await store._collection_exists(name), f"{name} is not a vector collection"
+{%- endif %}
+{%- endif %}

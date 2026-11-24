@@ -42,6 +42,15 @@ def test_unknown_scopes_are_refused() -> None:
     assert ApiKeyCreate(name="ci", scopes=["agent:run", "agent:run"]).scopes == ["agent:run"]
 
 
+def test_expiry_must_be_in_the_future_and_is_read_as_utc() -> None:
+    with pytest.raises(ValidationError, match="must be in the future"):
+        ApiKeyCreate(name="ci", scopes=["agent:run"], expires_at=datetime.now(UTC) - timedelta(1))
+    naive = (datetime.now(UTC) + timedelta(days=30)).replace(tzinfo=None)
+    expires_at = ApiKeyCreate(name="ci", scopes=["agent:run"], expires_at=naive).expires_at
+    assert expires_at is not None
+    assert expires_at.tzinfo is UTC
+
+
 def test_require_api_scopes_refuses_undeclared_scopes() -> None:
     with pytest.raises(ValueError, match="unknown scopes"):
         deps.require_api_scopes("not:declared")

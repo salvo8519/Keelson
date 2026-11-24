@@ -1,0 +1,94 @@
+{%- if enable_rag %}
+"""Tenant of every vector, checked by the vector store at every search (Keelson).
+
+Collections belong to knowledge bases, and the application decides which collections a user
+may search (``KnowledgeBaseService``). This module adds a second, independent barrier inside
+the vector store, as row level security does for the database: every vector carries the
+tenant of its knowledge base, and every search must state which tenants the reader may see.
+
+* ``user:<id>``  a personal knowledge base, visible to its owner only;
+* ``org:<id>``   an organization's knowledge base, visible to its members;
+* ``app``        a knowledge base of the application, visible to every user.
+
+A search without a reader sees nothing: the agent's tools read the reader from a context
+variable that the agent session sets for each turn, and an unset variable means no tenant.
+Only administration code (the CLI) uses ``TenantFilter.everything()``.
+"""
+
+from __future__ import annotations
+
+import contextvars
+from dataclasses import dataclass
+from uuid import UUID
+
+# Name of the field (Qdrant payload, pgvector column) holding a vector's tenant.
+TENANT_FIELD = "tenant"
+APP_TENANT = "app"
+
+
+def user_tenant(user_id: UUID | str) -> str:
+    return f"user:{user_id}"
+
+
+def organization_tenant(organization_id: UUID | str) -> str:
+    return f"org:{organization_id}"
+
+
+def knowledge_base_tenant(
+    scope: str, organization_id: UUID | None, owner_user_id: UUID | None
+) -> str:
+    """Tenant of the vectors of a knowledge base, from its scope (personal, org, app)."""
+    if scope == "personal" and owner_user_id is not None:
+        return user_tenant(owner_user_id)
+    if scope == "org" and organization_id is not None:
+        return organization_tenant(organization_id)
+    if scope == "app":
+        return APP_TENANT
+    raise ValueError(f"knowledge base without a tenant (scope {scope!r})")
+
+
+@dataclass(frozen=True)
+class TenantFilter:
+    """The tenants a search may see. Build it with the class methods, never from client input."""
+
+    tenants: frozenset[str]
+    unrestricted: bool = False
+
+    @classmethod
+    def for_reader(cls, user_id: UUID | None, organization_id: UUID | None) -> TenantFilter:
+        """A user (``None``: anonymous) in an organization they are a member of (or none)."""
+        tenants = {APP_TENANT}
+        if user_id is not None:
+            tenants.add(user_tenant(user_id))
+        if organization_id is not None:
+            tenants.add(organization_tenant(organization_id))
+        return cls(frozenset(tenants))
+
+    @classmethod
+    def nobody(cls) -> TenantFilter:
+        return cls(frozenset())
+
+    @classmethod
+    def everything(cls) -> TenantFilter:
+        """Every tenant: administration code only (CLI), never a request."""
+        return cls(frozenset(), unrestricted=True)
+
+    def allows(self, tenant: str | None) -> bool:
+        return self.unrestricted or (tenant is not None and tenant in self.tenants)
+
+
+_reader: contextvars.ContextVar[TenantFilter | None] = contextvars.ContextVar(
+    "rag_reader", default=None
+)
+
+
+def current_reader() -> TenantFilter:
+    """The reader of the current agent turn; nobody when no turn set one."""
+    return _reader.get() or TenantFilter.nobody()
+
+
+def set_reader(reader: TenantFilter) -> None:
+    """Set the reader for the rest of the current task (an agent turn runs in its own task)."""
+    _reader.set(reader)
+
+{%- endif %}

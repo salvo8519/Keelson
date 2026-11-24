@@ -133,6 +133,27 @@ def test_duration_text(duration: timedelta, expected: str) -> None:
         assert duration_text(duration, language) != expected
 
 
+def test_user_values_cannot_inject_markup_headers_or_placeholders() -> None:
+    """Names and organization names come from users: escaped, one line, never re-expanded."""
+    subject, html, text = render_email(
+        EmailKey.INVITATION.value,
+        {
+            "inviter_name": '<a href="https://phish.example">Mario</a> [[accept_url]]',
+            "org_name": "Acme\r\nBcc: victim@example.com",
+            "accept_url": "https://app.example/invitations/TOKEN",
+            "app_name": "App",
+        },
+        "en",
+    )
+    assert 'href="https://phish.example"' not in html
+    assert "&lt;a href=&quot;https://phish.example&quot;&gt;" in html
+    assert "\r" not in subject and "\n" not in subject
+    # The link appears once (the button), not again where the name carried the placeholder.
+    assert html.count("https://app.example/invitations/TOKEN") == 1
+    assert text.count("https://app.example/invitations/TOKEN") == 1
+    assert "[[accept_url]]" in text
+
+
 class _Recorder:
     def __init__(self) -> None:
         self.messages: list[EmailMessage] = []

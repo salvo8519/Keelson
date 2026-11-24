@@ -277,9 +277,13 @@ class SyncSourceService:
             mode=source.sync_mode,
             sync_source_id=source.id,
         )
-{%- if use_celery or use_taskiq %}
+{%- if use_celery %}
         from app.worker.tasks.rag_tasks import sync_single_source_task
         sync_single_source_task.delay(source_id, str(sync_log.id))
+{%- elif use_taskiq %}
+        # Keelson: kiq, not Celery's delay (see rag_document.py).
+        from app.worker.tasks.rag_tasks import sync_single_source_task
+        await sync_single_source_task.kiq(source_id, str(sync_log.id))
 {%- elif use_arq %}
         pool = await get_arq_pool()
         await pool.enqueue_job("sync_single_source", source_id, str(sync_log.id))

@@ -7,10 +7,8 @@ Runs in a throwaway schema with the full metadata; skipped when no database is r
 import uuid
 from datetime import UTC, datetime, timedelta
 
-import asyncpg
 import pytest
 from sqlalchemy import func, select, text
-from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import app.db.models  # noqa: F401  (registers every table on the metadata)
@@ -23,24 +21,14 @@ from app.db.models.user import User
 from app.db.tenancy import TENANT_TABLES, bind_organization, grant_statements, policy_statements
 from app.schemas.api_key import ApiKeyCreate
 from app.services.api_key import ApiKeyService
+from tests.postgres import require_postgres
 
 pytestmark = pytest.mark.anyio
 
 
-async def _reachable() -> bool:
-    dsn = make_url(settings.DATABASE_URL).set(drivername="postgresql")
-    try:
-        connection = await asyncpg.connect(dsn.render_as_string(hide_password=False), timeout=3)
-    except (OSError, asyncpg.PostgresError):
-        return False
-    await connection.close()
-    return True
-
-
 @pytest.fixture
 async def sessions():
-    if not await _reachable():
-        pytest.skip("No live PostgreSQL for the API key tests")
+    await require_postgres("API key")
     schema = f"keys_{uuid.uuid4().hex[:12]}"
     admin = create_async_engine(settings.DATABASE_URL)
     async with admin.begin() as connection:

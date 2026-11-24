@@ -1,0 +1,1 @@
+Knowledge bases are segregated by user and organization in the vector store too: every vector carries its tenant and every search is filtered by the reader's tenants; the RAG search endpoint no longer reaches other organizations' collections.

@@ -10,6 +10,7 @@ from app.core.config import settings
 from app.core.exceptions import ExternalServiceError
 from app.services.rag.embeddings import EmbeddingService
 from app.services.rag.retrieval import RetrievalService
+from app.services.rag.tenancy import current_reader
 {%- if use_milvus %}
 from app.services.rag.vectorstore import MilvusVectorStore
 {%- elif use_qdrant %}
@@ -101,11 +102,11 @@ async def search_knowledge_base(
     try:
         if len(resolved) == 1:
             results = await service.retrieve(
-                query=query, collection_name=resolved[0], limit=top_k
+                query=query, collection_name=resolved[0], tenants=current_reader(), limit=top_k
             )
         else:
             results = await service.retrieve_multi(
-                query=query, collection_names=resolved, limit=top_k
+                query=query, collection_names=resolved, tenants=current_reader(), limit=top_k
             )
     except Exception as e:
         logger.error("Knowledge base search failed: %s", e, exc_info=True)
@@ -140,6 +141,7 @@ async def search_knowledge_base(
         results = await service.retrieve_multi(
             query=query,
             collection_names=collections,
+            tenants=current_reader(),
             limit=top_k,
         )
     elif target_collection == "all":
@@ -149,11 +151,11 @@ async def search_knowledge_base(
                 return "No collections found in the knowledge base."
             if len(all_collections) == 1:
                 results = await service.retrieve(
-                    query=query, collection_name=all_collections[0], limit=top_k
+                    query=query, collection_name=all_collections[0], tenants=current_reader(), limit=top_k
                 )
             else:
                 results = await service.retrieve_multi(
-                    query=query, collection_names=all_collections, limit=top_k
+                    query=query, collection_names=all_collections, tenants=current_reader(), limit=top_k
                 )
         except Exception as e:
             logger.error("Failed to list collections: %s", e, exc_info=True)
@@ -165,6 +167,7 @@ async def search_knowledge_base(
         results = await service.retrieve(
             query=query,
             collection_name=target_collection,
+            tenants=current_reader(),
             limit=top_k,
         )
 

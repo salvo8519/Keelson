@@ -8,6 +8,7 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
 from app.services.rag.models import SearchResult
+from app.services.rag.tenancy import TenantFilter
 from app.services.rag.vectorstore import BaseVectorStore
 from app.services.rag.config import RAGSettings
 
@@ -34,6 +35,8 @@ class BaseRetrievalService(ABC):
         self,
         query: str,
         collection_name: str,
+        *,
+        tenants: TenantFilter,
         limit: int = 5,
         min_score: float = 0.0,
         filter: str = ""
@@ -46,6 +49,8 @@ class BaseRetrievalService(ABC):
         query: str,
         collection_name: str,
         document_id: str,
+        *,
+        tenants: TenantFilter,
         limit: int = 3
     ) -> list[SearchResult]:
         pass
@@ -96,7 +101,7 @@ class RetrievalService(BaseRetrievalService):
         ]
 
     async def _bm25_search(
-        self, query: str, collection_name: str, limit: int
+        self, query: str, collection_name: str, limit: int, tenants: TenantFilter
     ) -> list[SearchResult]:
         try:
             from rank_bm25 import BM25Okapi
@@ -109,7 +114,7 @@ class RetrievalService(BaseRetrievalService):
             return []
 
         all_results = await self.store.search(
-            collection_name=collection_name, query=query, limit=min(limit * 10, 100)
+            collection_name=collection_name, query=query, tenants=tenants, limit=min(limit * 10, 100)
         )
         if not all_results:
             return []
@@ -137,6 +142,8 @@ class RetrievalService(BaseRetrievalService):
         self,
         query: str,
         collection_name: str,
+        *,
+        tenants: TenantFilter,
         limit: int = 5,
         min_score: float = 0.0,
         filter: str = "",
@@ -157,6 +164,7 @@ class RetrievalService(BaseRetrievalService):
         pipeline_results = await self.store.search(
             collection_name=collection_name,
             query=query,
+            tenants=tenants,
             filter_expr=filter,
             limit=limit * fetch_multiplier
         )
@@ -168,7 +176,7 @@ class RetrievalService(BaseRetrievalService):
         )
 
         if self._hybrid_enabled:
-            bm25_results = await self._bm25_search(query, collection_name, limit * fetch_multiplier)
+            bm25_results = await self._bm25_search(query, collection_name, limit * fetch_multiplier, tenants)
             if bm25_results:
                 pipeline_results = self._rrf_fuse(pipeline_results, bm25_results)
                 logger.info("[RETRIEVAL] Hybrid search: fused %d results", len(pipeline_results))
@@ -237,6 +245,8 @@ class RetrievalService(BaseRetrievalService):
         self,
         query: str,
         collection_names: list[str],
+        *,
+        tenants: TenantFilter,
         limit: int = 5,
         min_score: float = 0.0,
         use_reranker: bool = False,
@@ -247,6 +257,7 @@ class RetrievalService(BaseRetrievalService):
                 results = await self.retrieve(
                     query=query,
                     collection_name=name,
+                    tenants=tenants,
                     limit=limit,
                     min_score=min_score,
                     use_reranker=use_reranker,
@@ -275,6 +286,8 @@ class RetrievalService(BaseRetrievalService):
         query: str,
         collection_name: str,
         document_id: str,
+        *,
+        tenants: TenantFilter,
         limit: int = 3,
         use_reranker: bool = False,
     ) -> list[SearchResult]:
@@ -289,6 +302,7 @@ class RetrievalService(BaseRetrievalService):
         return await self.retrieve(
             query=query,
             collection_name=collection_name,
+            tenants=tenants,
             limit=limit,
             filter=filter_expr,
             use_reranker=use_reranker,

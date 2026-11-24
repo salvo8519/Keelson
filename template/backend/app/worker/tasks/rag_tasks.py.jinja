@@ -27,6 +27,7 @@ from app.services.rag.connectors import CONNECTOR_REGISTRY
 from app.services.rag.documents import DocumentProcessor
 from app.services.rag.embeddings import EmbeddingService
 from app.services.rag.ingestion import IngestionService
+from app.services.knowledge_base import collection_tenant
 from app.services.sync_source import SyncSourceService
 {%- if use_milvus %}
 from app.services.rag.vectorstore import MilvusVectorStore as VectorStore
@@ -242,7 +243,9 @@ async def _run_ingestion(rag_document_id: str, collection_name: str, filepath: s
 
     file_path = Path(filepath)
     try:
-        result = await ingestion_service.ingest_file(filepath=file_path, collection_name=collection_name, replace=replace, source_path=source_path)
+        async with get_worker_db_context() as db:
+            tenant = await collection_tenant(db, collection_name)
+        result = await ingestion_service.ingest_file(filepath=file_path, collection_name=collection_name, tenant=tenant, replace=replace, source_path=source_path)
         async with get_worker_db_context() as db:
             documents = RAGDocumentService(db)
             await documents.complete_ingestion(rag_document_id, vector_document_id=result.document_id)
@@ -273,6 +276,8 @@ async def _run_sync(sync_log_id: str, source: str, collection_name: str, mode: s
     allowed = {ext.value for ext in DocumentExtensions}
     files = [f for f in files if f.suffix.lower() in allowed]
     ingested = updated = skipped = failed = 0
+    async with get_worker_db_context() as db:
+        tenant = await collection_tenant(db, collection_name)
 
     for filepath in files:
         async with get_worker_db_context() as db:
@@ -305,7 +310,7 @@ async def _run_sync(sync_log_id: str, source: str, collection_name: str, mode: s
                     skipped += 1
                     continue
         try:
-            result = await ingestion_service.ingest_file(filepath=filepath, collection_name=collection_name, replace=True)
+            result = await ingestion_service.ingest_file(filepath=filepath, collection_name=collection_name, tenant=tenant, replace=True)
             if result.status.value == "done":
                 if result.message and "replaced" in result.message:
                     updated += 1
@@ -400,6 +405,7 @@ async def _run_source_sync(source_id: str, sync_log_id: str | None = None) -> di
         config = SyncSourceService.decrypt_config_dict(raw_config)
         collection_name = source.collection_name
         sync_mode = source.sync_mode
+        tenant = await collection_tenant(db, collection_name)
 
         # Use existing SyncLog (from API trigger) or create new one (from scheduler)
         if sync_log_id:
@@ -424,6 +430,7 @@ async def _run_source_sync(source_id: str, sync_log_id: str | None = None) -> di
                     await ingestion_svc.ingest_file(
                         filepath=local_path,
                         collection_name=collection_name,
+                        tenant=tenant,
                         replace=(sync_mode == "full"),
                         source_path=remote_file.source_path,
                     )

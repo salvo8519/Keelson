@@ -136,6 +136,13 @@ def test_logs_are_json_with_the_request_id(capsys: pytest.CaptureFixture[str]) -
     assert entry["order"] == 7
 
 
+def test_terminal_only_fields_stay_out_of_json(capsys: pytest.CaptureFixture[str]) -> None:
+    setup_logging("INFO", "json")
+    logging.getLogger("uvicorn.error").info("started", extra={"color_message": "\x1b[36mstarted"})
+    entry = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert "color_message" not in entry
+
+
 def test_personal_data_is_redacted_in_every_logger(capsys: pytest.CaptureFixture[str]) -> None:
     """Upstream filtered the root logger only, which records of named loggers never reach."""
     entry = _log_line(capsys, "invite sent to %s", "ada@example.com")

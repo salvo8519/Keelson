@@ -32,6 +32,7 @@ from app.api.deps import RAGStatusSvc
 from app.core.config import settings
 from app.core.exceptions import NotFoundError
 from app.services.rag.config import get_supported_formats
+from app.services.rag.tenancy import TenantFilter
 from app.schemas.rag import (
     RAGCollectionInfo,
     RAGCollectionList,
@@ -188,16 +189,38 @@ async def list_documents(
 async def search_documents(
     request: RAGSearchRequest,
     retrieval_service: RetrievalSvc,
-{%- if use_jwt %}
-    _: CurrentUser,
+{%- if enable_teams and use_jwt %}
+    user: CurrentUser,
+    active_org: ActiveOrg,
+    kb_svc: KnowledgeBaseSvc,
+{%- elif use_jwt %}
+    user: CurrentUser,
 {%- endif %}
     use_reranker: bool = Query(False, description="Whether to use reranking (if configured)"),
 ) -> Any:
     """Search for relevant document chunks. Supports multi-collection search."""
+    # Keelson: second barrier, in the vector store: only vectors of the reader's tenants.
+{%- if enable_teams and use_jwt %}
+    tenants = TenantFilter.for_reader(user.id, active_org.id)
+{%- elif use_jwt %}
+    tenants = TenantFilter.for_reader(user.id, None)
+{%- else %}
+    tenants = TenantFilter.for_reader(None, None)
+{%- endif %}
+{%- if enable_teams and use_jwt %}
+    # Keelson: only the collections of knowledge bases the user can see in the active
+    # organization. Upstream searched any collection by name, so a user of one organization
+    # could read the documents of another (the vector store has no row level security).
+    requested = request.collection_names or [request.collection_name]
+    accessible = set(await kb_svc.list_accessible_collection_names(user.id, active_org.id))
+    if not set(requested) <= accessible:
+        raise NotFoundError(message="Collection not found")
+{%- endif %}
     if request.collection_names and len(request.collection_names) > 1:
         results = await retrieval_service.retrieve_multi(
             query=request.query,
             collection_names=request.collection_names,
+            tenants=tenants,
             limit=request.limit,
             min_score=request.min_score,
             use_reranker=use_reranker,
@@ -209,6 +232,7 @@ async def search_documents(
         results = await retrieval_service.retrieve(
             query=request.query,
             collection_name=collection,
+            tenants=tenants,
             limit=request.limit,
             min_score=request.min_score,
             filter=request.filter or "",

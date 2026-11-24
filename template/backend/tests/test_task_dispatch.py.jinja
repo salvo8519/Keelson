@@ -1,0 +1,43 @@
+{%- if enable_rag and (use_celery or use_taskiq) %}
+"""Uploads reach the worker through the API of the configured task backend (Keelson).
+
+Upstream called Celery's ``delay`` on Taskiq tasks too, which have no such method: every
+upload of a Taskiq project failed before reaching the worker.
+"""
+
+from unittest.mock import AsyncMock, MagicMock
+from uuid import uuid4
+
+import pytest
+
+from app.core.config import settings
+from app.services import rag_document as module
+from app.services.rag_document import RAGDocumentService
+from app.worker.tasks import rag_tasks
+
+
+@pytest.mark.anyio
+async def test_upload_is_enqueued_on_the_task_backend(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    task = MagicMock(spec=["kiq", "delay"])
+    task.kiq = AsyncMock()
+    monkeypatch.setattr(rag_tasks, "ingest_document_task", task)
+    monkeypatch.setattr(settings, "MEDIA_DIR", tmp_path)
+    monkeypatch.setattr(module, "get_file_storage", lambda: MagicMock(save=AsyncMock(return_value="rag/kb/a.txt")))
+    service = RAGDocumentService(MagicMock())
+    monkeypatch.setattr(service, "create_document", AsyncMock(return_value=MagicMock(id=uuid4())))
+
+    await service.dispatch_upload(
+        collection_name="kb",
+        file_data=b"hello",
+        filename="a.txt",
+        replace=False,
+        vector_store=AsyncMock(),
+        organization_id=uuid4(),
+    )
+{%- if use_taskiq %}
+    task.kiq.assert_awaited_once()
+    task.delay.assert_not_called()
+{%- else %}
+    task.delay.assert_called_once()
+{%- endif %}
+{%- endif %}

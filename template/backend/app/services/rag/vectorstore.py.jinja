@@ -5,6 +5,7 @@ from typing import Any
 
 from app.services.rag.models import CollectionInfo, Document, DocumentPageChunk, SearchResult, DocumentInfo
 from app.schemas.rag import RAGDocumentItem, RAGDocumentList
+from app.services.rag.tenancy import TENANT_FIELD, TenantFilter
 
 logger = logging.getLogger(__name__)
 
@@ -13,13 +14,23 @@ _RESERVED_COLLECTION_NAMES = frozenset({"all"})
 
 
 class BaseVectorStore(ABC):
+    """Keelson: every vector carries a tenant (app/services/rag/tenancy.py) and every search
+    states the tenants its reader may see; both arguments are required, so no caller can skip
+    the barrier. Vectors stored without a tenant are never returned."""
+
     @abstractmethod
-    async def insert_document(self, collection_name: str, document: Document) -> None:
+    async def insert_document(self, collection_name: str, document: Document, *, tenant: str) -> None:
         pass
 
     @abstractmethod
     async def search(
-        self, collection_name: str, query: str, limit: int = 4, filter_expr: str = ""
+        self,
+        collection_name: str,
+        query: str,
+        *,
+        tenants: TenantFilter,
+        limit: int = 4,
+        filter_expr: str = "",
     ) -> list[SearchResult]:
         pass
 
@@ -126,115 +137,23 @@ class BaseVectorStore(ABC):
         ]
 
 
-{%- if use_milvus %}
-from pymilvus import AsyncMilvusClient, DataType
 
-from app.core.config import settings as app_settings
-from app.services.rag.config import RAGSettings
-from app.services.rag.embeddings import EmbeddingService
-
-
-class MilvusVectorStore(BaseVectorStore):
-    """Milvus vector store implementation."""
-
-    def __init__(self, settings: RAGSettings, embedding_service: EmbeddingService):
-        self.settings = settings
-        self.embedder = embedding_service
-        self.client = AsyncMilvusClient(
-            uri=app_settings.MILVUS_URI, token=app_settings.MILVUS_TOKEN
-        )
-
-    async def _ensure_collection(self, name: str) -> None:
-        if not await self.client.has_collection(name):
-            schema = self.client.create_schema(auto_id=False)
-            schema.add_field("id", DataType.VARCHAR, is_primary=True, max_length=100)
-            schema.add_field("parent_doc_id", DataType.VARCHAR, max_length=100)
-            schema.add_field("content", DataType.VARCHAR, max_length=65535)
-            schema.add_field(
-                "vector", DataType.FLOAT_VECTOR, dim=self.settings.embeddings_config.dim
-            )
-            schema.add_field("metadata", DataType.JSON)
-            await self.client.create_collection(name, schema=schema, metric_type="COSINE")
-        indexes = await self.client.list_indexes(name)
-        if not indexes:
-            index_params = self.client.prepare_index_params()
-            index_params.add_index(field_name="vector", index_type="AUTOINDEX", metric_type="COSINE")
-            await self.client.create_index(collection_name=name, index_params=index_params)
-        await self.client.load_collection(name)
-
-    async def insert_document(self, collection_name: str, document: Document) -> None:
-        await self._ensure_collection(collection_name)
-        if not document.chunked_pages:
-            raise ValueError("Document has no chunked pages.")
-        vectors = self.embedder.embed_document(document)
-        data = [
-            {
-                "id": chunk.chunk_id,
-                "parent_doc_id": chunk.parent_doc_id,
-                "content": chunk.chunk_content,
-                "vector": vectors[i],
-                "metadata": self._build_chunk_metadata(chunk, document),
-            }
-            for i, chunk in enumerate(document.chunked_pages)
-        ]
-        await self.client.insert(collection_name, data=data)
-
-    async def search(self, collection_name: str, query: str, limit: int = 4, filter_expr: str = "") -> list[SearchResult]:
-        query_vector = self.embedder.embed_query(query)
-        results = await self.client.search(
-            collection_name=collection_name,
-            data=[query_vector],
-            limit=limit,
-            filter=filter_expr,
-            output_fields=["content", "parent_doc_id", "metadata"],
-        )
-        return [
-            SearchResult(
-                content=hit["entity"]["content"],
-                score=hit["distance"],
-                metadata=hit["entity"]["metadata"],
-                parent_doc_id=hit["entity"]["parent_doc_id"],
-            )
-            for hit in results[0]
-        ]
-
-    async def get_collection_info(self, collection_name: str) -> CollectionInfo:
-        # A KB created on /kb or /rag has no Milvus collection until its first
-        # document is ingested — report zero vectors instead of erroring so the
-        # collection still renders consistently across /kb and /rag.
-        if not await self.client.has_collection(collection_name):
-            return CollectionInfo(
-                name=collection_name,
-                total_vectors=0,
-                dim=self.settings.embeddings_config.dim,
-            )
-        count = await self.client.get_collection_stats(collection_name)
-        return CollectionInfo(name=collection_name, total_vectors=count.get("row_count", 0), dim=self.settings.embeddings_config.dim)
-
-    async def delete_collection(self, collection_name: str) -> None:
-        await self.client.drop_collection(collection_name)
-
-    async def delete_document(self, collection_name: str, document_id: str) -> None:
-        sanitized = self._sanitize_id(document_id)
-        await self.client.delete(collection_name=collection_name, filter=f'parent_doc_id == "{sanitized}"')
-
-    async def get_documents(self, collection_name: str) -> list[DocumentInfo]:
-        # Return empty list for non-existent collections instead of silently
-        # creating them, which would be inconsistent with get_collection_info.
-        if not await self.client.has_collection(collection_name):
-            return []
-        results = await self.client.query(collection_name=collection_name, filter="", output_fields=["parent_doc_id", "metadata"], limit=10000)
-        return self._group_documents(results)
-
-    async def list_collections(self) -> list[str]:
-        result: list[str] = await self.client.list_collections()
-        return result
-{%- endif %}
 
 
 {%- if use_qdrant %}
 from qdrant_client import AsyncQdrantClient
-from qdrant_client.models import Distance, FilterSelector, PointStruct, VectorParams, Filter, FieldCondition, MatchValue
+from qdrant_client.models import (
+    Distance,
+    FieldCondition,
+    Filter,
+    FilterSelector,
+    KeywordIndexParams,
+    KeywordIndexType,
+    MatchAny,
+    MatchValue,
+    PointStruct,
+    VectorParams,
+)
 
 from app.core.config import settings as app_settings
 from app.services.rag.config import RAGSettings
@@ -265,8 +184,14 @@ class QdrantVectorStore(BaseVectorStore):
                     distance=Distance.COSINE,
                 ),
             )
+            # Keelson: tenant index (Qdrant's multitenancy pattern), so the filter is cheap.
+            await self.client.create_payload_index(
+                collection_name=name,
+                field_name=TENANT_FIELD,
+                field_schema=KeywordIndexParams(type=KeywordIndexType.KEYWORD, is_tenant=True),
+            )
 
-    async def insert_document(self, collection_name: str, document: Document) -> None:
+    async def insert_document(self, collection_name: str, document: Document, *, tenant: str) -> None:
         await self._ensure_collection(collection_name)
         if not document.chunked_pages:
             raise ValueError("Document has no chunked pages.")
@@ -279,25 +204,43 @@ class QdrantVectorStore(BaseVectorStore):
                     "content": chunk.chunk_content,
                     "parent_doc_id": chunk.parent_doc_id,
                     "metadata": self._build_chunk_metadata(chunk, document),
+                    TENANT_FIELD: tenant,
                 },
             )
             for i, chunk in enumerate(document.chunked_pages)
         ]
         await self.client.upsert(collection_name=collection_name, points=points)
 
-    async def search(self, collection_name: str, query: str, limit: int = 4, filter_expr: str = "") -> list[SearchResult]:
+    async def search(
+        self,
+        collection_name: str,
+        query: str,
+        *,
+        tenants: TenantFilter,
+        limit: int = 4,
+        filter_expr: str = "",
+    ) -> list[SearchResult]:
+        if not tenants.unrestricted and not tenants.tenants:
+            return []
         query_vector = self.embedder.embed_query(query)
-        qdrant_filter = None
+        conditions: list[FieldCondition] = []
+        if not tenants.unrestricted:
+            conditions.append(FieldCondition(key=TENANT_FIELD, match=MatchAny(any=sorted(tenants.tenants))))
         if filter_expr and "parent_doc_id" in filter_expr:
             m = re.search(r'parent_doc_id\s*==\s*"([^"]+)"', filter_expr)
             if m:
-                qdrant_filter = Filter(must=[FieldCondition(key="parent_doc_id", match=MatchValue(value=m.group(1)))])
-        results = await self.client.search(
+                conditions.append(FieldCondition(key="parent_doc_id", match=MatchValue(value=m.group(1))))
+        qdrant_filter = Filter(must=list(conditions)) if conditions else None
+        # Keelson: query_points replaces search, which qdrant-client 1.20 no longer has (every
+        # upstream search failed with AttributeError).
+        response = await self.client.query_points(
             collection_name=collection_name,
-            query_vector=query_vector,
+            query=query_vector,
             limit=limit,
             query_filter=qdrant_filter,
+            with_payload=True,
         )
+        results = response.points
         return [
             SearchResult(
                 content=(hit.payload or {}).get("content", ""),
@@ -347,126 +290,7 @@ class QdrantVectorStore(BaseVectorStore):
 {%- endif %}
 
 
-{%- if use_chromadb %}
-import asyncio
-import chromadb
 
-from app.core.config import settings as app_settings
-from app.services.rag.config import RAGSettings
-from app.services.rag.embeddings import EmbeddingService
-
-
-class ChromaVectorStore(BaseVectorStore):
-    """ChromaDB vector store implementation (embedded or HTTP client).
-
-    All ChromaDB calls are synchronous, so we use asyncio.to_thread()
-    to avoid blocking the FastAPI event loop.
-    """
-
-    def __init__(self, settings: RAGSettings, embedding_service: EmbeddingService):
-        self.settings = settings
-        self.embedder = embedding_service
-        if app_settings.CHROMA_HOST:
-            self.client = chromadb.HttpClient(
-                host=app_settings.CHROMA_HOST,
-                port=app_settings.CHROMA_PORT,
-            )
-        else:
-            self.client = chromadb.PersistentClient(path=app_settings.CHROMA_PERSIST_DIR)
-
-    def _get_collection(self, name: str) -> Any:
-        return self.client.get_or_create_collection(
-            name=name,
-            metadata={"hnsw:space": "cosine"},
-        )
-
-    async def _ensure_collection(self, name: str) -> None:
-        """Ensure collection exists (ChromaDB creates on access)."""
-        await asyncio.to_thread(self._get_collection, name)
-
-    async def insert_document(self, collection_name: str, document: Document) -> None:
-        if not document.chunked_pages:
-            raise ValueError("Document has no chunked pages.")
-
-        vectors = self.embedder.embed_document(document)
-        ids = [chunk.chunk_id for chunk in document.chunked_pages]
-        documents = [chunk.chunk_content for chunk in document.chunked_pages]
-        metadatas = [self._build_chunk_metadata(chunk, document) for chunk in document.chunked_pages]
-
-        def _upsert():
-            collection = self._get_collection(collection_name)
-            collection.upsert(ids=ids, embeddings=vectors, documents=documents, metadatas=metadatas)
-
-        await asyncio.to_thread(_upsert)
-
-    async def search(self, collection_name: str, query: str, limit: int = 4, filter_expr: str = "") -> list[SearchResult]:
-        query_vector = self.embedder.embed_query(query)
-
-        def _query():
-            collection = self._get_collection(collection_name)
-            kwargs: dict[str, Any] = {
-                "query_embeddings": [query_vector],
-                "n_results": limit,
-                "include": ["documents", "metadatas", "distances"],
-            }
-            # Convert Milvus-style filter to ChromaDB where clause
-            if filter_expr and "parent_doc_id" in filter_expr:
-                m = re.search(r'parent_doc_id\s*==\s*"([^"]+)"', filter_expr)
-                if m:
-                    kwargs["where"] = {"parent_doc_id": m.group(1)}
-            return collection.query(**kwargs)
-
-        results = await asyncio.to_thread(_query)
-        search_results = []
-        if results["ids"] and results["ids"][0]:
-            for i in range(len(results["ids"][0])):
-                metadata = results["metadatas"][0][i] if results["metadatas"] else {}
-                search_results.append(SearchResult(
-                    content=results["documents"][0][i] if results["documents"] else "",
-                    score=1.0 - (results["distances"][0][i] if results["distances"] else 0.0),
-                    metadata=metadata,
-                    parent_doc_id=metadata.get("parent_doc_id"),
-                ))
-        return search_results
-
-    async def get_collection_info(self, collection_name: str) -> CollectionInfo:
-        def _info():
-            collection = self._get_collection(collection_name)
-            return collection.count()
-
-        count = await asyncio.to_thread(_info)
-        return CollectionInfo(name=collection_name, total_vectors=count, dim=self.settings.embeddings_config.dim)
-
-    async def delete_collection(self, collection_name: str) -> None:
-        await asyncio.to_thread(self.client.delete_collection, collection_name)
-
-    async def delete_document(self, collection_name: str, document_id: str) -> None:
-        sanitized = self._sanitize_id(document_id)
-
-        def _delete():
-            collection = self._get_collection(collection_name)
-            collection.delete(where={"parent_doc_id": sanitized})
-
-        await asyncio.to_thread(_delete)
-
-    async def get_documents(self, collection_name: str) -> list[DocumentInfo]:
-        def _get():
-            collection = self._get_collection(collection_name)
-            return collection.get(include=["metadatas"])
-
-        all_data = await asyncio.to_thread(_get)
-        results = [
-            {"parent_doc_id": m.get("parent_doc_id"), "metadata": m}
-            for m in (all_data["metadatas"] or [])
-        ]
-        return self._group_documents(results)
-
-    async def list_collections(self) -> list[str]:
-        def _list():
-            return [c.name for c in self.client.list_collections()]
-
-        return await asyncio.to_thread(_list)
-{%- endif %}
 
 
 {%- if use_pgvector %}
@@ -511,9 +335,14 @@ class PgVectorStore(BaseVectorStore):
         """Dispose the connection pool. Call during application shutdown."""
         await self.engine.dispose()
 
+    # Keelson: upstream named the tables rag_<collection>, so the default collection
+    # "documents" became the application's own rag_documents table, and list_collections
+    # reported application tables as collections.
+    TABLE_PREFIX = "vectors_"
+
     def _table(self, name: str) -> str:
         """Get validated table name for a collection."""
-        return f"rag_{_validate_collection_name(name)}"
+        return f"{self.TABLE_PREFIX}{_validate_collection_name(name)}"
 
     async def _ensure_collection(self, name: str) -> None:
         """Create table for collection if not exists."""
@@ -526,8 +355,12 @@ class PgVectorStore(BaseVectorStore):
                     parent_doc_id VARCHAR(100),
                     content TEXT,
                     embedding vector({self.dim}),
-                    metadata JSONB DEFAULT '{% raw %}{{}}{% endraw %}'::jsonb
+                    metadata JSONB DEFAULT '{% raw %}{{}}{% endraw %}'::jsonb,
+                    {TENANT_FIELD} VARCHAR(80)
                 )
+            """))
+            await session.execute(text(f"""
+                CREATE INDEX IF NOT EXISTS {table}_{TENANT_FIELD}_idx ON {table} ({TENANT_FIELD})
             """))
             await session.execute(text(f"""
                 CREATE INDEX IF NOT EXISTS {table}_embedding_idx
@@ -548,7 +381,7 @@ class PgVectorStore(BaseVectorStore):
             )
             return result.scalar() is not None
 
-    async def insert_document(self, collection_name: str, document: Document) -> None:
+    async def insert_document(self, collection_name: str, document: Document, *, tenant: str) -> None:
         table = self._table(collection_name)
         await self._ensure_collection(collection_name)
         if not document.chunked_pages:
@@ -559,9 +392,10 @@ class PgVectorStore(BaseVectorStore):
                 meta = self._build_chunk_metadata(chunk, document)
                 await session.execute(
                     text(f"""
-                        INSERT INTO {table} (id, parent_doc_id, content, embedding, metadata)
-                        VALUES (:id, :parent_doc_id, :content, :embedding, :metadata)
-                        ON CONFLICT (id) DO UPDATE SET content = :content, embedding = :embedding, metadata = :metadata
+                        INSERT INTO {table} (id, parent_doc_id, content, embedding, metadata, {TENANT_FIELD})
+                        VALUES (:id, :parent_doc_id, :content, :embedding, :metadata, :tenant)
+                        ON CONFLICT (id) DO UPDATE SET content = :content, embedding = :embedding,
+                            metadata = :metadata, {TENANT_FIELD} = :tenant
                     """),
                     {
                         "id": chunk.chunk_id,
@@ -569,11 +403,22 @@ class PgVectorStore(BaseVectorStore):
                         "content": chunk.chunk_content,
                         "embedding": str(vectors[i]),
                         "metadata": json.dumps(meta),
+                        "tenant": tenant,
                     },
                 )
             await session.commit()
 
-    async def search(self, collection_name: str, query: str, limit: int = 4, filter_expr: str = "") -> list[SearchResult]:
+    async def search(
+        self,
+        collection_name: str,
+        query: str,
+        *,
+        tenants: TenantFilter,
+        limit: int = 4,
+        filter_expr: str = "",
+    ) -> list[SearchResult]:
+        if not tenants.unrestricted and not tenants.tenants:
+            return []
         table = self._table(collection_name)
         query_vector = self.embedder.embed_query(query)
 
@@ -586,10 +431,15 @@ class PgVectorStore(BaseVectorStore):
             if m:
                 doc_id_filter = m.group(1)
 
-        where_clause = "WHERE parent_doc_id = :doc_id" if doc_id_filter else ""
+        conditions: list[str] = []
         params: dict[str, Any] = {"query_vec": str(query_vector), "limit": limit}
+        if not tenants.unrestricted:
+            conditions.append(f"{TENANT_FIELD} = ANY(:tenants)")
+            params["tenants"] = sorted(tenants.tenants)
         if doc_id_filter:
+            conditions.append("parent_doc_id = :doc_id")
             params["doc_id"] = doc_id_filter
+        where_clause = ("WHERE " + " AND ".join(conditions)) if conditions else ""
 
         async with self.async_session() as session:
             result = await session.execute(
@@ -658,9 +508,11 @@ class PgVectorStore(BaseVectorStore):
     async def list_collections(self) -> list[str]:
         async with self.async_session() as session:
             result = await session.execute(
-                text("SELECT table_name FROM information_schema.tables WHERE table_name LIKE 'rag_%' AND table_schema = 'public'")
+                text(
+                    "SELECT table_name FROM information_schema.tables "
+                    "WHERE starts_with(table_name, :prefix) AND table_schema = 'public'"
+                ),
+                {"prefix": self.TABLE_PREFIX},
             )
-            # removeprefix (Python 3.9+) strips only the leading "rag_" occurrence,
-            # unlike str.replace which would also hit inner occurrences.
-            return [row[0].removeprefix("rag_") for row in result.fetchall()]
+            return [row[0].removeprefix(self.TABLE_PREFIX) for row in result.fetchall()]
 {%- endif %}

@@ -169,6 +169,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[{% if enable_redis or enable_
     await redis_client.connect()
     state["redis"] = redis_client
 {%- endif %}
+{%- if use_taskiq %}
+    # Keelson: the API process enqueues tasks (kiq), so it starts the broker as a producer.
+    from app.worker.taskiq_app import broker as taskiq_broker
+
+    if not taskiq_broker.is_worker_process:
+        await taskiq_broker.startup()
+{%- endif %}
 {%- if enable_deep_research %}
 
     if settings.ENABLE_DEEP_RESEARCH:
@@ -314,6 +321,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[{% if enable_redis or enable_
         await state["redis"].close()
 {%- endif %}
 
+{%- if use_taskiq %}
+    if not taskiq_broker.is_worker_process:
+        await taskiq_broker.shutdown()
+{%- endif %}
     await close_db()
 {%- if not enable_logfire %}
     shutdown_tracing()

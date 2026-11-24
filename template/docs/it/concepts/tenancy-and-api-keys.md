@@ -1,4 +1,4 @@
-<!-- i18n source: concepts/tenancy-and-api-keys.md source_hash: db8e33687729 -->
+<!-- i18n source: concepts/tenancy-and-api-keys.md source_hash: 287ba2a53d73 -->
 # Tenancy e API key
 
 I progetti Keelson servono più organizzazioni con un solo deploy. Questa pagina spiega come
@@ -26,6 +26,22 @@ una seconda barriera, indipendente:
 Le tabelle isolate sono elencate in `app/db/tenancy.py`. Un test fallisce quando una tabella con
 una colonna `organization_id` non è né isolata né esentata con una motivazione, così una nuova
 tabella non può essere dimenticata.
+
+## Knowledge base e vettori
+
+Una knowledge base è personale (solo il proprietario), di un'organizzazione (i suoi membri) o
+dell'applicazione (tutti gli utenti). La vector store non ha una propria row level security,
+quindi ha due barriere:
+
+1. **Quali collezioni.** Una ricerca raggiunge solo le collezioni delle knowledge base che
+   l'utente vede nell'organizzazione attiva; a qualsiasi altro nome risponde che non esiste.
+   L'agente risolve le sue collezioni sul server a partire dalla conversazione, mai dal modello
+   o dal client, e scarta un'organizzazione di cui l'utente non è più membro.
+2. **Quali vettori.** Ogni vettore porta il tenant della sua knowledge base (`user:<id>`,
+   `org:<id>` o `app`) e ogni ricerca dichiara i tenant del suo lettore: un filtro in Qdrant
+   (un indice di tenant, il pattern di multitenancy di Qdrant), una clausola `WHERE` in
+   pgvector. Una ricerca senza lettore non restituisce nulla. Solo la riga di comando, per
+   l'amministrazione, può cercare in tutti i tenant.
 
 ## API key
 

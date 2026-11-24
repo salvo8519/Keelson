@@ -73,6 +73,8 @@ class BaseDocumentSource(ABC):
         self,
         collection_name: str,
         ingestion_service: "IngestionService",
+        *,
+        tenant: str,
         path: str = "",
         extensions: list[str] | None = None,
     ) -> SyncResult:
@@ -83,6 +85,7 @@ class BaseDocumentSource(ABC):
         Args:
             collection_name: Target collection name.
             ingestion_service: Service to handle file ingestion.
+            tenant: Tenant of the stored vectors (app/services/rag/tenancy.py).
             path: Source path/folder to sync from.
             extensions: File extensions to include.
 
@@ -103,6 +106,7 @@ class BaseDocumentSource(ABC):
                     ingest_result = await ingestion_service.ingest_file(
                         filepath=local_path,
                         collection_name=collection_name,
+                        tenant=tenant,
                         source_path=source_uri,
                     )
                     if ingest_result.status.value == "done":

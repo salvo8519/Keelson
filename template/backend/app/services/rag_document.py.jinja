@@ -189,9 +189,20 @@ class RAGDocumentService:
         with open(tmp_path, "wb") as f:
             f.write(file_data)
 
-{%- if use_celery or use_taskiq %}
+{%- if use_celery %}
         from app.worker.tasks.rag_tasks import ingest_document_task
         ingest_document_task.delay(
+            rag_document_id=str(doc_id),
+            collection_name=collection_name,
+            filepath=tmp_path,
+            source_path=filename,
+            replace=replace,
+        )
+{%- elif use_taskiq %}
+        # Keelson: Taskiq enqueues with kiq (upstream called Celery's delay, which Taskiq tasks
+        # do not have: every upload failed with AttributeError).
+        from app.worker.tasks.rag_tasks import ingest_document_task
+        await ingest_document_task.kiq(
             rag_document_id=str(doc_id),
             collection_name=collection_name,
             filepath=tmp_path,

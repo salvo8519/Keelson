@@ -423,3 +423,6 @@ msgstr "Un membro del team"
 
 msgid "the organization"
 msgstr "l'organizzazione"
+
+msgid "Collection not found"
+msgstr "Collezione non trovata"

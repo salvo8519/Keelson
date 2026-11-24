@@ -1,0 +1,35 @@
+{%- if use_postgresql %}
+"""A live PostgreSQL for the tests that need one (Keelson).
+
+Row level security, API keys and vectors are tested against a real database. Those tests call
+``require_postgres()``: without a reachable database they are skipped locally, while the
+template's end-to-end suite fails on any skip, so CI always runs them.
+"""
+
+import asyncpg
+import pytest
+from sqlalchemy.engine import make_url
+
+from app.core.config import settings
+
+
+def dsn() -> str:
+    """The test database as an asyncpg DSN."""
+    url = make_url(settings.DATABASE_URL).set(drivername="postgresql")
+    return url.render_as_string(hide_password=False)
+
+
+async def reachable() -> bool:
+    try:
+        connection = await asyncpg.connect(dsn(), timeout=3)
+    except (OSError, asyncpg.PostgresError):
+        return False
+    await connection.close()
+    return True
+
+
+async def require_postgres(what: str) -> None:
+    """Skip the calling test when no database is reachable."""
+    if not await reachable():
+        pytest.skip(f"No live PostgreSQL for the {what} tests")
+{%- endif %}
