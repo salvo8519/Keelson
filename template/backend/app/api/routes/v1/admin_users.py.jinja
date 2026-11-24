@@ -130,7 +130,7 @@ async def impersonate_user(
 {%- endif %}
     return ImpersonateResponse(
         access_token=token,
-        token_type="bearer",
+        token_type="bearer",  # noqa: S106 - the OAuth token type
         impersonated_user_id=str(target.id),
         impersonated_by=str(admin.id),
         expires_in=3600,

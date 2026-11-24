@@ -64,6 +64,10 @@ skills:
 skills-check:
     python template/scripts/agent_skills.py check --lock skills.lock.toml
 
+# Findings of the content scan of the installed component skills (exit 1 on a blocking one).
+skills-scan:
+    python template/scripts/agent_skills.py scan --lock skills.lock.toml
+
 # Regenerate copier/vstorm.yml (needs the upstream generator: see PROVENANCE.md).
 upstream-context python="python":
     {{python}} scripts/upstream/build_vstorm_context.py --out copier/vstorm.yml

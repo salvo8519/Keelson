@@ -365,6 +365,7 @@ select = [
     "UP",  # pyupgrade
     "SIM", # flake8-simplify
     "RUF", # ruff-specific rules
+    "S",   # flake8-bandit: security checks (Keelson)
 ]
 ignore = [
     "E501", # line too long (handled by formatter)
@@ -374,6 +375,22 @@ ignore = [
     "RUF012", # mutable class attribute without ClassVar (used in parser base class)
     "RUF059", # unpacked variable never used (CLI destructuring pattern)
 ]
+
+# Keelson: security checks (S) with reviewed exceptions.
+# S105/S106 flag names such as token_type or PASSWORD_RESET, not secret values: real secrets
+# come from the environment and are validated in production (app/core/config.py).
+[tool.ruff.lint.per-file-ignores]
+"app/core/config.py" = ["S105"]
+"tests/**" = ["S"]
+# DDL built from constants of the module itself, never from input.
+"app/db/tenancy.py" = ["S608"]
+# pgvector table names pass _validate_collection_name ([A-Za-z0-9_]); values are bound.
+"app/services/rag/vectorstore.py" = ["S608"]
+# Development data and the local development server.
+"app/commands/seed.py" = ["S311", "S106"]
+"cli/**" = ["S104", "S603", "S607"]
+# The log email provider writes to a local directory in development.
+"app/services/email/providers/log.py" = ["S108"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["app", "cli"]

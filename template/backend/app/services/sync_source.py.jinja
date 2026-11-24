@@ -33,7 +33,7 @@ from app.worker.background import fire_and_forget
 from app.worker.background.rag import sync_source_in_background
 {%- endif %}
 
-_SECRET_MASK = "••••••"
+_SECRET_MASK = "••••••"  # noqa: S105 - what the interface shows instead of a secret
 
 
 def _secret_fields(connector_type: str) -> set[str]:

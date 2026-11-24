@@ -234,6 +234,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # the secret scan reads the whole history
 
       - name: Install uv
         uses: astral-sh/setup-uv@v10.2.0
@@ -252,6 +254,40 @@ jobs:
       - name: Run pip-audit
         run: uv run pip-audit --require-hashes=false --progress-spinner=off
         working-directory: backend
+
+      # Keelson: secrets committed by mistake, in the whole history (gitleaks, pinned).
+      - name: Scan the history for secrets
+        run: |
+          docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1 \
+            git /repo --redact --no-banner --exit-code 1
+
+      # Keelson: agent skills are text an agent follows. Each one is pinned (commit and content
+      # digest) and scanned before it is installed; a blocking finding fails the job.
+      - name: Verify and scan the agent skills
+        run: |
+          python3 scripts/agent_skills.py install
+          python3 scripts/agent_skills.py scan
+{%- if use_frontend %}
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      # Keelson: known vulnerabilities in the frontend dependencies.
+      - name: Audit the frontend dependencies
+        working-directory: frontend
+        run: |
+          bun install --frozen-lockfile
+          bun audit --audit-level=high
+{%- endif %}
+
+      # Keelson: a software bill of materials (CycloneDX) for every build of the default branch.
+      - name: Software bill of materials
+        if: github.event_name == 'push'
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: cyclonedx-json
+          artifact-name: sbom.cdx.json
 
 {%- if enable_docker %}
 
@@ -280,7 +316,9 @@ jobs:
         with:
           image-ref: {{ project_slug }}:latest
           format: table
-          exit-code: 0
+          # Keelson: a fixable critical or high vulnerability in the image fails the build.
+          exit-code: 1
+          ignore-unfixed: true
           severity: CRITICAL,HIGH
 {%- endif %}
 {%- else %}

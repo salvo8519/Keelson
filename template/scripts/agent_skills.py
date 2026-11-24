@@ -13,6 +13,19 @@ git: the lock file is what you commit.
     python scripts/agent_skills.py install          # install or refresh every skill
     python scripts/agent_skills.py check            # exit 1 if an install is missing or stale
     python scripts/agent_skills.py list             # what the lock file declares
+    python scripts/agent_skills.py scan             # scan the installed skills (exit 1 on a block)
+    python scripts/agent_skills.py digest           # content digests, to pin in the lock file
+
+Supply chain (Keelson). A skill is text that an agent follows, so it is checked like code:
+
+* a git source is pinned to a commit and, with ``sha256``, to the digest of its content: a
+  different content (a rewritten tag, a compromised mirror, a tampered cache) is refused;
+* every skill, package sources included, is scanned before it is installed. ``block`` findings
+  stop the install: hidden Unicode (text an agent reads but a reviewer does not see),
+  instructions to override the agent's rules, piping a download into a shell, reading
+  credential files. ``warn`` findings are printed: scripts and binaries in the skill, commands
+  that run the latest version of a package from the network, links to other domains. A block
+  finding that a maintainer has reviewed is accepted with ``allow = ["<rule>"]`` in the lock.
 
 Standard library only, so it runs before the project environment exists.
 """
@@ -23,11 +36,13 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 import tomllib
-from dataclasses import dataclass
+from collections.abc import Iterable
+from dataclasses import dataclass, field
 from pathlib import Path
 
 ROOT = Path.cwd()
@@ -54,6 +69,8 @@ class Skill:
     package: str | None = None
     python: str | None = None
     note: str | None = None
+    sha256: str | None = None
+    allow: tuple[str, ...] = field(default_factory=tuple)
 
     @property
     def source_id(self) -> str:
@@ -64,7 +81,10 @@ class Skill:
 
 def load(lock: Path) -> list[Skill]:
     data = tomllib.loads(lock.read_text(encoding="utf-8"))
-    skills = [Skill(**entry) for entry in data.get("skill", [])]
+    skills = [
+        Skill(**{**entry, "allow": tuple(entry.get("allow", ()))})
+        for entry in data.get("skill", [])
+    ]
     for skill in skills:
         if bool(skill.repository) == bool(skill.package):
             raise SkillError(skill.name, "declare either repository+commit or package")
@@ -130,17 +150,122 @@ def _from_package(skill: Skill) -> Path:
 
 
 def _digest(folder: Path) -> str:
+    """SHA-256 of a skill folder: relative paths and contents, in a stable order."""
     h = hashlib.sha256()
     files = (p for p in folder.rglob("*") if p.is_file() and p.name not in (MARKER, ".gitignore"))
     for file in sorted(files):
         h.update(file.relative_to(folder).as_posix().encode())
+        h.update(b"\0")
         h.update(file.read_bytes())
-    return h.hexdigest()[:16]
+    return h.hexdigest()
+
+
+# --- Content scan (Keelson) -------------------------------------------------------------------
+
+BLOCK = "block"
+WARN = "warn"
+# (rule, severity, pattern). Patterns run on every line of every text file of the skill.
+RULES: tuple[tuple[str, str, re.Pattern[str]], ...] = (
+    (
+        "hidden-unicode",
+        BLOCK,
+        re.compile(
+            "[\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff\U000e0000-\U000e007f]"
+        ),
+    ),
+    (
+        "instruction-override",
+        BLOCK,
+        re.compile(
+            r"(ignore|disregard|forget) (all |any )?(the )?(previous|prior|above|system) "
+            r"(instructions|rules|prompt)|do not (tell|inform|show) the user",
+            re.IGNORECASE,
+        ),
+    ),
+    ("pipe-to-shell", BLOCK, re.compile(r"\b(curl|wget)\b[^\n|]*\|\s*(sudo\s+)?(ba|z)?sh\b")),
+    (
+        "credential-access",
+        BLOCK,
+        re.compile(r"(~|\$HOME)/\.(ssh|aws|gnupg|netrc|docker/config)|\bid_(rsa|ed25519)\b"),
+    ),
+    ("encoded-payload", BLOCK, re.compile(r"base64\s+(-d|--decode)[^\n]*\|\s*(ba)?sh\b")),
+    (
+        "unpinned-execution",
+        WARN,
+        re.compile(r"\b(npx|bunx|pnpm dlx|uvx|pipx run)\s+[^\s]+@latest\b"),
+    ),
+    ("external-link", WARN, re.compile(r"https?://[^\s)>\]\"']+")),
+)
+SCRIPT_SUFFIXES = {".sh", ".bash", ".zsh", ".py", ".js", ".mjs", ".ts", ".ps1", ".bat", ".cmd"}
+
+
+@dataclass(frozen=True)
+class Finding:
+    rule: str
+    severity: str
+    where: str
+    excerpt: str
+
+    def __str__(self) -> str:
+        return f"{self.severity:<5} {self.rule:<21} {self.where}  {self.excerpt}"
+
+
+def scan(folder: Path) -> list[Finding]:
+    """Findings in a skill folder; links to the skill's own repository are not reported."""
+    findings: list[Finding] = []
+    for file in sorted(p for p in folder.rglob("*") if p.is_file()):
+        if file.name in (MARKER, ".gitignore"):
+            continue
+        where = file.relative_to(folder).as_posix()
+        if file.suffix.lower() in SCRIPT_SUFFIXES or os.access(file, os.X_OK):
+            findings.append(Finding("script", WARN, where, "runs code when an agent follows it"))
+        try:
+            text = file.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            findings.append(Finding("binary", WARN, where, "not text: cannot be reviewed"))
+            continue
+        for number, line in enumerate(text.splitlines(), start=1):
+            for rule, severity, pattern in RULES:
+                match = pattern.search(line)
+                if match:
+                    shown = match.group(0).encode("unicode_escape").decode()[:80]
+                    findings.append(Finding(rule, severity, f"{where}:{number}", shown))
+    return findings
+
+
+def blocking(skill: Skill, findings: list[Finding]) -> list[Finding]:
+    return [f for f in findings if f.severity == BLOCK and f.rule not in skill.allow]
+
+
+def _verified_source(skill: Skill) -> Path:
+    """The skill's source, checked against its pinned digest and scanned."""
+    source = _from_git(skill) if skill.repository else _from_package(skill)
+    if skill.sha256 and _digest(source) != skill.sha256:
+        raise SkillError(
+            skill.name, f"content does not match the sha256 in the lock ({skill.source_id})"
+        )
+    findings = scan(source)
+    refused = blocking(skill, findings)
+    if refused:
+        report = "\n".join(f"    {f}" for f in refused)
+        raise SkillError(skill.name, f"refused by the content scan:\n{report}")
+    summary = _summary(f for f in findings if f.rule != "external-link")
+    if summary:
+        print(f"  {skill.name}: {summary}")
+    return source
+
+
+def _summary(findings: Iterable[Finding]) -> str:
+    counts: dict[str, int] = {}
+    for finding in findings:
+        key = f"{finding.severity} {finding.rule}"
+        counts[key] = counts.get(key, 0) + 1
+    return ", ".join(f"{key} x{count}" for key, count in sorted(counts.items()))
 
 
 def install(skills: list[Skill]) -> None:
     for skill in skills:
-        source = _from_git(skill) if skill.repository else _from_package(skill)
+        source = _verified_source(skill)
         for target_root in TARGETS:
             target = ROOT / target_root / skill.name
             if target.exists() and not (target / MARKER).exists():
@@ -179,9 +304,33 @@ def check(skills: list[Skill]) -> int:
     return 0
 
 
+def scan_installed(skills: list[Skill]) -> int:
+    """Scan what is installed now: findings of every skill, exit 1 on a blocking one."""
+    refused = 0
+    for skill in skills:
+        target = ROOT / TARGETS[0] / skill.name
+        if not target.is_dir():
+            print(f"{skill.name}: not installed")
+            refused += 1
+            continue
+        findings = scan(target)
+        blocked = blocking(skill, findings)
+        refused += bool(blocked)
+        status = "REFUSED" if blocked else "ok"
+        print(f"{skill.name:<34} {status:<8} {_summary(findings) or 'no findings'}")
+        shown: set[str] = set()
+        for finding in findings:
+            # Every blocking finding; the first of each warning, with where to look.
+            first = finding.rule not in shown and finding.rule != "external-link"
+            if finding in blocked or first:
+                print(f"    {finding}")
+                shown.add(finding.rule)
+    return 1 if refused else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("command", choices=["install", "check", "list"])
+    parser.add_argument("command", choices=["install", "check", "list", "scan", "digest"])
     parser.add_argument("--lock", type=Path, default=Path("skills.lock.toml"))
     args = parser.parse_args(argv)
     try:
@@ -191,6 +340,13 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "check":
             return check(skills)
+        if args.command == "scan":
+            return scan_installed(skills)
+        if args.command == "digest":
+            for skill in skills:
+                source = _from_git(skill) if skill.repository else _from_package(skill)
+                print(f"{skill.name:<34} {_digest(source)}")
+            return 0
     except (SkillError, subprocess.CalledProcessError) as err:
         print(f"error: {err}", file=sys.stderr)
         return 1

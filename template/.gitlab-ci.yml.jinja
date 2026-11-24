@@ -118,6 +118,8 @@ frontend:
     - bunx biome check ./
     - bun run i18n:check
     - bun run build
+    # Keelson: known vulnerabilities in the frontend dependencies.
+    - bun audit --audit-level=high
   cache:
     key: "$CI_COMMIT_REF_SLUG-frontend"
     paths:
@@ -183,7 +185,24 @@ security-scan:
   script:
     - uv pip install pip-audit
     - uv run pip-audit --require-hashes=false --progress-spinner=off
-  allow_failure: true
+    # Keelson: agent skills are pinned (commit and content digest) and scanned before install.
+    - apt-get update -qq && apt-get install -y -qq git >/dev/null
+    - cd "$CI_PROJECT_DIR" && python3 scripts/agent_skills.py install && python3 scripts/agent_skills.py scan
+  # Keelson: a known vulnerability or a refused skill fails the pipeline (upstream allowed it).
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# Keelson: secrets committed by mistake, in the whole history (gitleaks, pinned).
+secret-scan:
+  stage: security
+  image:
+    name: ghcr.io/gitleaks/gitleaks:v8.30.1
+    entrypoint: [""]
+  variables:
+    GIT_DEPTH: "0"
+  script:
+    - gitleaks git "$CI_PROJECT_DIR" --redact --no-banner --exit-code 1
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

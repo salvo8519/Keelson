@@ -701,7 +701,7 @@ def rag_source_sync(source_id: str | None, sync_all: bool) -> None:
                         error(f"  {s.name}: failed - {e}")
             else:
                 try:
-                    assert source_id is not None
+                    assert source_id is not None  # noqa: S101 - set in this branch, for the type checker
                     log = await svc.trigger_sync(source_id)
                     success(f"Sync triggered (log_id={log.id})")
                 except Exception as e:

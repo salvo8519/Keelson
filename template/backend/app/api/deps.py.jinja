@@ -534,7 +534,7 @@ async def _require_app_admin(user: CurrentUser) -> User:
 CurrentAppAdmin = Annotated[User, Depends(_require_app_admin)]
 
 
-_WS_TOKEN_PROTOCOL_PREFIX = "access_token."
+_WS_TOKEN_PROTOCOL_PREFIX = "access_token."  # noqa: S105 - a protocol prefix, not a secret
 
 
 def _extract_ws_auth(websocket: WebSocket) -> tuple[str | None, str | None]:

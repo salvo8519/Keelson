@@ -210,7 +210,8 @@ class FileUploadService:
                             if not df.empty:
                                 texts.append(df.to_markdown(index=False))
                 except Exception:
-                    pass
+                    # Tables are optional: the page text is kept without them.
+                    logger.debug("PDF table extraction failed", exc_info=True)
             doc.close()
             return "\n\n".join(texts) if texts else None
         except Exception as e:

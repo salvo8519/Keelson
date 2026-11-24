@@ -41,15 +41,16 @@ We aim to acknowledge within 48h and ship a fix within 7 days for high-severity 
 - **Admin pages** require `role=admin`. Sensitive ops (impersonate user, system-health) gated separately.
 {%- endif %}
 {%- if enable_teams %}
-- **Workspace scope** — every authenticated request resolves an `ActiveOrg` (default = personal org). Resources scoped by `organization_id` foreign key.
-- **Org roles:** `OWNER` / `ADMIN` / `MEMBER`. Owner can transfer ownership + delete org.
+- **Workspace scope** — every authenticated request resolves an `ActiveOrg` (default = personal org), after a membership check.
+- **Org roles:** `OWNER` / `ADMIN` / `MEMBER` / `VIEWER`. Owner can transfer ownership + delete org.
+- **Database segregation** — PostgreSQL row level security on every table, enforced for a separate application login that cannot bypass it. Each transaction states who acts (user, organization or API key); without a principal nothing is visible. Members' conversations stay private to them; roles are checked in the database too. Privileged work uses logged system sessions. See the documentation, Concepts > Tenancy and API keys.
 {%- endif %}
 
 ### Transport / network
 
 - **CORS** — origin list from `settings.CORS_ORIGINS`. Restrict to your domains in production.
 - **HTTPS** — enforce via reverse proxy (Nginx / Traefik / ALB). Strict-Transport-Security header set in middleware when `ENVIRONMENT=production`.
-- **CSP** — frontend sets `frame-ancestors 'none'` by default to prevent click-jacking.{% if use_frontend %} See `frontend/next.config.ts` headers block.{% endif %}
+- **CSP** — the API sets a restrictive Content Security Policy and `frame-ancestors 'none'`.{% if use_frontend %} The frontend's nginx sets its own policy (scripts from the same origin, API calls to `VITE_API_URL` only): `frontend/security-headers.conf`.{% endif %}
 
 ### Data
 
@@ -63,6 +64,14 @@ We aim to acknowledge within 48h and ship a fix within 7 days for high-severity 
 {%- if enable_rag %}
 - **RAG documents** — file uploads scoped per-org. No public read endpoint; all retrieval happens server-side during chat.
 {%- endif %}
+
+### Supply chain
+
+- **Dependencies** — `pip-audit` (backend){% if use_frontend %} and `bun audit` (frontend){% endif %} fail the pipeline on known vulnerabilities; the container image is scanned with Trivy (fixable critical and high findings fail the build).
+- **Code** — Ruff's security rules (`S`, from Bandit) run with the linter; reviewed exceptions are listed in `backend/pyproject.toml`.
+- **Secrets in the repository** — gitleaks scans the whole history in the pipeline.
+- **Agent skills** — the skills in `skills.lock.toml` are text an agent follows. Git sources are pinned to a commit and to the SHA-256 of their content; every skill is scanned before it is installed (hidden Unicode, instructions to override the agent, piping downloads into a shell, reading credential files block the install; scripts, binaries and unpinned package runs are reported). `python scripts/agent_skills.py scan` shows the findings.
+- **Bill of materials** — a CycloneDX SBOM is built for every build of the default branch.
 
 ### Hardening checklist for production
 
@@ -87,9 +96,9 @@ We aim to acknowledge within 48h and ship a fix within 7 days for high-severity 
 
 ## Known limitations
 
-- **No 2FA / MFA** out of the box. Plan to add TOTP via `pyotp` — see `notes/thingstofix.md` §A.13.
+- **No 2FA / MFA** for password accounts. Sign-in through an identity provider can enforce it there.
 - **No SAML / OIDC** beyond Google OAuth. Enterprise SSO needs custom IdP integration.
-- **No automatic PII redaction** in logs — be careful what you log.
+- **Log redaction is pattern-based** — passwords, tokens, keys and e-mail addresses are recognised by their name or format; a secret without either (a bare value in free text) is not. Keep secrets out of log calls.
 {%- if use_jwt and not enable_session_management %}
 - **No server-side session revocation** — JWTs valid until expiry. Compromised tokens require `SECRET_KEY` rotation (invalidates ALL sessions). Enable `--session-management` for selective revocation.
 {%- endif %}

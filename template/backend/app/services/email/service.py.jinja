@@ -22,7 +22,7 @@ class EmailKey(enum.StrEnum):
     WELCOME = "welcome"
     EMAIL_VERIFICATION = "email_verification"
     MAGIC_LINK = "magic_link"
-    PASSWORD_RESET = "password_reset"
+    PASSWORD_RESET = "password_reset"  # noqa: S105 - a template key
     INVITATION = "invitation"
 {%- if enable_billing %}
     PAYMENT_SUCCEEDED = "payment_succeeded"
