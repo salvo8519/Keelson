@@ -605,6 +605,7 @@ services:
       - DEBUG=false
       - POSTGRES_HOST=db
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_APP_PASSWORD=${POSTGRES_APP_PASSWORD}
 {%- if enable_redis %}
       - REDIS_HOST=redis
       - REDIS_PASSWORD=${REDIS_PASSWORD}

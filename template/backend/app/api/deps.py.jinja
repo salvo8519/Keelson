@@ -27,9 +27,15 @@ from app.core.config import settings
 {%- if use_database %}
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.session import get_db_session
+from app.db.session import get_db_session, system_session
 
-DBSession = Annotated[AsyncSession, Depends(get_db_session)]
+# Keelson: scope="function" commits the session when the route returns, before the response
+# is sent. With the default scope FastAPI sends the response first, so a failed commit (a
+# constraint, a row level security check) reached the client as a success.
+DBSession = Annotated[AsyncSession, Depends(get_db_session, scope="function")]
+{%- endif %}
+{%- if enable_teams and use_postgresql %}
+from app.db.tenancy import bind_organization, bind_service, bind_user
 {%- endif %}
 {%- if use_jwt %}
 from uuid import UUID
@@ -83,6 +89,31 @@ def get_session_service(db: DBSession) -> SessionService:
 
 
 UserSvc = Annotated[UserService, Depends(get_user_service)]
+{%- if enable_teams and use_postgresql %}
+from collections.abc import AsyncGenerator
+
+from fastapi import Request
+
+
+async def get_system_db_session(request: Request) -> AsyncGenerator[AsyncSession, None]:
+    """Keelson: a system session for a route that acts before anyone is known (sign-in,
+    registration, tokens). The route is logged as the reason (app/db/session.py)."""
+    async with system_session(f"{request.method} {request.url.path}") as session:
+        yield session
+
+
+SystemDBSession = Annotated[AsyncSession, Depends(get_system_db_session, scope="function")]
+
+
+def get_auth_user_service(db: SystemDBSession) -> UserService:
+    """Users looked up by e-mail or token, before authentication."""
+    return UserService(db)
+
+
+AuthUserSvc = Annotated[UserService, Depends(get_auth_user_service)]
+{%- else %}
+AuthUserSvc = UserSvc
+{%- endif %}
 {%- if enable_session_management %}
 SessionSvc = Annotated[SessionService, Depends(get_session_service)]
 {%- endif %}
@@ -314,6 +345,11 @@ async def get_current_user(
     if user_id is None:
         raise AuthenticationError(message="Invalid token payload")
 
+{%- if enable_teams and use_postgresql %}
+    # Keelson: the verified subject becomes the principal of the request before any query, so
+    # the database applies its policies as this user (app/db/tenancy.py).
+    await bind_user(user_service.db, UUID(user_id))
+{%- endif %}
     user = await user_service.get_by_id(UUID(user_id))
     if not user.is_active:
         raise AuthenticationError(message="User account is disabled")
@@ -382,9 +418,6 @@ CurrentAdmin = Annotated[User, Depends(RoleChecker(UserRole.ADMIN))]
 {%- if enable_teams %}
 from app.core.exceptions import AuthorizationError, NotFoundError
 from app.db.models.organization import Organization, OrgRole
-{%- if use_postgresql %}
-from app.db.tenancy import bind_organization
-{%- endif %}
 
 # Module-level alias so tests can patch via `app.api.deps._member_repo`.
 # RequireOrgRole methods reference this alias instead of importing the repo
@@ -596,6 +629,12 @@ async def get_current_user_ws(
     user_id = payload.get("sub")
     if user_id is None:
         raise WebSocketException(code=4001, reason="Invalid token payload")
+{%- if enable_teams and use_postgresql %}
+
+    # Keelson: the connection acts as this user; agent turns, started as tasks of the
+    # connection, inherit it (app/db/tenancy.py).
+    await bind_user(None, UUID(user_id))
+{%- endif %}
 
     async with get_db_context() as db:
         user_service = UserService(db)
@@ -684,14 +723,16 @@ ApiKeySvc = Annotated[ApiKeyService, Depends(get_api_key_service)]
 async def get_api_key_principal(
     request: Request,
     db: DBSession,
-    service: ApiKeySvc,
     api_key: Annotated[str | None, Depends(api_key_header)],
 ) -> ApiKeyPrincipal:
     """Authenticate the request by its API key and bind it to the key's organization."""
     if api_key is None:
         raise AuthenticationError(message="API key header missing")
-    key = await service.authenticate(api_key)
-    await bind_organization(db, key.organization_id)
+    # Keelson: the key is found by its prefix before anyone is known: a system lookup. The
+    # request then acts as the key's organization (a service principal, not a person).
+    async with system_session("API key authentication") as system_db:
+        key = await ApiKeyService(system_db).authenticate(api_key)
+    await bind_service(db, key.organization_id)
 {%- if enable_rate_limiting %}
     await check_rate_limit(
         category=RateLimitCategory.API_KEY,
@@ -879,17 +920,123 @@ UserSlashCommandSvc = Annotated[
     UserSlashCommandService, Depends(get_user_slash_command_service)
 ]
 {%- endif %}
+{%- if enable_teams and use_postgresql and use_jwt %}
+
+
+# --- Keelson: work outside row level security, declared ------------------------------------
+# Each of these opens the owner login through system_session(reason): the platform
+# administration (only after the admin check, naming the admin), and the public routes that
+# find their data by a token before anyone is known.
+
+
+async def get_admin_db_session(
+    request: Request, admin: CurrentAdmin
+) -> AsyncGenerator[AsyncSession, None]:
+    reason = f"platform admin {admin.id}: {request.method} {request.url.path}"
+    async with system_session(reason) as session:
+        yield session
+
+
+AdminDBSession = Annotated[AsyncSession, Depends(get_admin_db_session, scope="function")]
+{%- endif %}
 {%- if use_database %}
 from app.services.admin import AdminService
 
 
-def get_admin_service(db: DBSession) -> AdminService:
+def get_admin_service(
+    db: {% if enable_teams and use_postgresql and use_jwt %}AdminDBSession{% else %}DBSession{% endif %},
+) -> AdminService:
     """Create AdminService instance — used by admin REST routes (always
     available, independent of the optional SQLAdmin UI)."""
     return AdminService(db)
 
 
 AdminSvc = Annotated[AdminService, Depends(get_admin_service)]
+{%- endif %}
+{%- if enable_teams and use_postgresql and use_jwt %}
+
+
+def get_admin_user_service(db: AdminDBSession) -> UserService:
+    return UserService(db)
+
+
+AdminUserSvc = Annotated[UserService, Depends(get_admin_user_service)]
+{%- if use_ai %}
+
+
+def get_admin_conversation_service(db: AdminDBSession) -> ConversationService:
+    return ConversationService(db)
+
+
+AdminConversationSvc = Annotated[ConversationService, Depends(get_admin_conversation_service)]
+
+
+def get_public_conversation_service(db: SystemDBSession) -> ConversationService:
+    """Public demos: conversations marked as demo, readable by anyone."""
+    return ConversationService(db)
+
+
+PublicConversationSvc = Annotated[ConversationService, Depends(get_public_conversation_service)]
+
+
+def get_organization_aggregate_service(db: SystemDBSession) -> ConversationService:
+    """Aggregates over an organization's conversations (counts only, never content)."""
+    return ConversationService(db)
+
+
+OrganizationAggregateSvc = Annotated[
+    ConversationService, Depends(get_organization_aggregate_service)
+]
+
+
+def get_public_share_service(db: SystemDBSession) -> ConversationShareService:
+    """Shared links: a conversation found by its share token."""
+    return ConversationShareService(db)
+
+
+PublicShareSvc = Annotated[ConversationShareService, Depends(get_public_share_service)]
+{%- endif %}
+{%- if use_ai %}
+
+
+def get_admin_rating_service(db: AdminDBSession) -> MessageRatingService:
+    return MessageRatingService(db)
+
+
+AdminRatingSvc = Annotated[MessageRatingService, Depends(get_admin_rating_service)]
+{%- endif %}
+
+{%- if enable_rag %}
+
+
+def get_admin_rag_document_service(db: AdminDBSession) -> RAGDocumentService:
+    return RAGDocumentService(db)
+
+
+def get_admin_rag_sync_service(db: AdminDBSession) -> RAGSyncService:
+    return RAGSyncService(db)
+
+
+def get_admin_sync_source_service(db: AdminDBSession) -> SyncSourceService:
+    return SyncSourceService(db)
+
+
+def get_admin_knowledge_base_service(db: AdminDBSession) -> KnowledgeBaseService:
+    return KnowledgeBaseService(db)
+
+
+AdminRAGDocumentSvc = Annotated[RAGDocumentService, Depends(get_admin_rag_document_service)]
+AdminRAGSyncSvc = Annotated[RAGSyncService, Depends(get_admin_rag_sync_service)]
+AdminSyncSourceSvc = Annotated[SyncSourceService, Depends(get_admin_sync_source_service)]
+AdminKnowledgeBaseSvc = Annotated[KnowledgeBaseService, Depends(get_admin_knowledge_base_service)]
+{%- endif %}
+
+def get_system_invitation_service(db: SystemDBSession) -> InvitationService:
+    """Accepting an invitation: the invitee is not a member yet, the token proves the right."""
+    return InvitationService(db)
+
+
+SystemInvitationSvc = Annotated[InvitationService, Depends(get_system_invitation_service)]
 {%- endif %}
 {%- if enable_mcp_client %}
 from app.services.mcp_connection import McpConnectionService

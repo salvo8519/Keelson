@@ -9,7 +9,7 @@ import asyncio
 import click
 
 from app.commands import command, error, success, warning
-from app.db.session import get_db_context
+from app.db.session import system_session
 from app.repositories import user_repo
 
 
@@ -21,7 +21,7 @@ def create_app_admin(email: str, revoke: bool) -> None:
 
 
 async def _run(email: str, revoke: bool) -> None:
-    async with get_db_context() as db:
+    async with system_session("command line: create-app-admin") as db:
         user = await user_repo.get_by_email(db, email)
         if not user:
             error(f"No user found with email: {email}")

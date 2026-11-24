@@ -22,7 +22,7 @@ from pathlib import Path
 import click
 
 from app.commands import command, error, info, success, warning
-from app.db.session import get_db_context
+from app.db.session import system_session
 from app.schemas.sync_source import SyncSourceCreate
 from app.services.rag.config import DocumentExtensions, RAGSettings
 from app.services.rag.documents import DocumentProcessor
@@ -177,7 +177,7 @@ async def ingest_path_async(
     replaced_count = 0
     skipped_count = 0
 
-    async with get_db_context() as db:
+    async with system_session("command line: rag") as db:
         tenant = await collection_tenant(db, collection)
         sync_log = await RAGSyncService(db).create_sync_log(
             source="local", collection_name=collection, mode=sync_mode
@@ -216,7 +216,7 @@ async def ingest_path_async(
                         skipped_count += 1
                         continue
 
-            async with get_db_context() as db:
+            async with system_session("command line: rag") as db:
                 rag_doc = await RAGDocumentService(db).create_document(
                     collection_name=collection,
                     filename=filepath.name,
@@ -233,24 +233,24 @@ async def ingest_path_async(
                     success_count += 1
                     if result.message and "replaced" in result.message:
                         replaced_count += 1
-                    async with get_db_context() as db:
+                    async with system_session("command line: rag") as db:
                         await RAGDocumentService(db).complete_ingestion(
                             doc_id, vector_document_id=result.document_id
                         )
                 else:
                     error_count += 1
                     tqdm.write(f"  FAILED {filepath.name}: {result.error_message}")
-                    async with get_db_context() as db:
+                    async with system_session("command line: rag") as db:
                         await RAGDocumentService(db).fail_ingestion(
                             doc_id, error_message=result.error_message or "Unknown error"
                         )
             except Exception as e:
                 error_count += 1
                 tqdm.write(f"  FAILED {filepath.name}: {e!s}")
-                async with get_db_context() as db:
+                async with system_session("command line: rag") as db:
                     await RAGDocumentService(db).fail_ingestion(doc_id, error_message=str(e))
 
-    async with get_db_context() as db:
+    async with system_session("command line: rag") as db:
         await RAGSyncService(db).complete_sync(
             sync_log_id,
             status="done" if error_count == 0 else "error",
@@ -317,7 +317,7 @@ def rag_ingest(path: str, collection: str, recursive: bool, replace: bool, sync_
 
 
 async def _tenant(collection: str) -> str:
-    async with get_db_context() as db:
+    async with system_session("command line: rag") as db:
         return await collection_tenant(db, collection)
 
 
@@ -546,7 +546,7 @@ def rag_sources() -> None:
     """List all configured sync sources with their status."""
 
     async def _list() -> None:
-        async with get_db_context() as db:
+        async with system_session("command line: rag") as db:
 
             svc = SyncSourceService(db)
             sources = await svc.list_sources()
@@ -625,7 +625,7 @@ def rag_source_add(
     )
 
     async def _create() -> None:
-        async with get_db_context() as db:
+        async with system_session("command line: rag") as db:
 
             svc = SyncSourceService(db)
             try:
@@ -653,7 +653,7 @@ def rag_source_remove(source_id: str, yes: bool) -> None:
         click.confirm(f"Are you sure you want to remove sync source '{source_id}'?", abort=True)
 
     async def _remove() -> None:
-        async with get_db_context() as db:
+        async with system_session("command line: rag") as db:
 
             svc = SyncSourceService(db)
             try:
@@ -683,7 +683,7 @@ def rag_source_sync(source_id: str | None, sync_all: bool) -> None:
         return
 
     async def _sync() -> None:
-        async with get_db_context() as db:
+        async with system_session("command line: rag") as db:
 
             svc = SyncSourceService(db)
 

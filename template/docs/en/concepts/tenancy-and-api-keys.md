@@ -12,18 +12,48 @@ using it.
 
 ## Isolation in the database
 
-Repositories filter their queries by organization. PostgreSQL row level security adds a second,
-independent barrier:
+The database enforces the separation itself, so a forgotten filter in the code cannot leak
+another tenant's rows.
 
-- once a request has resolved its active organization, its database session is bound to it;
-- every transaction of a bound session runs under a restricted role whose policies show and
-  accept only that organization's rows;
-- a query that forgets the filter returns nothing from other organizations, and an insert for
-  another organization is refused by the database.
+**Two logins.** `POSTGRES_USER` owns the tables and runs the migrations. Requests use a second
+login, `POSTGRES_APP_USER`, created by the migrations: it does not own the tables, cannot bypass
+row level security and acts through a restricted role.
 
-The isolated tables are listed in `app/db/tenancy.py`. A test fails when a table with an
-`organization_id` column is neither isolated nor exempted with a reason, so a new table cannot
-be forgotten.
+**Who acts, in every transaction.** Authentication states the principal of the request, and
+every transaction of the application login writes it into transaction-local settings:
+
+| Principal | Set by | Sees |
+| --- | --- | --- |
+| User | a JWT or a session | their own rows, their organizations' rows, the people they share an organization with |
+| Organization | the active organization, after the membership check | narrows the user to that organization |
+| Service | an API key | its organization's data, not members' private conversations; it cannot manage keys |
+| None | no authentication | nothing: the policies fail closed |
+
+**Policies per table and command.** Highlights:
+
+- a conversation is private to its author unless shared; owners and administrators of an
+  organization see aggregates (tool usage, ratings), never members' chats;
+- roles are checked in the database too: only owners and administrators manage API keys,
+  members and invitations;
+- the audit log is append-only for the application: an entry names its own actor and cannot
+  be read, changed or deleted by it.
+
+**System sessions.** Work that has no user yet or spans tenants uses the owner login through
+`system_session(reason)`, and every use is logged with its reason on the `app.db.system`
+logger: sign-in, registration and token lookups, the platform administration (after the admin
+check, naming the admin), the command line and background workers. Workers act across
+organizations by design, so their code filters explicitly.
+
+**Tests.** The policies are listed in `app/db/tenancy.py`. A test fails when a table is neither
+covered by a policy nor closed with a reason, so a new table cannot be forgotten. Attack tests
+run against a real PostgreSQL with the application login: no principal, another user, another
+organization, a member against an owner's data, forged writes and an API key.
+
+**Limits.** The principal is set by the application on its own connection. SQL injected into
+the application login could change those settings and act as someone else; the defence is the
+one the code already follows (SQLAlchemy with bound parameters, no SQL built from input). A
+context signed by the application and verified in the database would remove this limit and is
+a possible future step.
 
 ## Knowledge bases and vectors
 
@@ -57,8 +87,8 @@ the API keys page or at `/api/v1/api-keys`.
 | Limits | Requests are limited per key and per organization |
 | Audit | Creation, rotation, revocation and refused uses are recorded in the audit log |
 
-A request authenticated by a key acts on the key's organization, under the same row level
-security as a user request. To protect a route with a key:
+A request authenticated by a key acts as a service principal of the key's organization (see
+the table above), under row level security like a user request. To protect a route with a key:
 
 ```python
 from fastapi import Depends

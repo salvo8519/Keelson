@@ -33,3 +33,76 @@ async def require_postgres(what: str) -> None:
     if not await reachable():
         pytest.skip(f"No live PostgreSQL for the {what} tests")
 {%- endif %}
+{%- if use_postgresql and enable_teams %}
+
+
+# --- A segregated database for the tests -------------------------------------------------
+
+import uuid  # noqa: E402
+from collections.abc import AsyncIterator, Iterator  # noqa: E402
+from contextlib import asynccontextmanager, contextmanager  # noqa: E402
+from dataclasses import dataclass  # noqa: E402
+
+from sqlalchemy import text  # noqa: E402
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine  # noqa: E402
+
+import app.db.models  # noqa: E402, F401  (registers every table on the metadata)
+from app.db.base import Base  # noqa: E402
+from app.db.session import REQUEST_SESSION  # noqa: E402
+from app.db.tenancy import TENANT_ROLE, Principal, _principal, segregation_statements  # noqa: E402
+
+
+@dataclass
+class SegregatedDatabase:
+    system: async_sessionmaker[AsyncSession]  # the owner login, outside the policies
+    app: async_sessionmaker[AsyncSession]  # the application role, under the policies
+
+
+@asynccontextmanager
+async def segregated_database() -> AsyncIterator[SegregatedDatabase]:
+    """Every table of the project in a throwaway schema, segregated as the migration does it.
+
+    The application sessions connect as the owner and assume ``TENANT_ROLE`` at connection
+    time, which puts them under exactly the policies of the application login.
+    """
+    schema = f"seg_{uuid.uuid4().hex[:12]}"
+    admin = create_async_engine(settings.DATABASE_URL)
+    async with admin.begin() as connection:
+        await connection.execute(text(f'CREATE SCHEMA "{schema}"'))
+    system_engine = create_async_engine(
+        settings.DATABASE_URL, connect_args={"server_settings": {"search_path": schema}}
+    )
+    async with system_engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+        await connection.execute(text("SET LOCAL check_function_bodies = off"))
+        for statement in segregation_statements(set(Base.metadata.tables), schema):
+            await connection.execute(text(statement))
+    app_engine = create_async_engine(
+        settings.DATABASE_URL,
+        connect_args={"server_settings": {"search_path": schema, "role": TENANT_ROLE}},
+    )
+    try:
+        yield SegregatedDatabase(
+            system=async_sessionmaker(system_engine, class_=AsyncSession, expire_on_commit=False),
+            app=async_sessionmaker(
+                app_engine, class_=AsyncSession, expire_on_commit=False, info={REQUEST_SESSION: True}
+            ),
+        )
+    finally:
+        await app_engine.dispose()
+        await system_engine.dispose()
+        async with admin.begin() as connection:
+            await connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
+            await connection.execute(text(f'DROP SCHEMA IF EXISTS "{schema}_security" CASCADE'))
+        await admin.dispose()
+
+
+@contextmanager
+def acting_as(principal: Principal | None) -> Iterator[None]:
+    """Run the block as ``principal`` (what authentication does for a request)."""
+    token = _principal.set(principal)
+    try:
+        yield
+    finally:
+        _principal.reset(token)
+{%- endif %}

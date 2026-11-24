@@ -1,71 +1,282 @@
 {%- if enable_teams and use_postgresql %}
-"""Tenant isolation enforced by PostgreSQL row level security (Keelson).
+"""Segregation of users and organizations enforced by PostgreSQL (Keelson).
 
-Repositories filter by ``organization_id`` in their queries. This module adds the database
-as a second, independent barrier: once a session is bound to an organization, every
-transaction of that session runs under a restricted role whose row level security policies
-show and accept only that organization's rows. A query that forgets the filter returns
-nothing from other organizations, and an insert for another organization is refused.
+The application filters its queries by user and organization. The database enforces the same
+rules on its own, so a query that forgets a filter, or code that never applies one, still
+cannot read or write another tenant's rows.
 
-How it works:
+Two logins (see docs/en/concepts/tenancy-and-api-keys.md):
 
-* The migration ``k0001_tenant_row_level_security`` creates the role ``TENANT_ROLE`` (no
-  login), grants it the table privileges, and creates one policy per table in
-  ``TENANT_TABLES``. The policies apply to ``TENANT_ROLE`` only: sessions that are not bound
-  (migrations, administration, workers that span organizations) keep the owner's view.
-* ``bind_organization(session, org_id)`` marks the session. At the start of each of its
-  transactions, a listener runs ``SET LOCAL ROLE`` and sets ``TENANT_SETTING`` for that
-  transaction only, so nothing leaks to the next user of a pooled connection.
+* the **application login** (``POSTGRES_APP_USER``) serves requests. It is a member of
+  ``TENANT_ROLE``, does not own the tables and cannot bypass row level security: every table
+  has row level security enabled and, for this role, a policy per operation below. A table
+  without a policy is closed to it.
+* the **owner login** (``POSTGRES_USER``) runs the migrations and the explicit system work
+  that has no user yet or spans tenants: sign-in and registration, lookups by token (API keys,
+  invitations, shared links), workers, the command line and the platform administration. Code
+  reaches it only through ``app.db.session.system_session(reason)``, which logs the reason.
 
-Rows whose ``organization_id`` is NULL are personal rows of their user: they stay visible
-under the policy and remain protected by the user filter of the repositories. New rows must
-carry the bound organization.
+Every transaction of the application login states who is acting, in transaction-local
+settings written by the listener below from the request's ``Principal``: a user (and the
+active organization) or an API key (the service principal of one organization). With no
+principal the settings are empty and the policies return nothing: the database fails closed.
+
+The rules (``POLICIES``) mirror the application's access model:
+
+* personal data (conversations, slash commands, ratings, files) belongs to its user; a member's
+  conversations are private to them and to whom they share them with, also from the
+  organization's owners and admins (they get aggregates only, through the system session);
+* organization data is visible to the organization's members, and to its API keys;
+* managing API keys, members and invitations needs the owner or admin role, in the database too;
+* child rows (messages, tool calls, sync logs) follow their parent;
+* the audit log is append-only: the application can write it, not read it.
+
+Policies are declared here and applied by migrations (``segregation_statements``); a change to
+them ships with a migration that applies them again. ``tests/test_segregation_postgres.py``
+attacks every table against a real database.
 """
 
+from __future__ import annotations
+
+from contextvars import ContextVar
+from dataclasses import dataclass, replace
 from uuid import UUID
 
 from sqlalchemy import event, text
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session, SessionTransaction
+from starlette.types import ASGIApp, Receive, Scope, Send
 
-# Restricted role used by bound sessions. Roles are cluster-wide in PostgreSQL, so the name
-# carries the project, keeping projects that share a server apart.
+from app.db.session import REQUEST_SESSION
+
+# Group role of the application login (no login of its own). Roles are cluster-wide in
+# PostgreSQL, so the names carry the project: projects sharing a server stay apart.
 TENANT_ROLE = "{{ project_slug }}_tenant"
+# Schema of the functions the policies use ("<schema>_security" for another schema).
+SECURITY_SCHEMA = "app_security"
+# Transaction-local settings describing who acts.
+USER_SETTING = "app.current_user_id"
+ORGANIZATION_SETTING = "app.current_organization_id"
+PRINCIPAL_SETTING = "app.current_principal"
+POLICY_PREFIX = "keelson_"
+# Tables the application login must not touch at all.
+CLOSED_TABLES = ("alembic_version",)
 
-# Transaction-local setting that holds the organization of the bound session.
-TENANT_SETTING = "app.current_organization_id"
+# Policies name the security schema "@"; table_statements writes the real one.
+S = "@"
+ME = f"{S}.current_user_id()"
 
-# Tables isolated by organization. The migration skips the ones a project does not have.
-TENANT_TABLES = ("conversations", "knowledge_bases", "rag_documents", "sync_sources", "api_keys")
 
-# Tables that carry organization_id but are not isolated, with the reason. A test fails when a
-# table with organization_id is in neither list, so a new table cannot be forgotten.
-UNISOLATED_TABLES = {
-    "organization_members": "membership lookups span the organizations of a user",
-    "invitations": "an invitation is read by its token before the invitee is a member",
-    "app_admin_audit_logs": "written by system processes and read by application administrators",
-    "subscription": "billing, updated by payment webhooks outside any organization session",
-    "credit_transaction": "billing, updated by payment webhooks outside any organization session",
-    "usage_event": "billing, written by metering outside any organization session",
+def security_schema(schema: str) -> str:
+    return SECURITY_SCHEMA if schema == "public" else f"{schema}_security"
+
+
+@dataclass(frozen=True)
+class Policy:
+    command: str  # ALL, SELECT, INSERT, UPDATE, DELETE
+    using: str | None = None
+    check: str | None = None
+
+
+def _all(rule: str) -> list[Policy]:
+    return [Policy("ALL", using=rule, check=rule)]
+
+
+_CONVERSATION_WRITERS = f"{S}.conversation_access(conversation_id) IN ('owner', 'edit')"
+_ORG_ADMIN = f"{S}.has_org_role(organization_id, ARRAY['owner', 'admin'])"
+_KB_VISIBLE = (
+    f"(scope = 'personal' AND owner_user_id = {ME})"
+    f" OR (scope = 'org' AND {S}.in_organization(organization_id))"
+    # The application's knowledge bases are for every authenticated principal, not anyone.
+    f" OR (scope = 'app' AND ({ME} IS NOT NULL OR {S}.is_service()))"
+)
+_KB_WRITABLE = (
+    f"(scope = 'personal' AND owner_user_id = {ME})"
+    f" OR (scope = 'org' AND {S}.in_organization(organization_id))"
+)
+
+# table -> policies for TENANT_ROLE. Tables in UNISOLATED_TABLES carry the reason they have
+# none (closed to the application login). Tables a project does not have are skipped.
+POLICIES: dict[str, list[Policy]] = {
+    "users": [
+        Policy("SELECT", using=f"id = {ME} OR {S}.shares_organization(id)"),
+        Policy("UPDATE", using=f"id = {ME}", check=f"id = {ME}"),
+    ],
+    "organizations": [
+        Policy("SELECT", using=f"{S}.in_organization(id) OR created_by_user_id = {ME}"),
+        Policy("INSERT", check=f"created_by_user_id = {ME}"),
+        Policy(
+            "UPDATE",
+            using=f"{S}.has_org_role(id, ARRAY['owner', 'admin'])",
+            check=f"{S}.has_org_role(id, ARRAY['owner', 'admin'])",
+        ),
+        Policy("DELETE", using=f"{S}.has_org_role(id, ARRAY['owner'])"),
+    ],
+    "organization_members": [
+        Policy("SELECT", using=f"user_id = {ME} OR {S}.in_organization(organization_id)"),
+        # An organization's creator becomes its first owner; everyone else is added by an
+        # owner or admin, or through an invitation (system session).
+        Policy(
+            "INSERT",
+            check=f"{_ORG_ADMIN} OR (user_id = {ME} AND {S}.created_organization(organization_id))",
+        ),
+        Policy("UPDATE", using=_ORG_ADMIN, check=_ORG_ADMIN),
+        Policy("DELETE", using=f"{_ORG_ADMIN} OR user_id = {ME}"),
+    ],
+    "invitations": _all(_ORG_ADMIN),
+    "api_keys": _all(_ORG_ADMIN),
+    "conversations": [
+        Policy(
+            "SELECT",
+            using=f"user_id = {ME} OR {S}.conversation_access(id) IS NOT NULL"
+            f" OR (user_id IS NULL AND {S}.is_service() AND {S}.in_organization(organization_id))",
+        ),
+        Policy(
+            "INSERT",
+            check=f"(user_id = {ME} AND (organization_id IS NULL OR {S}.in_organization(organization_id)))"
+            f" OR (user_id IS NULL AND {S}.is_service() AND {S}.in_organization(organization_id))",
+        ),
+        Policy(
+            "UPDATE",
+            using=f"{S}.conversation_access(id) IN ('owner', 'edit')",
+            check=f"{S}.conversation_access(id) IN ('owner', 'edit')",
+        ),
+        Policy("DELETE", using=f"{S}.conversation_access(id) = 'owner'"),
+    ],
+    "conversation_shares": [
+        Policy("SELECT", using=f"shared_by = {ME} OR shared_with = {ME}"),
+        Policy(
+            "INSERT",
+            check=f"shared_by = {ME} AND {S}.conversation_access(conversation_id) = 'owner'",
+        ),
+        Policy("UPDATE", using=f"shared_by = {ME}", check=f"shared_by = {ME}"),
+        Policy("DELETE", using=f"shared_by = {ME} OR shared_with = {ME}"),
+    ],
+    "messages": [
+        Policy("SELECT", using=f"{S}.conversation_access(conversation_id) IS NOT NULL"),
+        Policy("INSERT", check=_CONVERSATION_WRITERS),
+        Policy("UPDATE", using=_CONVERSATION_WRITERS, check=_CONVERSATION_WRITERS),
+        Policy("DELETE", using=f"{S}.conversation_access(conversation_id) = 'owner'"),
+    ],
+    "tool_calls": _all("EXISTS (SELECT 1 FROM messages m WHERE m.id = message_id)"),
+    "message_ratings": _all(
+        f"user_id = {ME} AND EXISTS (SELECT 1 FROM messages m WHERE m.id = message_id)"
+    ),
+    "chat_files": [
+        Policy(
+            "SELECT",
+            using=f"user_id = {ME}"
+            " OR (message_id IS NOT NULL AND EXISTS (SELECT 1 FROM messages m WHERE m.id = message_id))",
+        ),
+        Policy("INSERT", check=f"user_id = {ME}"),
+        Policy("UPDATE", using=f"user_id = {ME}", check=f"user_id = {ME}"),
+        Policy("DELETE", using=f"user_id = {ME}"),
+    ],
+    "user_slash_commands": _all(f"user_id = {ME}"),
+    "knowledge_bases": [
+        Policy("SELECT", using=_KB_VISIBLE),
+        Policy("INSERT", check=_KB_WRITABLE),
+        Policy("UPDATE", using=_KB_WRITABLE, check=_KB_WRITABLE),
+        Policy("DELETE", using=_KB_WRITABLE),
+    ],
+    "rag_documents": _all(
+        f"(organization_id IS NOT NULL AND {S}.in_organization(organization_id))"
+        " OR (knowledge_base_id IS NOT NULL"
+        " AND EXISTS (SELECT 1 FROM knowledge_bases k WHERE k.id = knowledge_base_id))"
+    ),
+    "sync_sources": _all(f"organization_id IS NOT NULL AND {S}.in_organization(organization_id)"),
+    "sync_logs": _all(
+        "sync_source_id IS NOT NULL AND EXISTS (SELECT 1 FROM sync_sources s WHERE s.id = sync_source_id)"
+    ),
+    # Append-only for the application: it records, only system code reads.
+    # Written, never read, by the application login: an entry names its own actor, or the
+    # organization of the API key that acts. Read by the platform administration only.
+    "app_admin_audit_logs": [
+        Policy(
+            "INSERT",
+            check=f"actor_user_id = {ME}"
+            f" OR ({S}.is_service() AND organization_id = {S}.current_organization_id())",
+        )
+    ],
 }
 
-POLICY_NAME = "tenant_isolation"
+# Tables closed to the application login (no policy), with the reason. A test fails when a
+# table of the project is in neither POLICIES nor here, so a new table cannot be forgotten.
+UNISOLATED_TABLES: dict[str, str] = {
+    "subscription": "billing, updated by payment webhooks through the system session",
+    "credit_transaction": "billing, updated by payment webhooks through the system session",
+    "usage_event": "billing, written by metering through the system session",
+}
 
-_SESSION_KEY = "keelson_organization_id"
-_CURRENT = f"NULLIF(current_setting('{TENANT_SETTING}', true), '')::uuid"
+
+def _functions(schema: str) -> list[str]:
+    """Functions the policies use. SECURITY DEFINER ones run as the owner, so they read the
+    membership and share tables without recursing into those tables' own policies."""
+    member = (
+        "SELECT EXISTS (SELECT 1 FROM organization_members m"
+        f" WHERE m.organization_id = org AND m.user_id = {S}.current_user_id())"
+    )
+    definer = f'LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, "{schema}"'
+    statements = [
+        f'CREATE SCHEMA IF NOT EXISTS "{S}"',
+        f"""CREATE OR REPLACE FUNCTION {S}.current_user_id() RETURNS uuid LANGUAGE sql STABLE AS
+            $$ SELECT NULLIF(current_setting('{USER_SETTING}', true), '')::uuid $$""",
+        f"""CREATE OR REPLACE FUNCTION {S}.current_organization_id() RETURNS uuid LANGUAGE sql STABLE AS
+            $$ SELECT NULLIF(current_setting('{ORGANIZATION_SETTING}', true), '')::uuid $$""",
+        f"""CREATE OR REPLACE FUNCTION {S}.is_service() RETURNS boolean LANGUAGE sql STABLE AS
+            $$ SELECT current_setting('{PRINCIPAL_SETTING}', true) = 'service' $$""",
+        f"""CREATE OR REPLACE FUNCTION {S}.is_member(org uuid) RETURNS boolean {definer} AS
+            $$ {member} $$""",
+        # A user belongs to an organization through membership; an API key acts for its own.
+        f"""CREATE OR REPLACE FUNCTION {S}.in_organization(org uuid) RETURNS boolean {definer} AS
+            $$ SELECT org IS NOT NULL AND (
+                ({S}.is_service() AND org = {S}.current_organization_id())
+                OR (NOT {S}.is_service() AND EXISTS (SELECT 1 FROM organization_members m
+                    WHERE m.organization_id = org AND m.user_id = {S}.current_user_id()))) $$""",
+        f"""CREATE OR REPLACE FUNCTION {S}.has_org_role(org uuid, roles text[]) RETURNS boolean {definer} AS
+            $$ SELECT NOT {S}.is_service() AND EXISTS (SELECT 1 FROM organization_members m
+                WHERE m.organization_id = org AND m.user_id = {S}.current_user_id()
+                AND m.role::text = ANY (roles)) $$""",
+        f"""CREATE OR REPLACE FUNCTION {S}.shares_organization(other uuid) RETURNS boolean {definer} AS
+            $$ SELECT EXISTS (SELECT 1 FROM organization_members mine
+                JOIN organization_members theirs ON theirs.organization_id = mine.organization_id
+                WHERE mine.user_id = {S}.current_user_id() AND theirs.user_id = other) $$""",
+        f"""CREATE OR REPLACE FUNCTION {S}.created_organization(org uuid) RETURNS boolean {definer} AS
+            $$ SELECT EXISTS (SELECT 1 FROM organizations o
+                WHERE o.id = org AND o.created_by_user_id = {S}.current_user_id()) $$""",
+        # 'owner', 'edit', 'view' or NULL: how the acting user may use a conversation.
+        f"""CREATE OR REPLACE FUNCTION {S}.conversation_access(conv uuid) RETURNS text {definer} AS
+            $$ SELECT CASE
+                WHEN c.user_id IS NOT NULL AND c.user_id = {S}.current_user_id() THEN 'owner'
+                WHEN c.user_id IS NULL AND {S}.is_service()
+                    AND c.organization_id = {S}.current_organization_id() THEN 'owner'
+                ELSE (SELECT s.permission::text FROM conversation_shares s
+                      WHERE s.conversation_id = c.id AND s.shared_with = {S}.current_user_id()
+                      ORDER BY (s.permission::text = 'edit') DESC LIMIT 1)
+               END
+               FROM conversations c WHERE c.id = conv $$""",
+    ]
+    return [_resolve(statement, schema) for statement in statements]
 
 
-def grant_statements(schema: str = "public") -> list[str]:
-    """SQL that creates the restricted role and grants it the privileges of the application."""
+def _resolve(statement: str, schema: str) -> str:
+    return statement.replace('"@"', f'"{security_schema(schema)}"').replace(
+        "@.", f'"{security_schema(schema)}".'
+    )
+
+
+def role_statements(schema: str = "public") -> list[str]:
+    """The group role of the application login, with the privileges of the application."""
     return [
         f"""
         DO $$ BEGIN
             IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{TENANT_ROLE}') THEN
-                CREATE ROLE "{TENANT_ROLE}" NOLOGIN;
+                CREATE ROLE "{TENANT_ROLE}" NOLOGIN NOBYPASSRLS;
             END IF;
         END $$
         """,
+        # The owner may act as the group (tests and support sessions use SET ROLE).
         f'GRANT "{TENANT_ROLE}" TO CURRENT_USER',
         f'GRANT USAGE ON SCHEMA "{schema}" TO "{TENANT_ROLE}"',
         f'GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA "{schema}" TO "{TENANT_ROLE}"',
@@ -77,60 +288,159 @@ def grant_statements(schema: str = "public") -> list[str]:
     ]
 
 
-def policy_statements(table: str) -> list[str]:
-    """SQL that isolates ``table`` by organization for the restricted role."""
+def login_statements(user: str, password: str) -> list[str]:
+    """The application login: member of TENANT_ROLE, no ownership, no bypass of the policies."""
+    secret = password.replace("'", "''")
     return [
+        f"""
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{user}') THEN
+                CREATE ROLE "{user}" LOGIN NOBYPASSRLS NOCREATEDB NOCREATEROLE PASSWORD '{secret}';
+            ELSE
+                ALTER ROLE "{user}" LOGIN NOBYPASSRLS NOCREATEDB NOCREATEROLE PASSWORD '{secret}';
+            END IF;
+        END $$
+        """,
+        f'GRANT "{TENANT_ROLE}" TO "{user}"',
+    ]
+
+
+def table_statements(table: str, schema: str = "public") -> list[str]:
+    """Row level security on ``table`` with its current policies (closed when it has none)."""
+    statements = [
         f'ALTER TABLE "{table}" ENABLE ROW LEVEL SECURITY',
-        f'DROP POLICY IF EXISTS {POLICY_NAME} ON "{table}"',
-        f'CREATE POLICY {POLICY_NAME} ON "{table}" TO "{TENANT_ROLE}" '
-        f"USING (organization_id IS NULL OR organization_id = {_CURRENT}) "
-        f"WITH CHECK (organization_id = {_CURRENT})",
+        f"""
+        DO $$ DECLARE p record; BEGIN
+            FOR p IN SELECT policyname FROM pg_policies
+                     WHERE tablename = '{table}' AND schemaname = '{schema}' LOOP
+                EXECUTE format('DROP POLICY %I ON %I', p.policyname, '{table}');
+            END LOOP;
+        END $$
+        """,
     ]
+    for index, policy in enumerate(POLICIES.get(table, [])):
+        clause = f'CREATE POLICY {POLICY_PREFIX}{policy.command.lower()}_{index} ON "{table}" '
+        clause += f'FOR {policy.command} TO "{TENANT_ROLE}"'
+        if policy.using:
+            clause += f" USING ({policy.using})"
+        if policy.check:
+            clause += f" WITH CHECK ({policy.check})"
+        statements.append(_resolve(clause, schema))
+    return statements
 
 
-def drop_policy_statements(table: str) -> list[str]:
-    """SQL that removes the isolation of ``table`` (migration downgrade)."""
-    return [
-        f'DROP POLICY IF EXISTS {POLICY_NAME} ON "{table}"',
-        f'ALTER TABLE "{table}" DISABLE ROW LEVEL SECURITY',
-    ]
+def segregation_statements(tables: set[str], schema: str = "public") -> list[str]:
+    """Everything a migration applies, for the tables the database has."""
+    security = security_schema(schema)
+    statements = role_statements(schema) + _functions(schema)
+    statements.append(f'GRANT USAGE ON SCHEMA "{security}" TO "{TENANT_ROLE}"')
+    statements.append(f'GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA "{security}" TO "{TENANT_ROLE}"')
+    for table in sorted(tables):
+        if table in CLOSED_TABLES:
+            statements.append(f'REVOKE ALL ON "{table}" FROM "{TENANT_ROLE}"')
+        else:
+            statements += table_statements(table, schema)
+    return statements
 
 
-def _apply(connection: Connection, organization_id: UUID) -> None:
-    connection.execute(text(f'SET LOCAL ROLE "{TENANT_ROLE}"'))
-    connection.execute(
-        text("SELECT set_config(:name, :value, true)"),
-        {"name": TENANT_SETTING, "value": str(organization_id)},
-    )
+def removal_statements(tables: set[str], schema: str = "public") -> list[str]:
+    """Undo ``segregation_statements`` (migration downgrade); the roles are kept."""
+    statements = []
+    for table in sorted(tables - set(CLOSED_TABLES)):
+        statements += table_statements(table, schema)[1:2]  # drop the policies
+        statements.append(f'ALTER TABLE "{table}" DISABLE ROW LEVEL SECURITY')
+    statements.append(f'DROP SCHEMA IF EXISTS "{security_schema(schema)}" CASCADE')
+    return statements
+
+
+# --- Who is acting -----------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Principal:
+    """The actor of a request: a user (in an active organization), or an API key (service)."""
+
+    user_id: UUID | None = None
+    organization_id: UUID | None = None
+    service: bool = False
+
+
+_principal: ContextVar[Principal | None] = ContextVar("keelson_principal", default=None)
+
+
+def current_principal() -> Principal | None:
+    return _principal.get()
+
+
+def _settings(principal: Principal | None) -> dict[str, str]:
+    principal = principal or Principal()
+    return {
+        USER_SETTING: str(principal.user_id or ""),
+        ORGANIZATION_SETTING: str(principal.organization_id or ""),
+        PRINCIPAL_SETTING: "service" if principal.service else ("user" if principal.user_id else ""),
+    }
+
+
+def _apply(connection: Connection, principal: Principal | None) -> None:
+    for name, value in _settings(principal).items():
+        connection.execute(text("SELECT set_config(:name, :value, true)"), {"name": name, "value": value})
 
 
 @event.listens_for(Session, "after_begin")
-def _bind_transaction(
-    session: Session, transaction: SessionTransaction, connection: Connection
-) -> None:
-    """Restrict every transaction of a bound session to its organization."""
-    organization_id = session.info.get(_SESSION_KEY)
-    if organization_id is not None:
-        _apply(connection, organization_id)
+def _state_principal(session: Session, transaction: SessionTransaction, connection: Connection) -> None:
+    """Every transaction of the application login states its principal (empty: sees nothing)."""
+    if session.info.get(REQUEST_SESSION):
+        _apply(connection, _principal.get())
 
 
-async def bind_organization(session: AsyncSession, organization_id: UUID) -> None:
-    """Bind ``session`` to ``organization_id`` for the rest of its life.
-
-    Applies at once to the transaction in progress, if any, and to every later transaction.
-    A session is bound to one organization only: binding it to another raises ValueError.
-    """
-    current = session.info.get(_SESSION_KEY)
-    if current is not None and current != organization_id:
-        raise ValueError("session already bound to another organization")
-    session.info[_SESSION_KEY] = organization_id
-    if current is None and session.in_transaction():
+async def _set(session: AsyncSession | None, principal: Principal) -> None:
+    _principal.set(principal)
+    if isinstance(session, AsyncSession) and session.info.get(REQUEST_SESSION) and session.in_transaction():
         connection = await session.connection()
-        await connection.run_sync(lambda sync_connection: _apply(sync_connection, organization_id))
+        await connection.run_sync(lambda sync_connection: _apply(sync_connection, principal))
 
 
-def bound_organization(session: AsyncSession) -> UUID | None:
-    """The organization ``session`` is bound to, if any."""
-    value = session.info.get(_SESSION_KEY)
-    return value if isinstance(value, UUID) else None
+async def bind_user(session: AsyncSession | None, user_id: UUID) -> None:
+    """The request acts as ``user_id`` (verified by authentication) from now on."""
+    current = _principal.get()
+    if current is not None and current.user_id not in (None, user_id):
+        raise ValueError("request already bound to another user")
+    await _set(session, replace(current or Principal(), user_id=user_id, service=False))
+
+
+async def bind_organization(session: AsyncSession | None, organization_id: UUID) -> None:
+    """The request's active organization (membership already checked) from now on."""
+    current = _principal.get() or Principal()
+    if current.organization_id not in (None, organization_id):
+        raise ValueError("request already bound to another organization")
+    await _set(session, replace(current, organization_id=organization_id))
+
+
+async def bind_service(session: AsyncSession | None, organization_id: UUID) -> None:
+    """The request acts as an API key of ``organization_id`` (a service, not a person)."""
+    current = _principal.get()
+    if current is not None and (current.user_id is not None or current.organization_id not in (None, organization_id)):
+        raise ValueError("request already bound to another principal")
+    await _set(session, Principal(organization_id=organization_id, service=True))
+
+
+class PrincipalScope:
+    """ASGI middleware: each request or WebSocket connection starts with no principal and
+    leaves none behind, whatever task the server runs it in."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        token = _principal.set(None)
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            _principal.reset(token)
+
+
+def bound_organization(session: AsyncSession | None = None) -> UUID | None:
+    """The organization the current request acts in, if any."""
+    principal = _principal.get()
+    return principal.organization_id if principal else None
 {%- endif %}

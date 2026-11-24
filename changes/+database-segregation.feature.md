@@ -1,0 +1,1 @@
+Users and organizations are segregated in the database for every table, with a separate application login under row level security; privileged work goes through logged system sessions. Set `POSTGRES_APP_PASSWORD` in production.

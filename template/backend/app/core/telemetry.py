@@ -23,7 +23,7 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.sdk.trace.sampling import ParentBased, TraceIdRatioBased
 
 from app.core.config import settings
-from app.db.session import engine
+from app.db.session import engine, system_engine
 
 # Comma-separated regular expressions of paths that produce no spans.
 EXCLUDED_URLS = "/health,/metrics"
@@ -63,7 +63,9 @@ def setup_tracing(app: FastAPI) -> None:
     _provider = build_provider(BatchSpanProcessor(OTLPSpanExporter(endpoint=endpoint)))
     trace.set_tracer_provider(_provider)
     instrument_app(app, _provider)
-    SQLAlchemyInstrumentor().instrument(engine=engine.sync_engine, tracer_provider=_provider)
+    SQLAlchemyInstrumentor().instrument(
+        engines=[engine.sync_engine, system_engine.sync_engine], tracer_provider=_provider
+    )
     HTTPXClientInstrumentor().instrument(tracer_provider=_provider)
     RedisInstrumentor().instrument(tracer_provider=_provider)
 

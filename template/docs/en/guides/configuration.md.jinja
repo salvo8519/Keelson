@@ -91,6 +91,8 @@ Production validation: `API_KEY` cannot use the default value in
 | `POSTGRES_USER` | `postgres` | PostgreSQL user |
 | `POSTGRES_PASSWORD` | (empty) | PostgreSQL password |
 | `POSTGRES_DB` | `{{ project_slug }}` | Database name |
+| `POSTGRES_APP_USER` | `{{ project_slug }}_app` | Application login: serves requests under row level security; created by the migrations |
+| `POSTGRES_APP_PASSWORD` | `change-me-app-password` | Its password; must be changed in production |
 | `DB_POOL_SIZE` | `{{ db_pool_size }}` | Connection pool size |
 | `DB_MAX_OVERFLOW` | `{{ db_max_overflow }}` | Max overflow connections |
 | `DB_POOL_TIMEOUT` | `{{ db_pool_timeout }}` | Pool timeout in seconds |

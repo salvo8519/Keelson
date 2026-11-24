@@ -1,0 +1,28 @@
+"""Dependency overrides shared by the API tests (Keelson).
+
+With database segregation a route gets its UserService from one of three providers: the
+caller's own session, the sign-in session that acts before anyone is known, or the platform
+administration's session (app/api/deps.py). A test that mocks the service mocks all three,
+so it does not depend on which one a route uses.
+"""
+
+from typing import Any
+
+from app.api.deps import get_user_service
+{%- if enable_teams and use_postgresql and use_jwt %}
+from app.api.deps import get_admin_user_service, get_auth_user_service
+{%- endif %}
+
+USER_SERVICE_PROVIDERS = (
+    get_user_service,
+{%- if enable_teams and use_postgresql and use_jwt %}
+    get_auth_user_service,
+    get_admin_user_service,
+{%- endif %}
+)
+
+
+def override_user_service(app: Any, service: Any) -> None:
+    """Make every UserService provider return ``service``."""
+    for provider in USER_SERVICE_PROVIDERS:
+        app.dependency_overrides[provider] = lambda: service

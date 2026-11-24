@@ -542,8 +542,9 @@ if not (
 # Keelson: the row level security migration exists only with organizations on PostgreSQL.
 if not (enable_teams and use_postgresql):
     remove_file(os.path.join(os.getcwd(), "backend", "alembic", "versions",
-                             "k0001_tenant_row_level_security.py"))
+                             "k0004_database_segregation.py"))
     remove_file(os.path.join(os.getcwd(), "backend", "tests", "test_tenant_rls.py"))
+    remove_file(os.path.join(os.getcwd(), "backend", "tests", "test_segregation_postgres.py"))
     remove_file(os.path.join(os.getcwd(), "backend", "alembic", "versions", "k0002_api_keys.py"))
     remove_file(os.path.join(os.getcwd(), "backend", "alembic", "versions", "k0003_locales.py"))
     for name in ("test_api_keys.py", "test_api_keys_postgres.py"):

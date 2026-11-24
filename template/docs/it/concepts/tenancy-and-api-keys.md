@@ -1,4 +1,4 @@
-<!-- i18n source: concepts/tenancy-and-api-keys.md source_hash: 287ba2a53d73 -->
+<!-- i18n source: concepts/tenancy-and-api-keys.md source_hash: af992245e5e6 -->
 # Tenancy e API key
 
 I progetti Keelson servono più organizzazioni con un solo deploy. Questa pagina spiega come
@@ -13,19 +13,50 @@ di usarla.
 
 ## Isolamento nel database
 
-I repository filtrano le query per organizzazione. La row level security di PostgreSQL aggiunge
-una seconda barriera, indipendente:
+È il database stesso a imporre la separazione, così un filtro dimenticato nel codice non può
+esporre le righe di un altro tenant.
 
-- quando una richiesta ha risolto la sua organizzazione attiva, la sua sessione del database
-  viene legata a quell'organizzazione;
-- ogni transazione di una sessione legata gira con un ruolo ristretto, le cui policy mostrano e
-  accettano solo le righe di quell'organizzazione;
-- una query che dimentica il filtro non restituisce nulla delle altre organizzazioni, e un
-  inserimento per un'altra organizzazione viene rifiutato dal database.
+**Due login.** `POSTGRES_USER` è proprietario delle tabelle ed esegue le migrazioni. Le
+richieste usano un secondo login, `POSTGRES_APP_USER`, creato dalle migrazioni: non possiede le
+tabelle, non può aggirare la row level security e agisce tramite un ruolo ristretto.
 
-Le tabelle isolate sono elencate in `app/db/tenancy.py`. Un test fallisce quando una tabella con
-una colonna `organization_id` non è né isolata né esentata con una motivazione, così una nuova
-tabella non può essere dimenticata.
+**Chi agisce, in ogni transazione.** L'autenticazione stabilisce il principal della richiesta,
+e ogni transazione del login applicativo lo scrive in impostazioni locali alla transazione:
+
+| Principal | Impostato da | Vede |
+| --- | --- | --- |
+| Utente | un JWT o una sessione | le proprie righe, quelle delle sue organizzazioni, le persone con cui condivide un'organizzazione |
+| Organizzazione | l'organizzazione attiva, dopo la verifica dell'appartenenza | restringe l'utente a quell'organizzazione |
+| Servizio | una API key | i dati della sua organizzazione, non le conversazioni private dei membri; non può gestire le chiavi |
+| Nessuno | nessuna autenticazione | niente: le policy falliscono in modo chiuso |
+
+**Policy per tabella e comando.** I punti principali:
+
+- una conversazione è privata del suo autore, salvo condivisione; owner e admin di
+  un'organizzazione vedono gli aggregati (uso dei tool, valutazioni), mai le chat dei membri;
+- i ruoli sono verificati anche nel database: solo owner e admin gestiscono API key, membri e
+  inviti;
+- l'audit log è in sola aggiunta per l'applicazione: una voce indica il proprio autore e
+  l'applicazione non può leggerla, modificarla o cancellarla.
+
+**Sessioni di sistema.** Il lavoro che non ha ancora un utente o attraversa più tenant usa il
+login proprietario tramite `system_session(reason)`, e ogni uso è registrato con la sua
+motivazione sul logger `app.db.system`: accesso, registrazione e ricerche per token,
+l'amministrazione della piattaforma (dopo la verifica dell'admin, con il suo nome), la riga di
+comando e i worker in background. I worker agiscono su più organizzazioni per costruzione,
+quindi il loro codice filtra in modo esplicito.
+
+**Test.** Le policy sono elencate in `app/db/tenancy.py`. Un test fallisce quando una tabella non
+è coperta da una policy né chiusa con una motivazione, così una nuova tabella non può essere
+dimenticata. I test di attacco girano su un PostgreSQL reale con il login applicativo: nessun
+principal, un altro utente, un'altra organizzazione, un membro contro i dati di un owner,
+scritture falsificate e una API key.
+
+**Limiti.** Il principal è impostato dall'applicazione sulla propria connessione. Un'SQL
+injection nel login applicativo potrebbe cambiare quelle impostazioni e agire come qualcun
+altro; la difesa è quella che il codice già segue (SQLAlchemy con parametri vincolati, nessuna
+SQL costruita dall'input). Un contesto firmato dall'applicazione e verificato nel database
+eliminerebbe questo limite ed è un possibile passo futuro.
 
 ## Knowledge base e vettori
 
@@ -59,8 +90,8 @@ nella pagina API keys o su `/api/v1/api-keys`.
 | Limiti | Le richieste sono limitate per chiave e per organizzazione |
 | Audit | Creazione, rotazione, revoca e usi rifiutati sono registrati nell'audit log |
 
-Una richiesta autenticata da una chiave agisce sull'organizzazione della chiave, con la stessa
-row level security di una richiesta di un utente. Per proteggere una route con una chiave:
+Una richiesta autenticata da una chiave agisce come principal di servizio dell'organizzazione
+della chiave (vedi la tabella sopra), sotto row level security come una richiesta di un utente. Per proteggere una route con una chiave:
 
 ```python
 from fastapi import Depends

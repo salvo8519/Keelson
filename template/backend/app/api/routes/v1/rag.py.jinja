@@ -25,6 +25,9 @@ from app.api.deps import CurrentAdmin, CurrentUser
 {%- endif %}
 {%- if enable_teams and use_jwt %}
 from app.api.deps import ActiveOrg, KnowledgeBaseSvc
+{%- if use_postgresql %}
+from app.api.deps import AdminKnowledgeBaseSvc, AdminRAGDocumentSvc, AdminRAGSyncSvc, AdminSyncSourceSvc
+{%- endif %}
 {%- endif %}
 {%- if enable_redis %}
 from app.api.deps import RAGStatusSvc
@@ -73,7 +76,7 @@ async def get_supported_formats_endpoint() -> Any:
 @router.get("/collections", response_model=RAGCollectionList)
 async def list_collections(
 {%- if enable_teams and use_jwt %}
-    kb_svc: KnowledgeBaseSvc,
+    kb_svc: AdminKnowledgeBaseSvc,
     admin: CurrentAdmin,
     active_org: ActiveOrg,
 {%- else %}
@@ -113,7 +116,7 @@ async def create_collection(
     _: CurrentAdmin,
 {%- endif %}
 {%- if enable_teams and use_jwt %}
-    kb_svc: KnowledgeBaseSvc,
+    kb_svc: AdminKnowledgeBaseSvc,
     admin: CurrentAdmin,
     active_org: ActiveOrg,
 {%- endif %}
@@ -140,12 +143,12 @@ async def create_collection(
 async def drop_collection(
     name: str,
     vector_store: VectorStoreSvc,
-    rag_doc_svc: RAGDocumentSvc,
+    rag_doc_svc: AdminRAGDocumentSvc,
 {%- if use_jwt %}
     _: CurrentAdmin,
 {%- endif %}
 {%- if enable_teams and use_jwt %}
-    kb_svc: KnowledgeBaseSvc,
+    kb_svc: AdminKnowledgeBaseSvc,
 {%- endif %}
 ) -> None:
     """Drop a collection — vectors, SQL document records, and the KB row.
@@ -272,7 +275,7 @@ async def delete_document(
 )
 async def ingest_file(
     name: str,
-    rag_doc_svc: RAGDocumentSvc,
+    rag_doc_svc: AdminRAGDocumentSvc,
     vector_store: VectorStoreSvc,
 {%- if use_jwt %}
     _: CurrentAdmin,
@@ -299,7 +302,7 @@ async def ingest_file(
 
 @router.get("/documents", response_model=RAGTrackedDocumentList)
 async def list_rag_documents(
-    rag_doc_svc: RAGDocumentSvc,
+    rag_doc_svc: AdminRAGDocumentSvc,
 {%- if use_jwt %}
     _: CurrentAdmin,
 {%- endif %}
@@ -312,7 +315,7 @@ async def list_rag_documents(
 @router.get("/documents/{doc_id}/download", response_model=None)
 async def download_rag_document(
     doc_id: str,
-    rag_doc_svc: RAGDocumentSvc,
+    rag_doc_svc: AdminRAGDocumentSvc,
 {%- if use_jwt %}
     _: CurrentAdmin,
 {%- endif %}
@@ -328,7 +331,7 @@ async def download_rag_document(
 )
 async def delete_rag_document(
     doc_id: str,
-    rag_doc_svc: RAGDocumentSvc,
+    rag_doc_svc: AdminRAGDocumentSvc,
     ingestion_service: IngestionSvc,
 {%- if use_jwt %}
     _: CurrentAdmin,
@@ -341,7 +344,7 @@ async def delete_rag_document(
 @router.post("/documents/{doc_id}/retry", response_model=RAGRetryResponse)
 async def retry_ingestion(
     doc_id: str,
-    rag_doc_svc: RAGDocumentSvc,
+    rag_doc_svc: AdminRAGDocumentSvc,
 {%- if use_jwt %}
     _: CurrentAdmin,
 {%- endif %}
@@ -353,7 +356,7 @@ async def retry_ingestion(
 
 @router.get("/sync/logs", response_model=RAGSyncLogList)
 async def list_sync_logs(
-    rag_sync_svc: RAGSyncSvc,
+    rag_sync_svc: AdminRAGSyncSvc,
 {%- if use_jwt %}
     _: CurrentAdmin,
 {%- endif %}
@@ -367,7 +370,7 @@ async def list_sync_logs(
 @router.post("/sync/local", response_model=RAGSyncResponse)
 async def trigger_local_sync(
     request: RAGSyncRequest,
-    rag_sync_svc: RAGSyncSvc,
+    rag_sync_svc: AdminRAGSyncSvc,
 {%- if use_jwt %}
     _: CurrentAdmin,
 {%- endif %}
@@ -388,7 +391,7 @@ async def trigger_local_sync(
 @router.delete("/sync/{sync_id}", response_model=RAGMessageResponse)
 async def cancel_sync(
     sync_id: str,
-    rag_sync_svc: RAGSyncSvc,
+    rag_sync_svc: AdminRAGSyncSvc,
 {%- if use_jwt %}
     _: CurrentAdmin,
 {%- endif %}
@@ -400,7 +403,7 @@ async def cancel_sync(
 
 @router.get("/sync/sources", response_model=SyncSourceList)
 async def list_sync_sources(
-    sync_source_svc: SyncSourceSvc,
+    sync_source_svc: AdminSyncSourceSvc,
 {%- if use_jwt %}
     _: CurrentAdmin,
 {%- endif %}
@@ -431,7 +434,7 @@ async def list_sync_sources(
 )
 async def create_sync_source(
     data: SyncSourceCreate,
-    sync_source_svc: SyncSourceSvc,
+    sync_source_svc: AdminSyncSourceSvc,
 {%- if use_jwt %}
     _: CurrentAdmin,
 {%- endif %}
@@ -462,7 +465,7 @@ async def create_sync_source(
 async def clone_sync_source(
     source_id: str,
     data: SyncSourceClone,
-    sync_source_svc: SyncSourceSvc,
+    sync_source_svc: AdminSyncSourceSvc,
     _: CurrentAdmin,
     active_org: ActiveOrg,
 ) -> Any:
@@ -479,7 +482,7 @@ async def clone_sync_source(
 async def update_sync_source(
     source_id: str,
     data: SyncSourceUpdate,
-    sync_source_svc: SyncSourceSvc,
+    sync_source_svc: AdminSyncSourceSvc,
 {%- if use_jwt %}
     _: CurrentAdmin,
 {%- endif %}
@@ -495,7 +498,7 @@ async def update_sync_source(
 )
 async def delete_sync_source(
     source_id: str,
-    sync_source_svc: SyncSourceSvc,
+    sync_source_svc: AdminSyncSourceSvc,
 {%- if use_jwt %}
     _: CurrentAdmin,
 {%- endif %}
@@ -507,7 +510,7 @@ async def delete_sync_source(
 @router.post("/sync/sources/{source_id}/trigger", response_model=RAGSyncResponse)
 async def trigger_sync_source(
     source_id: str,
-    sync_source_svc: SyncSourceSvc,
+    sync_source_svc: AdminSyncSourceSvc,
 {%- if use_jwt %}
     _: CurrentAdmin,
 {%- endif %}
@@ -523,7 +526,7 @@ async def trigger_sync_source(
 
 @router.get("/sync/connectors", response_model=ConnectorList)
 async def list_connectors(
-    sync_source_svc: SyncSourceSvc,
+    sync_source_svc: AdminSyncSourceSvc,
 {%- if use_jwt %}
     _: CurrentAdmin,
 {%- endif %}

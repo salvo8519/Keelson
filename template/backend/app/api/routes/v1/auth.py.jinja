@@ -29,9 +29,9 @@ from fastapi.security import OAuth2PasswordRequestForm
 {%- endif %}
 
 {%- if enable_session_management %}
-from app.api.deps import CurrentUser, SessionSvc, UserSvc
+from app.api.deps import AuthUserSvc, CurrentUser, SessionSvc
 {%- elif not use_delegated_auth %}
-from app.api.deps import CurrentUser, UserSvc
+from app.api.deps import AuthUserSvc, CurrentUser
 {%- else %}
 from app.api.deps import CurrentUser
 {%- endif %}
@@ -91,7 +91,7 @@ router = APIRouter()
 async def login(
     request: Request,
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
-    user_service: UserSvc,
+    user_service: AuthUserSvc,
 {%- if enable_session_management %}
     session_service: SessionSvc,
 {%- endif %}
@@ -123,7 +123,7 @@ async def login(
 )
 async def register(
     user_in: UserCreate,
-    user_service: UserSvc,
+    user_service: AuthUserSvc,
 ) -> Any:
     """Register a new user."""
     user = await user_service.register(user_in)
@@ -134,7 +134,7 @@ async def register(
 async def refresh_token(
     request: Request,
     body: RefreshTokenRequest,
-    user_service: UserSvc,
+    user_service: AuthUserSvc,
 {%- if enable_session_management %}
     session_service: SessionSvc,
 {%- endif %}
@@ -218,7 +218,7 @@ async def get_current_user_info(current_user: CurrentUser) -> Any:
 )
 async def request_password_reset(
     body: PasswordResetRequest,
-    user_service: UserSvc,
+    user_service: AuthUserSvc,
 ) -> Any:
     """Email a single-use reset link to the address.
 
@@ -244,7 +244,7 @@ async def request_password_reset(
 @router.post("/password-reset/confirm", response_model=PasswordResetConfirmResponse)
 async def confirm_password_reset(
     body: PasswordResetConfirm,
-    user_service: UserSvc,
+    user_service: AuthUserSvc,
 ) -> Any:
     """Set a new password using a token from the reset email."""
     await user_service.confirm_password_reset(body.token, body.new_password)
@@ -261,7 +261,7 @@ async def confirm_password_reset(
 )
 async def request_magic_link(
     body: MagicLinkRequest,
-    user_service: UserSvc,
+    user_service: AuthUserSvc,
 ) -> Any:
     """Email a single-use sign-in link.
 
@@ -287,7 +287,7 @@ async def request_magic_link(
 async def verify_magic_link(
     request: Request,
     body: MagicLinkVerifyRequest,
-    user_service: UserSvc,
+    user_service: AuthUserSvc,
 {%- if enable_session_management %}
     session_service: SessionSvc,
 {%- endif %}

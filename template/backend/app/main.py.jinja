@@ -47,6 +47,9 @@ from app.core.api_docs import add_api_reference
 from app.core.brand import BRAND_NAME
 from app.core.logging import setup_logging
 from app.core.middleware import LanguageMiddleware, RequestIDMiddleware, SecurityHeadersMiddleware
+{%- if enable_teams and use_postgresql %}
+from app.db.tenancy import PrincipalScope
+{%- endif %}
 {%- if not enable_logfire %}
 from app.core.telemetry import setup_tracing, shutdown_tracing
 {%- endif %}
@@ -503,6 +506,10 @@ which does not change with the language.
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(LanguageMiddleware)
     app.add_middleware(RequestIDMiddleware)
+{%- if enable_teams and use_postgresql %}
+    # Keelson: who acts is set by authentication, per request (app/db/tenancy.py).
+    app.add_middleware(PrincipalScope)
+{%- endif %}
 {%- if not enable_logfire %}
     setup_tracing(app)
 {%- endif %}

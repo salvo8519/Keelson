@@ -10,7 +10,8 @@ from uuid import uuid4
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from app.api.deps import get_current_user, get_user_service
+from app.api.deps import get_current_user
+from tests.overrides import override_user_service
 from app.core.config import settings
 from app.core.exceptions import AlreadyExistsError, AuthenticationError
 from app.core.security import create_access_token, create_refresh_token
@@ -79,7 +80,7 @@ async def client_with_mock_service(
 {%- endif %}
 ) -> AsyncClient:
     """Client with mocked user service."""
-    app.dependency_overrides[get_user_service] = lambda: mock_user_service
+    override_user_service(app, mock_user_service)
 {%- if enable_redis %}
     app.dependency_overrides[get_redis] = lambda: mock_redis
 {%- endif %}

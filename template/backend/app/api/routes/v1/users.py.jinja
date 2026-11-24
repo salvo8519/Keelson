@@ -13,6 +13,7 @@ from fastapi_pagination import Page
 {%- endif %}
 
 from app.api.deps import (
+    AdminUserSvc,
     CurrentAdmin,
     CurrentUser,
     UserSvc,
@@ -70,7 +71,7 @@ async def delete_current_user(
 @router.post("", response_model=UserRead, status_code=status.HTTP_201_CREATED)
 async def create_user(
     user_in: UserCreate,
-    user_service: UserSvc,
+    user_service: AdminUserSvc,
     _: CurrentAdmin,
 ) -> Any:
     """Create a user (administrators). The user gets a personal organization."""
@@ -111,7 +112,7 @@ async def get_avatar(user_id: UUID, user_service: UserSvc) -> Any:
 
 @router.get("", response_model=Page[UserRead])
 async def read_users(
-    user_service: UserSvc,
+    user_service: AdminUserSvc,
     _: CurrentAdmin,
 ) -> Any:
     """Get all users (admin only)."""
@@ -123,7 +124,7 @@ async def read_users(
 
 @router.get("", response_model=list[UserRead])
 async def read_users(
-    user_service: UserSvc,
+    user_service: AdminUserSvc,
     _: CurrentAdmin,
     skip: int = Query(0, ge=0, description="Items to skip"),
     limit: int = Query(100, ge=1, le=200, description="Max items to return"),
@@ -139,7 +140,7 @@ async def read_users(
 @router.get("/{user_id}", response_model=UserRead)
 async def read_user(
     user_id: UUID,
-    user_service: UserSvc,
+    user_service: AdminUserSvc,
     _: CurrentAdmin,
 ) -> Any:
     """Get user by ID (admin only)."""
@@ -151,7 +152,7 @@ async def read_user(
 async def update_user_by_id(
     user_id: UUID,
     user_in: UserUpdate,
-    user_service: UserSvc,
+    user_service: AdminUserSvc,
     _: CurrentAdmin,
 ) -> Any:
     """Update user by ID (admin only)."""
@@ -162,7 +163,7 @@ async def update_user_by_id(
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def delete_user_by_id(
     user_id: UUID,
-    user_service: UserSvc,
+    user_service: AdminUserSvc,
     _: CurrentAdmin,
 ) -> None:
     """Delete user by ID (admin only)."""

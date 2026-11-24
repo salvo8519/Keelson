@@ -4,7 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query, status
 
-from app.api.deps import CurrentUser, InvitationSvc
+from app.api.deps import CurrentUser, InvitationSvc, SystemInvitationSvc
 from app.schemas.organization import (
     InvitationCreate,
     InvitationList,
@@ -68,20 +68,26 @@ async def list_invitations(
 @token_router.post("/invitations/{token}/accept", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def accept_invitation(
     token: str,
-    service: InvitationSvc,
+    service: SystemInvitationSvc,
     user: CurrentUser,
 ) -> None:
-    """Accept an invitation token. Adds the current user to the organization."""
+    """Accept an invitation token. Adds the current user to the organization.
+
+    Keelson: the invitee is not a member yet, so the database would refuse the membership;
+    the token proves the right, and the system session records the reason."""
     await service.accept(token, accepting_user_id=user.id)
 
 
 @token_router.delete("/invitations/{token}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def revoke_invitation(
     token: str,
-    service: InvitationSvc,
+    service: SystemInvitationSvc,
     user: CurrentUser,
 ) -> None:
-    """Revoke a pending invitation. Owner/Admin of the org, or the invitee themselves."""
+    """Revoke a pending invitation. Owner/Admin of the org, or the invitee themselves.
+
+    Keelson: the invitee is not a member, so the token lookup runs as the system; the service
+    checks who may revoke."""
     await service.revoke(token, requester_id=user.id)
 
 

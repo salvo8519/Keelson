@@ -18,39 +18,21 @@ from app.db.base import Base
 from app.db.models.audit_log import AppAdminAuditLog
 from app.db.models.organization import Organization
 from app.db.models.user import User
-from app.db.tenancy import TENANT_TABLES, bind_organization, grant_statements, policy_statements
 from app.schemas.api_key import ApiKeyCreate
 from app.services.api_key import ApiKeyService
-from tests.postgres import require_postgres
+from tests.postgres import require_postgres, segregated_database
 
 pytestmark = pytest.mark.anyio
 
 
 @pytest.fixture
 async def sessions():
+    """System sessions on a segregated database: the service logic of API keys (creation,
+    authentication by prefix, rotation) runs as the system does; the isolation of keys between
+    organizations is attacked in tests/test_segregation_postgres.py."""
     await require_postgres("API key")
-    schema = f"keys_{uuid.uuid4().hex[:12]}"
-    admin = create_async_engine(settings.DATABASE_URL)
-    async with admin.begin() as connection:
-        await connection.execute(text(f'CREATE SCHEMA "{schema}"'))
-    engine = create_async_engine(
-        settings.DATABASE_URL, connect_args={"server_settings": {"search_path": schema}}
-    )
-    async with engine.begin() as connection:
-        await connection.run_sync(Base.metadata.create_all)
-        for statement in grant_statements(schema):
-            await connection.execute(text(statement))
-        for table in TENANT_TABLES:
-            if table in Base.metadata.tables:
-                for statement in policy_statements(table):
-                    await connection.execute(text(statement))
-    try:
-        yield async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-    finally:
-        await engine.dispose()
-        async with admin.begin() as connection:
-            await connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
-        await admin.dispose()
+    async with segregated_database() as db:
+        yield db.system
 
 
 async def _org_and_user(session: AsyncSession) -> tuple[Organization, User]:
@@ -130,20 +112,6 @@ async def test_rotation_keeps_the_old_key_for_the_grace_period(sessions) -> None
         )
         with pytest.raises(AuthenticationError):
             await service.authenticate(new_token)
-
-
-async def test_keys_are_isolated_by_organization(sessions) -> None:
-    async with sessions() as session:
-        org_a, user_a = await _org_and_user(session)
-        org_b, user_b = await _org_and_user(session)
-        await _create(session, org_a, user_a)
-        await _create(session, org_b, user_b)
-        await session.commit()
-
-    async with sessions() as session:
-        await bind_organization(session, org_a.id)
-        visible = (await session.execute(text("SELECT organization_id FROM api_keys"))).scalars().all()
-        assert set(visible) == {org_a.id}
 
 
 async def test_missing_scope_is_refused(sessions) -> None:

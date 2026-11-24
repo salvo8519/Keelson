@@ -14,7 +14,7 @@ import click
 
 from app.commands import command, info, success, warning
 {%- if use_jwt %}
-from app.db.session import get_db_context
+from app.db.session import system_session
 from app.schemas.user import UserCreate
 from app.services.user import UserService
 {%- endif %}
@@ -88,7 +88,7 @@ def seed(
     info("No entities configured to seed. Enable JWT users to use this command.")
 {%- else %}
     async def _seed() -> None:
-        async with get_db_context() as db:
+        async with system_session("command line: seed") as db:
             user_svc = UserService(db)
             created_counts = {}
 

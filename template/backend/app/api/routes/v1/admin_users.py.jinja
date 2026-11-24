@@ -5,7 +5,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query, Request, status
 
-from app.api.deps import CurrentAdmin, DBSession, UserSvc
+from app.api.deps import AdminDBSession, AdminUserSvc, CurrentAdmin
 {%- if enable_teams %}
 from app.core.audit import record_audit
 {%- endif %}
@@ -18,7 +18,7 @@ router = APIRouter()
 @router.get("", response_model=AdminUserList)
 async def list_users(
     _: CurrentAdmin,
-    service: UserSvc,
+    service: AdminUserSvc,
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=500),
     search: str | None = Query(None),
@@ -37,7 +37,7 @@ async def list_users(
 async def get_user(
     user_id: UUID,
     _: CurrentAdmin,
-    service: UserSvc,
+    service: AdminUserSvc,
 ) -> Any:
     return await service.get_by_id(user_id)
 
@@ -49,11 +49,11 @@ async def update_user(
 {%- if enable_teams %}
     request: Request,
     admin: CurrentAdmin,
-    db: DBSession,
+    db: AdminDBSession,
 {%- else %}
     _: CurrentAdmin,
 {%- endif %}
-    service: UserSvc,
+    service: AdminUserSvc,
 ) -> Any:
     user = await service.update(user_id, user_in)
 {%- if enable_teams %}
@@ -76,11 +76,11 @@ async def delete_user(
 {%- if enable_teams %}
     request: Request,
     admin: CurrentAdmin,
-    db: DBSession,
+    db: AdminDBSession,
 {%- else %}
     _: CurrentAdmin,
 {%- endif %}
-    service: UserSvc,
+    service: AdminUserSvc,
 ) -> None:
 {%- if enable_teams %}
     target = await service.get_by_id(user_id)
@@ -107,9 +107,9 @@ async def impersonate_user(
     user_id: UUID,
     admin: CurrentAdmin,
 {%- if enable_teams %}
-    db: DBSession,
+    db: AdminDBSession,
 {%- endif %}
-    service: UserSvc,
+    service: AdminUserSvc,
 ) -> Any:
     """Issue a short-lived (1h) access token to act as the target user."""
     target = await service.get_by_id(user_id)

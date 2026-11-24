@@ -7,6 +7,13 @@ from fastapi.responses import JSONResponse
 from app.api.deps import ConversationSvc
 {%- if use_jwt %}
 from app.api.deps import ConversationShareSvc, CurrentAdmin, CurrentUser
+{%- if enable_teams and use_postgresql %}
+from app.api.deps import AdminConversationSvc, OrganizationAggregateSvc, PublicShareSvc
+{%- else %}
+from app.api.deps import ConversationShareSvc as PublicShareSvc
+from app.api.deps import ConversationSvc as AdminConversationSvc
+from app.api.deps import ConversationSvc as OrganizationAggregateSvc
+{%- endif %}
 {%- if use_database %}
 from app.api.deps import MessageRatingSvc
 {%- endif %}
@@ -48,7 +55,7 @@ router = APIRouter()
 
 @router.get("/export", response_model=ConversationExport)
 async def export_conversations(
-    conversation_service: ConversationSvc,
+    conversation_service: AdminConversationSvc,
 {%- if use_jwt %}
     _: CurrentAdmin,
 {%- endif %}
@@ -62,7 +69,7 @@ async def export_conversations(
 {%- if use_jwt %}
 @router.get("/admin-list", response_model=ConversationAdminList)
 async def list_conversations_admin(
-    conversation_service: ConversationSvc,
+    conversation_service: AdminConversationSvc,
     _: CurrentAdmin,
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
@@ -94,7 +101,7 @@ async def list_shared_with_me(
 @router.get("/shared/{token}", response_model=ConversationReadWithMessages)
 async def get_shared_conversation(
     token: str,
-    share_service: ConversationShareSvc,
+    share_service: PublicShareSvc,
 ) -> Any:
     """Access a shared conversation via public token (no auth required)."""
     return await share_service.get_by_token(token)
@@ -156,13 +163,16 @@ async def create_conversation(
 
 @router.get("/tool-stats", response_model=ToolCallStatList)
 async def get_tool_stats(
-    conversation_service: ConversationSvc,
+    conversation_service: OrganizationAggregateSvc,
     current_user: CurrentUser,
     active_org: ActiveOrg,
     days: int = Query(7, ge=1, le=90, description="Window in days"),
     limit: int = Query(10, ge=1, le=50, description="Max tools to return"),
 ) -> Any:
-    """Top tools used by the active org over the given window."""
+    """Top tools used by the active org over the given window.
+
+    Keelson: members' conversations are private, so the aggregate over the organization runs
+    as the system and returns counts only, never content (app/db/tenancy.py)."""
     items = await conversation_service.aggregate_tool_calls(
         active_org.id, days=days, limit=limit
     )

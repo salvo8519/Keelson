@@ -4,7 +4,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from app.api.deps import CurrentAdmin, MessageRatingSvc
+from app.api.deps import CurrentAdmin, AdminRatingSvc
 from app.schemas.message_rating import MessageRatingList, RatingSummary
 
 router = APIRouter()
@@ -12,7 +12,7 @@ router = APIRouter()
 
 @router.get("", response_model=MessageRatingList)
 async def list_ratings_admin(
-    rating_service: MessageRatingSvc,
+    rating_service: AdminRatingSvc,
     _: CurrentAdmin,
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
@@ -31,7 +31,7 @@ async def list_ratings_admin(
 
 @router.get("/summary", response_model=RatingSummary)
 async def get_rating_summary(
-    rating_service: MessageRatingSvc,
+    rating_service: AdminRatingSvc,
     _: CurrentAdmin,
     days: int = Query(30, ge=1, le=365, description="Number of days to include"),
 ) -> Any:
@@ -41,7 +41,7 @@ async def get_rating_summary(
 
 @router.get("/export", response_model=None)
 async def export_ratings(
-    rating_service: MessageRatingSvc,
+    rating_service: AdminRatingSvc,
     _: CurrentAdmin,
     export_format: Literal["json", "csv"] = Query("json", description="Export format"),
     rating_filter: int | None = Query(None, ge=-1, le=1, description="Filter by rating value"),

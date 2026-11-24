@@ -4,6 +4,7 @@
 {% endif %}
 from pathlib import Path
 from typing import Literal
+from urllib.parse import quote
 
 {% if use_database or enable_redis or enable_rag -%}
 from pydantic import computed_field, field_validator, model_validator{% if use_jwt or use_api_key or enable_cors %}, ValidationInfo{% endif %}
@@ -97,14 +98,38 @@ class Settings(BaseSettings):
     POSTGRES_PASSWORD: str = ""
     POSTGRES_DB: str = "{{ project_slug }}"
 
+    # Keelson: the application login serves requests under row level security (app/db/tenancy.py);
+    # POSTGRES_USER owns the tables and runs migrations and explicit system work. The
+    # migration creates the application login with this password.
+    POSTGRES_APP_USER: str = "{{ project_slug }}_app"
+    POSTGRES_APP_PASSWORD: str = "change-me-app-password"
+
+    @field_validator("POSTGRES_APP_PASSWORD")
+    @classmethod
+    def validate_app_password(cls, v: str, info: ValidationInfo) -> str:
+        env = info.data.get("ENVIRONMENT", "local") if info.data else "local"
+        if env == "production" and v == "change-me-app-password":
+            raise ValueError("POSTGRES_APP_PASSWORD must be changed in production")
+        return v
+
+    def _postgres_url(self, driver: str, user: str, password: str) -> str:
+        # Keelson: credentials are escaped (upstream broke on passwords with @, : or /).
+        return (
+            f"postgresql+{driver}://{quote(user, safe='')}:{quote(password, safe='')}"
+            f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+        )
+
     @computed_field  # type: ignore[prop-decorator]
     @property
     def DATABASE_URL(self) -> str:
-        """Build async PostgreSQL connection URL."""
-        return (
-            f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
-            f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
-        )
+        """Async URL of the owner login: migrations and system work."""
+        return self._postgres_url("asyncpg", self.POSTGRES_USER, self.POSTGRES_PASSWORD)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def APP_DATABASE_URL(self) -> str:
+        """Async URL of the application login: requests, under row level security."""
+        return self._postgres_url("asyncpg", self.POSTGRES_APP_USER, self.POSTGRES_APP_PASSWORD)
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -114,10 +139,7 @@ class Settings(BaseSettings):
         The driver is named because a bare ``postgresql://`` means psycopg 3 on
         SQLAlchemy 2.1 but psycopg2 on 2.0, which SQLModel pins.
         """
-        return (
-            f"postgresql+psycopg2://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
-            f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
-        )
+        return self._postgres_url("psycopg2", self.POSTGRES_USER, self.POSTGRES_PASSWORD)
 
     DB_POOL_SIZE: int = {{ db_pool_size }}
     DB_MAX_OVERFLOW: int = {{ db_max_overflow }}

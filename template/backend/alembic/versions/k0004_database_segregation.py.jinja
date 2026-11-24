@@ -1,0 +1,43 @@
+{%- if enable_teams and use_postgresql %}
+"""segregation of users and organizations in the database (Keelson)
+
+Revision ID: k0004_database_segregation
+Revises: k0003_locales
+Create Date: 2026-11-24T00:00:00+00:00
+
+Creates the application login (POSTGRES_APP_USER), the functions of the policies and, on every
+table of the project, row level security with the policies of app/db/tenancy.py. The
+statements are idempotent: a later change to the policies ships as a new migration that runs
+segregation_statements again.
+"""
+
+import sqlalchemy as sa
+from alembic import op
+
+from app.core.config import settings
+from app.db.tenancy import login_statements, removal_statements, segregation_statements
+
+revision = "k0004_database_segregation"
+down_revision = "k0003_locales"
+branch_labels = None
+depends_on = None
+
+
+def _tables() -> set[str]:
+    return set(sa.inspect(op.get_bind()).get_table_names())
+
+
+def upgrade() -> None:
+    # Function bodies name tables that a project may not have (sharing, knowledge bases).
+    op.execute("SET LOCAL check_function_bodies = off")
+    for statement in segregation_statements(_tables()):
+        op.execute(statement)
+    for statement in login_statements(settings.POSTGRES_APP_USER, settings.POSTGRES_APP_PASSWORD):
+        op.execute(statement)
+
+
+def downgrade() -> None:
+    # Roles are cluster-wide and may serve another database: they are kept.
+    for statement in removal_statements(_tables()):
+        op.execute(statement)
+{%- endif %}

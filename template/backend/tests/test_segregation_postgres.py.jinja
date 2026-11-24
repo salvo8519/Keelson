@@ -1,0 +1,254 @@
+{%- if enable_teams and use_postgresql %}
+"""Segregation of users and organizations enforced by PostgreSQL (Keelson).
+
+The first tests need no database: every table of the project must have policies or be closed
+with a stated reason, so a new table cannot be forgotten. The others attack every table
+against a real PostgreSQL, through the role of the application login: two organizations,
+their members, an outsider, an API key, and a request with no principal at all.
+"""
+
+import uuid
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+
+import pytest
+from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
+from sqlalchemy.ext.asyncio import AsyncSession
+
+import app.db.models  # noqa: F401  (registers every table on the metadata)
+from app.db.base import Base
+from app.db.tenancy import CLOSED_TABLES, POLICIES, UNISOLATED_TABLES, Principal
+from tests.postgres import SegregatedDatabase, acting_as, require_postgres, segregated_database
+
+pytestmark = pytest.mark.anyio
+
+
+def test_every_table_has_policies_or_a_reason_to_be_closed() -> None:
+    tables = set(Base.metadata.tables)
+    unaccounted = tables - set(POLICIES) - set(UNISOLATED_TABLES) - set(CLOSED_TABLES)
+    assert not unaccounted, f"tables without segregation rules: {sorted(unaccounted)}"
+
+
+@dataclass
+class World:
+    """Organization A (owner a1, member a2), organization B (owner b1), outsider c."""
+
+    db: SegregatedDatabase
+    a1: uuid.UUID
+    a2: uuid.UUID
+    b1: uuid.UUID
+    c: uuid.UUID
+    org_a: uuid.UUID
+    org_b: uuid.UUID
+    conv_a1: uuid.UUID
+    conv_a2: uuid.UUID
+    conv_b1: uuid.UUID
+
+
+async def _insert(session: AsyncSession, table: str, **values: object) -> uuid.UUID:
+    """A row with the model's defaults (Core insert applies them, raw SQL would not)."""
+    values.setdefault("id", uuid.uuid4())
+    await session.execute(Base.metadata.tables[table].insert().values(**values))
+    return values["id"]  # type: ignore[return-value]
+
+
+@pytest.fixture
+async def world():
+    await require_postgres("database segregation")
+    async with segregated_database() as db:
+        async with db.system() as s:
+            a1, a2, b1, c = [
+                await _insert(s, "users", email=f"{name}@example.com", hashed_password="x")
+                for name in ("a1", "a2", "b1", "c")
+            ]
+            org_a = await _insert(s, "organizations", name="A", slug="org-a", created_by_user_id=a1)
+            org_b = await _insert(s, "organizations", name="B", slug="org-b", created_by_user_id=b1)
+            for org, user, role in ((org_a, a1, "owner"), (org_a, a2, "member"), (org_b, b1, "owner")):
+                await _insert(s, "organization_members", organization_id=org, user_id=user, role=role)
+            conv_a1 = await _insert(s, "conversations", user_id=a1, organization_id=org_a, title="a1")
+            conv_a2 = await _insert(s, "conversations", user_id=a2, organization_id=org_a, title="a2")
+            conv_b1 = await _insert(s, "conversations", user_id=b1, organization_id=org_b, title="b1")
+            for conversation in (conv_a1, conv_a2, conv_b1):
+                await _insert(s, "messages", conversation_id=conversation, role="user", content="secret")
+            await _insert(s, "conversation_shares", conversation_id=conv_a1, shared_by=a1, shared_with=c, permission="view")
+            for scope, org, owner, name in (
+                ("personal", None, a1, "kb_a1"),
+                ("org", org_a, a1, "kb_org_a"),
+                ("org", org_b, b1, "kb_org_b"),
+                ("app", None, None, "kb_app"),
+            ):
+                await _insert(s, "knowledge_bases", scope=scope, organization_id=org, owner_user_id=owner,
+                              name=name, collection_name=name)
+            for org in (org_a, org_b):
+                await _insert(s, "api_keys", organization_id=org, name="ci", prefix=f"key_{uuid.uuid4().hex[:12]}",
+                              secret_hash="0" * 64, scopes=["agent:run"])
+                await _insert(s, "invitations", organization_id=org, email="x@example.com", invited_by_user_id=a1 if org == org_a else b1,
+                              token=uuid.uuid4().hex, expires_at=datetime.now(UTC) + timedelta(days=1))
+            for user in (a1, b1):
+                await _insert(s, "user_slash_commands", user_id=user, name=f"cmd_{user.hex[:6]}")
+            await _insert(s, "app_admin_audit_logs", actor_user_id=a1, action="seed")
+            await s.commit()
+        yield World(db, a1, a2, b1, c, org_a, org_b, conv_a1, conv_a2, conv_b1)
+
+
+async def _ids(world: World, principal: Principal | None, table: str, column: str = "id") -> set:
+    with acting_as(principal):
+        async with world.db.app() as session:
+            return set((await session.execute(text(f"SELECT {column} FROM {table}"))).scalars())
+
+
+async def _refused(world: World, principal: Principal, statement: str, **params: object) -> None:
+    """The statement is refused by a policy, or touches no row."""
+    with acting_as(principal):
+        async with world.db.app() as session:
+            try:
+                result = await session.execute(text(statement), params)
+                await session.commit()
+            except DBAPIError as error:
+                assert "row-level security" in str(error) or "permission denied" in str(error)
+                return
+            assert result.rowcount == 0, f"{statement} changed {result.rowcount} row(s)"
+
+
+def _user(world: World, user: uuid.UUID, org: uuid.UUID | None = None) -> Principal:
+    return Principal(user_id=user, organization_id=org)
+
+
+# --- No principal: nothing ---------------------------------------------------------------
+
+
+async def test_a_request_without_principal_sees_nothing(world: World) -> None:
+    for table in sorted(POLICIES):
+        if table in Base.metadata.tables:
+            assert await _ids(world, None, table, "1") == set(), table
+
+
+# --- Personal data -----------------------------------------------------------------------
+
+
+async def test_conversations_are_private_to_their_author_even_in_the_same_organization(world: World) -> None:
+    assert await _ids(world, _user(world, world.a1, world.org_a), "conversations") == {world.conv_a1}
+    owner_view = await _ids(world, _user(world, world.a1, world.org_a), "messages", "conversation_id")
+    assert owner_view == {world.conv_a1}, "the organization's owner does not read a member's chats"
+
+
+async def test_shared_conversations_are_readable_not_writable_with_view_permission(world: World) -> None:
+    outsider = _user(world, world.c)
+    assert await _ids(world, outsider, "conversations") == {world.conv_a1}
+    await _refused(
+        world, outsider,
+        "INSERT INTO messages (id, conversation_id, role, content) VALUES (:id, :c, 'user', 'x')",
+        id=uuid.uuid4(), c=world.conv_a1,
+    )
+
+
+async def test_nobody_writes_into_another_users_conversation(world: World) -> None:
+    for target in (world.conv_a2, world.conv_b1):
+        await _refused(
+            world, _user(world, world.a1, world.org_a),
+            "INSERT INTO messages (id, conversation_id, role, content) VALUES (:id, :c, 'user', 'x')",
+            id=uuid.uuid4(), c=target,
+        )
+        await _refused(world, _user(world, world.a1, world.org_a),
+                       "UPDATE conversations SET title = 'taken' WHERE id = :c", c=target)
+        await _refused(world, _user(world, world.a1, world.org_a),
+                       "DELETE FROM messages WHERE conversation_id = :c", c=target)
+
+
+async def test_conversations_cannot_be_created_for_someone_else_or_another_organization(world: World) -> None:
+    acting = _user(world, world.a1, world.org_a)
+    await _refused(world, acting, "INSERT INTO conversations (id, user_id) VALUES (:id, :u)", id=uuid.uuid4(), u=world.b1)
+    await _refused(
+        world, acting,
+        "INSERT INTO conversations (id, user_id, organization_id) VALUES (:id, :u, :o)",
+        id=uuid.uuid4(), u=world.a1, o=world.org_b,
+    )
+
+
+async def test_slash_commands_belong_to_their_user(world: World) -> None:
+    assert await _ids(world, _user(world, world.a1), "user_slash_commands", "user_id") == {world.a1}
+
+
+# --- Organization data -------------------------------------------------------------------
+
+
+async def test_organizations_and_members_are_visible_to_members_only(world: World) -> None:
+    acting = _user(world, world.a1, world.org_a)
+    assert await _ids(world, acting, "organizations") == {world.org_a}
+    assert await _ids(world, acting, "organization_members", "user_id") == {world.a1, world.a2}
+    assert await _ids(world, acting, "users") == {world.a1, world.a2}
+
+
+async def test_nobody_joins_an_organization_by_writing_a_membership(world: World) -> None:
+    await _refused(
+        world, _user(world, world.c),
+        "INSERT INTO organization_members (id, organization_id, user_id, role) VALUES (:id, :o, :u, 'owner')",
+        id=uuid.uuid4(), o=world.org_a, u=world.c,
+    )
+    # A plain member cannot promote itself either.
+    await _refused(
+        world, _user(world, world.a2, world.org_a),
+        "UPDATE organization_members SET role = 'owner' WHERE user_id = :u", u=world.a2,
+    )
+
+
+async def test_api_keys_and_invitations_need_owner_or_admin(world: World) -> None:
+    owner, member = _user(world, world.a1, world.org_a), _user(world, world.a2, world.org_a)
+    assert await _ids(world, owner, "api_keys", "organization_id") == {world.org_a}
+    assert await _ids(world, member, "api_keys") == set()
+    assert await _ids(world, owner, "invitations", "organization_id") == {world.org_a}
+    assert await _ids(world, member, "invitations") == set()
+
+
+async def test_knowledge_bases_follow_their_scope(world: World) -> None:
+    names = await _ids(world, _user(world, world.a2, world.org_a), "knowledge_bases", "name")
+    assert names == {"kb_org_a", "kb_app"}, "a2 sees its organization's and the app's, not a1's personal"
+    await _refused(
+        world, _user(world, world.a2, world.org_a),
+        "INSERT INTO knowledge_bases (id, scope, organization_id, name, collection_name) VALUES (:id, 'org', :o, 'x', 'x')",
+        id=uuid.uuid4(), o=world.org_b,
+    )
+
+
+async def test_the_audit_log_is_append_only_for_the_application(world: World) -> None:
+    acting = _user(world, world.a1, world.org_a)
+    assert await _ids(world, acting, "app_admin_audit_logs") == set()
+    with acting_as(acting):
+        async with world.db.app() as session:
+            await session.execute(
+                text("INSERT INTO app_admin_audit_logs (id, actor_user_id, action) VALUES (:id, :u, 'test')"),
+                {"id": uuid.uuid4(), "u": world.a1},
+            )
+            await session.commit()
+    await _refused(world, acting, "DELETE FROM app_admin_audit_logs")
+    forged = "INSERT INTO app_admin_audit_logs (id, actor_user_id, action) VALUES (:id, :u, 'x')"
+    await _refused(world, acting, forged, id=uuid.uuid4(), u=world.b1)
+    service = Principal(organization_id=world.org_a, service=True)
+    await _refused(
+        world,
+        service,
+        "INSERT INTO app_admin_audit_logs (id, actor_user_id, organization_id, action)"
+        " VALUES (:id, :u, :org, 'x')",
+        id=uuid.uuid4(),
+        u=world.a1,
+        org=world.org_b,
+    )
+
+
+# --- API keys act for their organization, not for a person -------------------------------
+
+
+async def test_an_api_key_sees_its_organization_and_no_personal_data(world: World) -> None:
+    service = Principal(organization_id=world.org_a, service=True)
+    assert await _ids(world, service, "knowledge_bases", "name") == {"kb_org_a", "kb_app"}
+    assert await _ids(world, service, "conversations") == set(), "members' chats stay private"
+    assert await _ids(world, service, "api_keys") == set(), "a key does not manage keys"
+    created = uuid.uuid4()
+    with acting_as(service):
+        async with world.db.app() as session:
+            await _insert(session, "conversations", id=created, organization_id=world.org_a)
+            await session.commit()
+    assert await _ids(world, service, "conversations") == {created}
+    assert await _ids(world, Principal(organization_id=world.org_b, service=True), "conversations") == set()
+{%- endif %}

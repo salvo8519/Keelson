@@ -14,7 +14,8 @@ from uuid import uuid4
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from app.api.deps import get_current_active_superuser, get_current_user, get_user_service
+from app.api.deps import get_current_active_superuser, get_current_user
+from tests.overrides import override_user_service
 {%- if use_database %}
 from app.api.deps import get_db_session
 {%- endif %}
@@ -92,7 +93,7 @@ async def auth_client(
 ) -> AsyncClient:
     """Client with authenticated regular user."""
     app.dependency_overrides[get_current_user] = lambda: mock_user
-    app.dependency_overrides[get_user_service] = lambda: mock_user_service
+    override_user_service(app, mock_user_service)
 {%- if enable_redis %}
     app.dependency_overrides[get_redis] = lambda: mock_redis
 {%- endif %}
@@ -123,7 +124,7 @@ async def superuser_client(
     """Client with authenticated superuser."""
     app.dependency_overrides[get_current_user] = lambda: mock_superuser
     app.dependency_overrides[get_current_active_superuser] = lambda: mock_superuser
-    app.dependency_overrides[get_user_service] = lambda: mock_user_service
+    override_user_service(app, mock_user_service)
 {%- if enable_redis %}
     app.dependency_overrides[get_redis] = lambda: mock_redis
 {%- endif %}

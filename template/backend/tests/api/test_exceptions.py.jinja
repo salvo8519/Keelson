@@ -24,7 +24,7 @@ ServiceMock = AsyncMock
 
 from httpx import ASGITransport
 
-from app.api.deps import get_user_service
+from tests.overrides import override_user_service
 from app.core.exceptions import AlreadyExistsError, AuthenticationError
 {%- if enable_redis %}
 from app.api.deps import get_redis
@@ -77,7 +77,7 @@ async def error_client(
 {%- endif %}
 ) -> AsyncClient:
     """Client with mocked services that raise errors."""
-    app.dependency_overrides[get_user_service] = lambda: mock_user_service_with_errors
+    override_user_service(app, mock_user_service_with_errors)
 {%- if enable_redis %}
     app.dependency_overrides[get_redis] = lambda: mock_redis
 {%- endif %}

@@ -15,7 +15,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query
 
-from app.api.deps import ConversationSvc
+from app.api.deps import PublicConversationSvc
 from app.schemas.conversation import ConversationReadWithMessages, DemoConversationList
 
 router = APIRouter()
@@ -23,7 +23,7 @@ router = APIRouter()
 
 @router.get("", response_model=DemoConversationList)
 async def list_demo_conversations(
-    service: ConversationSvc,
+    service: PublicConversationSvc,
     skip: int = Query(0, ge=0, description="Items to skip"),
     limit: int = Query(50, ge=1, le=100, description="Max items to return"),
 ) -> Any:
@@ -35,7 +35,7 @@ async def list_demo_conversations(
 @router.get("/{conversation_id}", response_model=ConversationReadWithMessages)
 async def get_demo_conversation(
     conversation_id: UUID,
-    service: ConversationSvc,
+    service: PublicConversationSvc,
 ) -> Any:
     """Get a single demo conversation with all messages (public, no auth)."""
     return await service.get_demo_conversation(conversation_id)

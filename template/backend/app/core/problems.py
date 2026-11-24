@@ -20,6 +20,7 @@ from typing import Any
 from fastapi.responses import JSONResponse
 
 from app.core.i18n import current_language, gettext, status_title
+from fastapi.encoders import jsonable_encoder
 
 PROBLEM_CONTENT_TYPE = "application/problem+json"
 
@@ -41,7 +42,9 @@ def problem_response(
         "code": code,
     }
     if details:
-        body["details"] = details
+        # Details carry ids and dates (a UUID in NotFoundError), so encode them as FastAPI
+        # encodes a response body; a plain json.dumps fails and turns a 404 into a 500.
+        body["details"] = jsonable_encoder(details)
     if request_id:
         body["request_id"] = request_id
     return JSONResponse(
