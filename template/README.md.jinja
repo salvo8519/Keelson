@@ -223,11 +223,10 @@ ANTHROPIC_API_KEY=sk-ant-…
 {%- if use_google %}
 GOOGLE_API_KEY=…
 {%- endif %}
-{%- if enable_oauth_google %}
+{%- if enable_oauth %}
 
-# Google OAuth (Sign in with Google)
-GOOGLE_CLIENT_ID=…
-GOOGLE_CLIENT_SECRET=…
+# Single sign-on: OpenID Connect providers (see the documentation, Concepts > Sign-in)
+OIDC_PROVIDERS=[{"name": "entra", "label": "Microsoft", "issuer": "…", "client_id": "…", "client_secret": "…"}]
 {%- endif %}
 {%- if enable_billing %}
 

@@ -1,3 +1,9 @@
+msgid "1 hour"
+msgstr "1 ora"
+
+msgid "1 minute"
+msgstr "1 minuto"
+
 msgid ""
 "A custom command with this name already exists; edit it directly instead "
 "of overriding the built-in."
@@ -10,6 +16,9 @@ msgstr "Esiste già un invito in sospeso per questa email"
 
 msgid "A revoked or expired key cannot be rotated"
 msgstr "Una chiave revocata o scaduta non può essere ruotata"
+
+msgid "A team member"
+msgstr "Un membro del team"
 
 msgid "API Key header missing"
 msgstr "Header della API key mancante"
@@ -99,6 +108,9 @@ msgstr ""
 msgid "Cannot transfer ownership to yourself"
 msgstr "Non puoi trasferire la proprietà a te stesso"
 
+msgid "Collection not found"
+msgstr "Collezione non trovata"
+
 msgid "Conflict"
 msgstr "Conflitto"
 
@@ -162,8 +174,14 @@ msgstr "File non valido"
 msgid "Invalid or expired refresh token"
 msgstr "Refresh token non valido o scaduto"
 
+msgid "Invalid or expired sign-in code"
+msgstr "Codice di accesso non valido o scaduto"
+
 msgid "Invalid or expired token"
 msgstr "Token non valido o scaduto"
+
+msgid "Invalid or expired workload credential"
+msgstr "Credenziale di workload non valida o scaduta"
 
 msgid "Invalid refresh token"
 msgstr "Refresh token non valido"
@@ -379,6 +397,9 @@ msgstr "Trasferisci la proprietà prima di lasciare l'organizzazione"
 msgid "Unauthorized"
 msgstr "Non autenticato"
 
+msgid "Unknown sign-in provider"
+msgstr "Provider di accesso sconosciuto"
+
 msgid "Unprocessable Content"
 msgstr "Contenuto non elaborabile"
 
@@ -397,6 +418,9 @@ msgstr "L'utente è già membro del progetto"
 msgid "User not found"
 msgstr "Utente non trovato"
 
+msgid "Workload token not accepted"
+msgstr "Token di workload non accettato"
+
 msgid "You are already a member of this organization"
 msgstr "Sei già membro di questa organizzazione"
 
@@ -406,23 +430,14 @@ msgstr "Non hai il permesso di modificare questa conversazione"
 msgid "expires_at must be in the future"
 msgstr "expires_at deve essere nel futuro"
 
-msgid "1 hour"
-msgstr "1 ora"
-
-msgid "{count} hours"
-msgstr "{count} ore"
-
-msgid "1 minute"
-msgstr "1 minuto"
-
-msgid "{count} minutes"
-msgstr "{count} minuti"
-
-msgid "A team member"
-msgstr "Un membro del team"
-
 msgid "the organization"
 msgstr "l'organizzazione"
 
-msgid "Collection not found"
-msgstr "Collezione non trovata"
+#, python-brace-format
+msgid "{count} hours"
+msgstr "{count} ore"
+
+#, python-brace-format
+msgid "{count} minutes"
+msgstr "{count} minuti"
+

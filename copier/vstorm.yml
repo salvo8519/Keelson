@@ -277,11 +277,11 @@ enable_newsletter_signup:
 enable_oauth:
   type: bool
   when: false
-  default: false
+  default: '{{ {''none'': false, ''react'': true}[(web_frontend | string)] }}'
 enable_oauth_google:
   type: bool
   when: false
-  default: false
+  default: '{{ {''none'': false, ''react'': true}[(web_frontend | string)] }}'
 enable_pagination:
   type: bool
   when: false
@@ -465,7 +465,7 @@ newsletter_provider_resend:
 oauth_provider:
   type: str
   when: false
-  default: 'none'
+  default: '{{ {''none'': ''none'', ''react'': ''google''}[(web_frontend | string)] }}'
 orm_type:
   type: str
   when: false

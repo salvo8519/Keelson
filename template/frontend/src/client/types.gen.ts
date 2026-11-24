@@ -1579,6 +1579,34 @@ export type MessageReadSimple = {
 };
 
 /**
+ * OAuthCodeExchange
+ *
+ * The one-time code the frontend received after signing in at a provider.
+ */
+export type OAuthCodeExchange = {
+    /**
+     * Code
+     */
+    code: string;
+};
+
+/**
+ * OAuthProviderRead
+ *
+ * A provider shown on the sign-in page.
+ */
+export type OAuthProviderRead = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Label
+     */
+    label: string;
+};
+
+/**
  * OrganizationCreate
  */
 export type OrganizationCreate = {
@@ -2938,6 +2966,42 @@ export type ValidationError = {
     };
 };
 
+/**
+ * WorkloadToken
+ *
+ * A credential of this API: send it as an API key (``X-API-Key``) until it expires.
+ */
+export type WorkloadToken = {
+    /**
+     * Credential
+     */
+    credential: string;
+    /**
+     * Expires At
+     */
+    expires_at: string;
+    /**
+     * Organization Id
+     */
+    organization_id: string;
+    /**
+     * Scopes
+     */
+    scopes: Array<string>;
+};
+
+/**
+ * WorkloadTokenRequest
+ *
+ * The OpenID Connect token of a CI job (GitHub Actions, GitLab CI).
+ */
+export type WorkloadTokenRequest = {
+    /**
+     * Token
+     */
+    token: string;
+};
+
 export type healthHealthCheckData = {
     body?: never;
     path?: never;
@@ -3621,6 +3685,105 @@ export type adminRatingsExportRatingsResponses = {
      */
     200: unknown;
 };
+
+export type oauthListProvidersData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/oauth/providers';
+};
+
+export type oauthListProvidersResponses = {
+    /**
+     * Response Oauth-List Providers
+     *
+     * Successful Response
+     */
+    200: Array<OAuthProviderRead>;
+};
+
+export type oauthListProvidersResponse = oauthListProvidersResponses[keyof oauthListProvidersResponses];
+
+export type oauthProviderLoginData = {
+    body?: never;
+    path: {
+        /**
+         * Name
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/oauth/{name}/login';
+};
+
+export type oauthProviderLoginErrors = {
+    /**
+     * Validation Error
+     */
+    422: HTTPValidationError;
+};
+
+export type oauthProviderLoginError = oauthProviderLoginErrors[keyof oauthProviderLoginErrors];
+
+export type oauthProviderLoginResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type oauthProviderCallbackData = {
+    body?: never;
+    path: {
+        /**
+         * Name
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/oauth/{name}/callback';
+};
+
+export type oauthProviderCallbackErrors = {
+    /**
+     * Validation Error
+     */
+    422: HTTPValidationError;
+};
+
+export type oauthProviderCallbackError = oauthProviderCallbackErrors[keyof oauthProviderCallbackErrors];
+
+export type oauthProviderCallbackResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type oauthExchangeCodeData = {
+    body: OAuthCodeExchange;
+    path?: never;
+    query?: never;
+    url: '/api/v1/oauth/exchange';
+};
+
+export type oauthExchangeCodeErrors = {
+    /**
+     * Validation Error
+     */
+    422: HTTPValidationError;
+};
+
+export type oauthExchangeCodeError = oauthExchangeCodeErrors[keyof oauthExchangeCodeErrors];
+
+export type oauthExchangeCodeResponses = {
+    /**
+     * Successful Response
+     */
+    200: Token;
+};
+
+export type oauthExchangeCodeResponse = oauthExchangeCodeResponses[keyof oauthExchangeCodeResponses];
 
 export type conversationsExportConversationsData = {
     body?: never;
@@ -6135,6 +6298,31 @@ export type apiKeysIntrospectApiKeyResponses = {
 };
 
 export type apiKeysIntrospectApiKeyResponse = apiKeysIntrospectApiKeyResponses[keyof apiKeysIntrospectApiKeyResponses];
+
+export type authExchangeWorkloadTokenData = {
+    body: WorkloadTokenRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/workload-token';
+};
+
+export type authExchangeWorkloadTokenErrors = {
+    /**
+     * Validation Error
+     */
+    422: HTTPValidationError;
+};
+
+export type authExchangeWorkloadTokenError = authExchangeWorkloadTokenErrors[keyof authExchangeWorkloadTokenErrors];
+
+export type authExchangeWorkloadTokenResponses = {
+    /**
+     * Successful Response
+     */
+    200: WorkloadToken;
+};
+
+export type authExchangeWorkloadTokenResponse = authExchangeWorkloadTokenResponses[keyof authExchangeWorkloadTokenResponses];
 
 export type knowledgeBasesListKnowledgeBasesData = {
     body?: never;

@@ -249,18 +249,24 @@ class UserService:
         email: str,
         full_name: str | None = None,
     ) -> User:
-        """Email-matched existing accounts get the OAuth identity attached rather than creating a duplicate."""
+        """Email-matched existing accounts get the OAuth identity attached rather than creating a duplicate.
+
+        Keelson: the caller passes an address the provider has verified, or one from a
+        directory configured as trusted (app/core/oidc.py), since a match signs in the existing
+        account. An account linked to another identity keeps that link.
+        """
         existing = await user_repo.get_by_oauth(self.db, provider, provider_id)
         if existing:
             return existing
 
         by_email = await user_repo.get_by_email(self.db, email)
         if by_email is not None:
-            await user_repo.update(
-                self.db,
-                db_user=by_email,
-                update_data={"oauth_provider": provider, "oauth_id": provider_id},
-            )
+            if by_email.oauth_provider is None:
+                by_email = await user_repo.update(
+                    self.db,
+                    db_user=by_email,
+                    update_data={"oauth_provider": provider, "oauth_id": provider_id},
+                )
             return by_email
 
         user = await user_repo.create(

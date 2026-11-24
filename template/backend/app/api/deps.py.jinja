@@ -696,6 +696,9 @@ from datetime import datetime
 
 from fastapi import Request
 
+import logging
+
+from app.core import workload_identity
 from app.db.models.api_key import ApiKey
 from app.services.api_key import ApiKeyService
 {%- if enable_rate_limiting %}
@@ -705,9 +708,14 @@ from app.services.rate_limit import RateLimitCategory, check_rate_limit, client_
 
 @dataclass(frozen=True)
 class ApiKeyPrincipal:
-    """The organization and scopes a request authenticated by an API key acts with."""
+    """The organization and scopes a request authenticated by an API key acts with.
 
-    key: ApiKey
+    Keelson: also a CI job authenticated by workload identity (app/core/workload_identity.py):
+    then ``key`` is None and ``label`` names the trust.
+    """
+
+    key: ApiKey | None
+    label: str
     organization_id: UUID
     scopes: frozenset[str]
     expires_at: datetime | None
@@ -728,25 +736,39 @@ async def get_api_key_principal(
     """Authenticate the request by its API key and bind it to the key's organization."""
     if api_key is None:
         raise AuthenticationError(message="API key header missing")
-    # Keelson: the key is found by its prefix before anyone is known: a system lookup. The
-    # request then acts as the key's organization (a service principal, not a person).
-    async with system_session("API key authentication") as system_db:
-        key = await ApiKeyService(system_db).authenticate(api_key)
-    await bind_service(db, key.organization_id)
+    if api_key.startswith(workload_identity.CREDENTIAL_PREFIX):
+        workload = workload_identity.read(api_key, settings.SECRET_KEY)
+        if workload is None:
+            raise AuthenticationError(message="Invalid or expired workload credential")
+        principal = ApiKeyPrincipal(
+            key=None,
+            label=f"workload:{workload.trust}",
+            organization_id=workload.organization_id,
+            scopes=workload.scopes,
+            expires_at=workload.expires_at,
+        )
+    else:
+        # Keelson: the key is found by its prefix before anyone is known: a system lookup.
+        async with system_session("API key authentication") as system_db:
+            key = await ApiKeyService(system_db).authenticate(api_key)
+        principal = ApiKeyPrincipal(
+            key=key,
+            label=f"api_key:{key.id}",
+            organization_id=key.organization_id,
+            scopes=frozenset(key.scopes),
+            expires_at=key.expires_at,
+        )
+    # The request acts as the organization (a service principal, not a person).
+    await bind_service(db, principal.organization_id)
 {%- if enable_rate_limiting %}
     await check_rate_limit(
         category=RateLimitCategory.API_KEY,
         client_ip=client_ip(request),
-        user_id=f"api_key:{key.id}",
-        org_id=str(key.organization_id),
+        user_id=principal.label,
+        org_id=str(principal.organization_id),
     )
 {%- endif %}
-    return ApiKeyPrincipal(
-        key=key,
-        organization_id=key.organization_id,
-        scopes=frozenset(key.scopes),
-        expires_at=key.expires_at,
-    )
+    return principal
 
 
 CurrentApiKey = Annotated[ApiKeyPrincipal, Depends(get_api_key_principal)]
@@ -768,7 +790,13 @@ def require_api_scopes(*scopes: str):
     async def _check(principal: CurrentApiKey, service: ApiKeySvc) -> ApiKeyPrincipal:
         missing = sorted(set(scopes) - principal.scopes)
         if missing:
-            await service.record_scope_denial(principal.key, missing)
+            if principal.key is not None:
+                await service.record_scope_denial(principal.key, missing)
+            else:
+                logging.getLogger(__name__).warning(
+                    "workload_scope_denied",
+                    extra={"workload": principal.label, "missing": missing},
+                )
             raise AuthorizationError(
                 message="API key lacks the required scopes", details={"missing": missing}
             )

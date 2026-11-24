@@ -17,6 +17,21 @@ const isLoggedIn = () => {
   return session.accessToken() !== null
 }
 
+// Keelson: stores the tokens of a sign-in (password or single sign-on) and returns true when
+// the user's saved language differs from the interface's; the page is then reloaded in it.
+const completeSignIn = async (
+  accessToken: string,
+  refreshToken: string,
+): Promise<boolean> => {
+  session.signIn(accessToken, refreshToken)
+  const { locale } = (await UsersService.readCurrentUser()).data
+  if (isSupported(locale) && locale !== currentLanguage()) {
+    setLanguage(locale, { reload: false })
+    return true
+  }
+  return false
+}
+
 const useAuth = () => {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -39,19 +54,14 @@ const useAuth = () => {
     },
   })
 
-  // Keelson: returns true when the user's saved language differs from the interface's; the
-  // page is then reloaded in that language.
   const login = async (data: AccessToken): Promise<boolean> => {
     const response = await AuthService.login({
       body: data,
     })
-    session.signIn(response.data.access_token, response.data.refresh_token)
-    const { locale } = (await UsersService.readCurrentUser()).data
-    if (isSupported(locale) && locale !== currentLanguage()) {
-      setLanguage(locale, { reload: false })
-      return true
-    }
-    return false
+    return completeSignIn(
+      response.data.access_token,
+      response.data.refresh_token,
+    )
   }
 
   const loginMutation = useMutation({
@@ -80,5 +90,5 @@ const useAuth = () => {
   }
 }
 
-export { isLoggedIn }
+export { completeSignIn, isLoggedIn }
 export default useAuth

@@ -43,14 +43,9 @@ dependencies = [
     # Keelson: gettext catalogs of API messages (app/core/i18n.py).
     "babel>=2.16.0",
 {%- if use_jwt %}
-{%- if use_jwks_idp %}
-    # PyJWT[crypto] pulls in `cryptography` for RSA/ECDSA verification — needed
-    # to validate IdP-issued tokens against a published JWKS.
+    # PyJWT[crypto]: RSA/ECDSA verification of tokens signed by others, published as JWKS
+    # (Keelson: CI workload identity always needs it; upstream only for a delegated IdP).
     "pyjwt[crypto]>=2.9.0",
-{%- else %}
-    # HMAC HS256 only — no asymmetric keys, no `cryptography` extra.
-    "pyjwt>=2.9.0",
-{%- endif %}
     # Argon2id hashes, bcrypt verified for older ones (official FastAPI template).
     "pwdlib[argon2,bcrypt]>=0.3.1",
     "python-multipart>=0.0.12",

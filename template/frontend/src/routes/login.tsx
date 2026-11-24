@@ -8,6 +8,7 @@ import { useForm } from "react-hook-form"
 import { z } from "zod"
 import { BRAND_NAME } from "@/brand"
 import type { Body_auth_login as AccessToken } from "@/client"
+import { SsoButtons, ssoErrorMessage } from "@/components/Auth/SsoButtons"
 import { AuthLayout } from "@/components/Common/AuthLayout"
 import {
   Form,
@@ -35,6 +36,8 @@ type FormData = z.infer<typeof formSchema>
 
 export const Route = createFileRoute("/login")({
   component: Login,
+  // Keelson: a single sign-on that did not complete comes back with the reason.
+  validateSearch: z.object({ error: z.string().optional() }),
   beforeLoad: async () => {
     if (isLoggedIn()) {
       throw redirect({
@@ -53,6 +56,7 @@ export const Route = createFileRoute("/login")({
 
 function Login() {
   const { loginMutation } = useAuth()
+  const { error } = Route.useSearch()
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
     mode: "onBlur",
@@ -78,6 +82,14 @@ function Login() {
           <div className="flex flex-col items-center gap-2 text-center">
             <h1 className="text-2xl font-bold">{t("Login to your account")}</h1>
           </div>
+
+          {error && (
+            <p role="alert" className="text-center text-sm text-destructive">
+              {ssoErrorMessage(error)}
+            </p>
+          )}
+
+          <SsoButtons />
 
           <div className="grid gap-4">
             <FormField
@@ -131,7 +143,7 @@ function Login() {
           </div>
 
           <div className="text-center text-sm">
-            Don't have an account yet?{" "}
+            {t("Don't have an account yet?")}{" "}
             <RouterLink to="/signup" className="underline underline-offset-4">
               {t("Sign up")}
             </RouterLink>

@@ -34,6 +34,9 @@ We aim to acknowledge within 48h and ship a fix within 7 days for high-severity 
 - **Admin API key** — static `settings.API_KEY` matched via `X-API-Key` header for service-to-service calls. Constant-time compared with `secrets.compare_digest()`.
 {%- endif %}
 
+- **Single sign-on** — any OpenID Connect provider, configured at run time (`OIDC_PROVIDERS`): code flow with PKCE, ID token verified, an existing account is matched only by an address the provider has verified (or a trusted company directory). The frontend receives a one-time code, never tokens in a URL.
+- **CI workload identity** — GitHub Actions and GitLab CI jobs exchange their OpenID Connect token, checked against `WORKLOAD_IDENTITIES` (issuer, audience, repository and branch claims), for a short-lived credential acting for one organization with API key scopes. No secret is stored in the CI.
+
 ### Authorization
 
 - **Role-based** via `RoleChecker` dep (`UserRole.USER` / `UserRole.ADMIN`).
@@ -97,7 +100,7 @@ We aim to acknowledge within 48h and ship a fix within 7 days for high-severity 
 ## Known limitations
 
 - **No 2FA / MFA** for password accounts. Sign-in through an identity provider can enforce it there.
-- **No SAML / OIDC** beyond Google OAuth. Enterprise SSO needs custom IdP integration.
+- **No SAML.** Single sign-on uses OpenID Connect (Google, Microsoft Entra ID, Keycloak, any issuer); an identity provider that speaks only SAML needs a broker such as Keycloak.
 - **Log redaction is pattern-based** — passwords, tokens, keys and e-mail addresses are recognised by their name or format; a secret without either (a bare value in free text) is not. Keep secrets out of log calls.
 {%- if use_jwt and not enable_session_management %}
 - **No server-side session revocation** — JWTs valid until expiry. Compromised tokens require `SECRET_KEY` rotation (invalidates ALL sessions). Enable `--session-management` for selective revocation.

@@ -1,0 +1,187 @@
+{%- if enable_oauth %}
+"""Single sign-on through OpenID Connect providers (Keelson)."""
+
+import hashlib
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
+from urllib.parse import parse_qs, urlparse
+from uuid import uuid4
+
+import pytest
+from httpx import AsyncClient
+
+from app.api.deps import get_auth_user_service
+from app.api.routes.v1 import oauth as routes
+from app.core.oidc import OidcProvider, SignInRefused, configured_providers, verified_identity
+from app.main import app
+
+ENTRA = OidcProvider(
+    name="entra",
+    label="Microsoft",
+    issuer="https://login.microsoftonline.com/tenant/v2.0",
+    client_id="client",
+    trust_email=True,
+    email_domains=["Example.com"],
+)
+PUBLIC = OidcProvider(name="public", label="Public", issuer="https://id.example.org", client_id="c")
+
+
+# --- Rules on the claims of a verified ID token -------------------------------------------
+
+
+def test_a_verified_address_is_accepted() -> None:
+    identity = verified_identity(
+        PUBLIC, {"sub": "42", "email": "Ada@Example.org", "email_verified": True, "name": "Ada"}
+    )
+    assert (identity.subject, identity.email, identity.name) == ("42", "ada@example.org", "Ada")
+
+
+@pytest.mark.parametrize(
+    ("provider", "claims", "code"),
+    [
+        (PUBLIC, {"sub": "1", "email": "a@example.org"}, "email_unverified"),
+        (PUBLIC, {"sub": "1", "email": "a@example.org", "email_verified": False}, "email_unverified"),
+        (PUBLIC, {"sub": "1"}, "no_email"),
+        (PUBLIC, {"email": "a@example.org", "email_verified": True}, "no_email"),
+        (ENTRA, {"sub": "1", "email": "a@other.com"}, "domain_not_allowed"),
+    ],
+)
+def test_unacceptable_identities_are_refused(
+    provider: OidcProvider, claims: dict, code: str
+) -> None:
+    with pytest.raises(SignInRefused) as refused:
+        verified_identity(provider, claims)
+    assert refused.value.code == code
+
+
+def test_a_trusted_directory_may_send_the_sign_in_name() -> None:
+    identity = verified_identity(ENTRA, {"sub": "oid", "preferred_username": "ada@example.com"})
+    assert identity.email == "ada@example.com"
+
+
+def test_provider_settings_are_checked() -> None:
+    with pytest.raises(ValueError):
+        OidcProvider(name="x", label="X", issuer="http://idp.example.com", client_id="c")
+    with pytest.raises(ValueError):
+        OidcProvider(name="Bad Name", label="X", issuer="https://idp.example.com", client_id="c")
+    assert OidcProvider(
+        name="local", label="Dev", issuer="http://localhost:8080/realms/dev/", client_id="c"
+    ).discovery_url == "http://localhost:8080/realms/dev/.well-known/openid-configuration"
+
+
+def test_upstream_google_settings_add_a_google_provider() -> None:
+    providers = configured_providers([ENTRA], "google-client", "secret")
+    assert [p.name for p in providers] == ["entra", "google"]
+    with pytest.raises(ValueError):
+        configured_providers([ENTRA, ENTRA])
+
+
+# --- Routes ---------------------------------------------------------------------------------
+
+
+@pytest.fixture
+def providers(monkeypatch: pytest.MonkeyPatch) -> dict[str, OidcProvider]:
+    configured = {"entra": ENTRA}
+    monkeypatch.setattr(routes, "PROVIDERS", configured)
+    return configured
+
+
+@pytest.fixture
+def users() -> MagicMock:
+    service = MagicMock()
+    service.get_or_create_oauth_user = AsyncMock(
+        return_value=SimpleNamespace(id=uuid4(), is_active=True)
+    )
+    app.dependency_overrides[get_auth_user_service] = lambda: service
+    yield service
+    app.dependency_overrides.pop(get_auth_user_service, None)
+
+
+@pytest.mark.anyio
+async def test_the_sign_in_page_lists_the_providers(client: AsyncClient, providers) -> None:
+    response = await client.get("/api/v1/oauth/providers")
+    assert response.json() == [{"name": "entra", "label": "Microsoft"}]
+
+
+@pytest.mark.anyio
+async def test_an_unknown_provider_is_not_found(client: AsyncClient, providers) -> None:
+    assert (await client.get("/api/v1/oauth/other/login")).status_code == 404
+
+
+@pytest.mark.anyio
+async def test_the_callback_sends_a_one_time_code_never_the_tokens(
+    client: AsyncClient, providers, users, mock_redis: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    claims = {"sub": "oid-1", "email": "ada@example.com"}
+    provider_client = MagicMock()
+    provider_client.authorize_access_token = AsyncMock(return_value={"userinfo": claims})
+    monkeypatch.setattr(routes, "client", lambda _name: provider_client)
+
+    response = await client.get("/api/v1/oauth/entra/callback?code=x&state=y")
+
+    assert response.status_code in (302, 307)
+    target = urlparse(response.headers["location"])
+    assert target.path == "/auth/callback"
+    code = parse_qs(target.query)["code"][0]
+    assert "token" not in target.query
+    users.get_or_create_oauth_user.assert_awaited_once_with(
+        provider="entra", provider_id="oid-1", email="ada@example.com", full_name=None
+    )
+    key, user_id = mock_redis.set.call_args.args[:2]
+    assert key == "oauth:code:" + hashlib.sha256(code.encode()).hexdigest()
+    assert mock_redis.set.call_args.kwargs["ttl"] == routes.CODE_TTL_SECONDS
+
+
+@pytest.mark.anyio
+async def test_a_refused_identity_returns_to_the_sign_in_page_with_a_reason(
+    client: AsyncClient, providers, users, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    provider_client = MagicMock()
+    provider_client.authorize_access_token = AsyncMock(
+        return_value={"userinfo": {"sub": "1", "email": "a@other.com"}}
+    )
+    monkeypatch.setattr(routes, "client", lambda _name: provider_client)
+
+    response = await client.get("/api/v1/oauth/entra/callback")
+
+    target = urlparse(response.headers["location"])
+    assert (target.path, parse_qs(target.query)["error"]) == ("/login", ["domain_not_allowed"])
+    users.get_or_create_oauth_user.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_the_code_is_exchanged_once(client: AsyncClient, users, mock_redis: MagicMock) -> None:
+    user = SimpleNamespace(id=uuid4(), is_active=True)
+    users.get_by_id = AsyncMock(return_value=user)
+    mock_redis.raw = MagicMock()
+    mock_redis.raw.getdel = AsyncMock(side_effect=[str(user.id), None])
+    body = {"code": "c" * 43}
+
+    first = await client.post("/api/v1/oauth/exchange", json=body)
+    second = await client.post("/api/v1/oauth/exchange", json=body)
+
+    assert first.status_code == 200 and first.json()["access_token"]
+    assert second.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_an_account_linked_to_another_identity_keeps_its_link(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services import user as user_module
+    from app.services.user import UserService
+
+    account = SimpleNamespace(id=uuid4(), oauth_provider="google", oauth_id="g-1")
+    repo = MagicMock()
+    repo.get_by_oauth = AsyncMock(return_value=None)
+    repo.get_by_email = AsyncMock(return_value=account)
+    repo.update = AsyncMock()
+    monkeypatch.setattr(user_module, "user_repo", repo)
+
+    found = await UserService(MagicMock()).get_or_create_oauth_user(
+        provider="entra", provider_id="oid-1", email="ada@example.com"
+    )
+
+    assert found is account
+    repo.update.assert_not_awaited()
+{%- endif %}

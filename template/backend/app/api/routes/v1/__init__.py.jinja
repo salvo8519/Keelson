@@ -58,7 +58,7 @@ from app.api.routes.v1 import slack_webhook
 from app.api.routes.v1 import members, organizations
 from app.api.routes.v1.invitations import org_router as invitations_org_router, token_router as invitations_token_router
 {%- if use_api_key and use_postgresql %}
-from app.api.routes.v1 import api_keys
+from app.api.routes.v1 import api_keys, workload
 {%- endif %}
 {%- endif %}
 {%- if enable_teams and enable_rag and use_jwt %}
@@ -185,6 +185,7 @@ v1_router.include_router(invitations_org_router, prefix="/orgs", tags=["invitati
 v1_router.include_router(invitations_token_router, tags=["invitations"])
 {%- if use_api_key and use_postgresql %}
 v1_router.include_router(api_keys.router, prefix="/api-keys", tags=["api-keys"])
+v1_router.include_router(workload.router, prefix="/auth", tags=["auth"])
 {%- endif %}
 {%- endif %}
 {%- if enable_teams and enable_rag and use_jwt %}

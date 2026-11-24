@@ -120,6 +120,10 @@ def _to_config_kwargs(axis_values: dict[str, Any]) -> dict[str, Any]:
         "ci_type": axis_values["ci_provider"],
         "enable_kubernetes": axis_values["kubernetes"],
         "enable_logfire": axis_values["logfire"],
+        # Upstream's OAuth sign-in (Authlib, identities on the user, the session middleware)
+        # needs a frontend for its callback. Keelson generalises it to any OpenID Connect
+        # provider configured at run time (app/core/oauth.py); Google is one of them.
+        "oauth_provider": "google" if axis_values["web_frontend"] == "react" else "none",
     }
 
 

@@ -15,6 +15,12 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 {%- if enable_mcp_client %}
 from pydantic import BaseModel, Field
 {%- endif %}
+{%- if enable_oauth %}
+
+from app.core.oidc import OidcProvider
+{%- endif %}
+
+from app.core.workload_identity import WorkloadTrust
 
 
 {%- if enable_mcp_client %}
@@ -200,11 +206,18 @@ class Settings(BaseSettings):
     # the billing model_validator references it unconditionally.
     FRONTEND_URL: str = "http://localhost:{{ frontend_port }}"
 
-{%- if enable_oauth_google %}
+{%- if enable_oauth %}
 
+    # Keelson: single sign-on through OpenID Connect providers (Google, Microsoft Entra ID,
+    # Keycloak or any issuer), a JSON list; empty turns it off. See app/core/oidc.py and the
+    # documentation, Guides > Single sign-on.
+    OIDC_PROVIDERS: list[OidcProvider] = []
+    # Public URL of this API: providers send users back to
+    # <PUBLIC_API_URL>/api/v1/oauth/<name>/callback, which must be registered with them.
+    PUBLIC_API_URL: str = "http://localhost:{{ backend_port }}"
+    # Upstream's Google settings, kept as a shortcut: when set, a "google" provider is added.
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
-    GOOGLE_REDIRECT_URI: str = "http://localhost:{{ backend_port }}/api/v1/oauth/google/callback"
 {%- endif %}
 
 {%- if use_delegated_auth %}
@@ -268,6 +281,10 @@ class Settings(BaseSettings):
 {%- endif %}
 
 {%- if use_api_key %}
+
+    # Keelson: CI jobs (GitHub Actions, GitLab CI) that may act for an organization with their
+    # own OpenID Connect token, a JSON list; see app/core/workload_identity.py.
+    WORKLOAD_IDENTITIES: list[WorkloadTrust] = []
 
     API_KEY: str = "change-me-in-production"
     API_KEY_HEADER: str = "X-API-Key"

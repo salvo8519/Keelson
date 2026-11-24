@@ -121,7 +121,11 @@ async def test_missing_scope_is_refused(sessions) -> None:
         org, user = await _org_and_user(session)
         key, _ = await _create(session, org, user)
         principal = ApiKeyPrincipal(
-            key=key, organization_id=org.id, scopes=frozenset(key.scopes), expires_at=None
+            key=key,
+            label=f"api_key:{key.id}",
+            organization_id=org.id,
+            scopes=frozenset(key.scopes),
+            expires_at=None,
         )
         check = require_api_scopes("knowledge:write")
         with pytest.raises(AuthorizationError):

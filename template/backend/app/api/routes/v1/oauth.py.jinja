@@ -1,86 +1,114 @@
 {%- if enable_oauth %}
-"""OAuth2 authentication routes."""
+"""Single sign-on through OpenID Connect providers (upstream's Google flow, generalised).
 
+    GET  /oauth/providers          the providers to show on the sign-in page
+    GET  /oauth/<name>/login       redirect to the provider (authorization code with PKCE)
+    GET  /oauth/<name>/callback    back from the provider: the user is found or created
+    POST /oauth/exchange           the frontend trades a one-time code for the tokens
+
+Keelson: upstream put the access and refresh tokens in the URL of the redirect to the
+frontend, where browser history, proxies and server logs keep them. The redirect now carries
+a random code, valid once for a minute and stored only as a hash; the frontend exchanges it
+for the tokens in a POST. The user signs in once, at the provider.
+"""
+
+import hashlib
 import logging
+import secrets
+from typing import Any
 from urllib.parse import urlencode
+from uuid import UUID
 
+from authlib.integrations.base_client import OAuthError
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
 
-from app.api.deps import UserSvc
+from app.api.deps import AuthUserSvc, Redis
 from app.core.config import settings
-from app.core.oauth import oauth
+from app.core.exceptions import AuthenticationError, NotFoundError
+from app.core.oauth import PROVIDERS, client, redirect_uri
+from app.core.oidc import SignInRefused, verified_identity
 from app.core.security import create_access_token, create_refresh_token
+from app.schemas.oauth import OAuthCodeExchange, OAuthProviderRead
+from app.schemas.token import Token
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-{%- if enable_email_domain_allowlist %}
+CODE_PREFIX = "oauth:code:"
+CODE_TTL_SECONDS = 60
 
 
-def _is_domain_allowed(email: str) -> bool:
-    """Return True if the email's domain is in ALLOWED_EMAIL_DOMAINS (or the list is empty)."""
-    raw = getattr(settings, "ALLOWED_EMAIL_DOMAINS", "").strip()
-    if not raw:
-        return True
-    allowed = {d.strip().lower() for d in raw.split(",") if d.strip()}
-    domain = email.split("@")[-1].lower() if "@" in email else ""
-    return domain in allowed
-{%- endif %}
-
-{%- if enable_oauth_google %}
+def _code_key(code: str) -> str:
+    return CODE_PREFIX + hashlib.sha256(code.encode()).hexdigest()
 
 
-@router.get("/google/login", response_model=None)
-async def google_login(request: Request):
-    """Redirect to Google OAuth2 login page."""
-    return await oauth.google.authorize_redirect(request, settings.GOOGLE_REDIRECT_URI)
-
-
-
-
-@router.get("/google/callback", response_model=None)
-async def google_callback(request: Request, user_service: UserSvc):
-    """Handle Google OAuth2 callback."""
+def _to_login(error: str) -> RedirectResponse:
+    """Back to the sign-in page with a reason code, which the frontend translates."""
     frontend = settings.FRONTEND_URL.rstrip("/")
+    return RedirectResponse(url=f"{frontend}/login?{urlencode({'error': error})}")
+
+
+@router.get("/providers", response_model=list[OAuthProviderRead])
+async def list_providers() -> Any:
+    """Providers users can sign in with; empty when single sign-on is off."""
+    return [OAuthProviderRead(name=p.name, label=p.label) for p in PROVIDERS.values()]
+
+
+@router.get("/{name}/login", response_model=None)
+async def provider_login(name: str, request: Request) -> RedirectResponse:
+    """Redirect to the provider's sign-in page."""
+    if name not in PROVIDERS:
+        raise NotFoundError(message="Unknown sign-in provider", details={"provider": name})
+    return await client(name).authorize_redirect(request, redirect_uri(name))  # type: ignore[no-any-return]
+
+
+@router.get("/{name}/callback", response_model=None)
+async def provider_callback(
+    name: str, request: Request, user_service: AuthUserSvc, redis: Redis
+) -> RedirectResponse:
+    """Back from the provider: find or create the user, then return to the frontend."""
+    provider = PROVIDERS.get(name)
+    if provider is None:
+        return _to_login("unknown_provider")
     try:
-        token = await oauth.google.authorize_access_token(request)
-        user_info = token.get("userinfo")
-
-        if not user_info:
-            params = urlencode({"error": "Failed to get user info from Google"})
-            return RedirectResponse(url=f"{frontend}/login?{params}")
-
-{%- if enable_email_domain_allowlist %}
-        if not _is_domain_allowed(user_info.get("email", "")):
-            params = urlencode({"error": "Sign-in not allowed for your email domain."})
-            return RedirectResponse(url=f"{frontend}/login?{params}")
-{%- endif %}
-
-        user = await user_service.get_or_create_oauth_user(
-            provider="google",
-            provider_id=user_info.get("sub"),
-            email=user_info.get("email"),
-            full_name=user_info.get("name"),
-        )
-
-        access_token = create_access_token(subject=str(user.id))
-        refresh_token = create_refresh_token(subject=str(user.id))
-
-        params = urlencode({
-            "access_token": access_token,
-            "refresh_token": refresh_token,
-        })
-        return RedirectResponse(url=f"{frontend}/auth/callback?{params}")
-
-    except Exception:
-        logger.exception("google_oauth_callback_failed")
-        params = urlencode({"error": "Sign-in failed. Please try again."})
-        return RedirectResponse(url=f"{frontend}/login?{params}")
+        token = await client(name).authorize_access_token(request)
+        identity = verified_identity(provider, token.get("userinfo") or {})
+    except SignInRefused as refused:
+        logger.info("oauth_sign_in_refused", extra={"provider": name, "reason": str(refused)})
+        return _to_login(refused.code)
+    except OAuthError:
+        logger.warning("oauth_callback_failed", extra={"provider": name}, exc_info=True)
+        return _to_login("failed")
+    user = await user_service.get_or_create_oauth_user(
+        provider=name,
+        provider_id=identity.subject,
+        email=identity.email,
+        full_name=identity.name,
+    )
+    if not user.is_active:
+        return _to_login("account_disabled")
+    code = secrets.token_urlsafe(32)
+    await redis.set(_code_key(code), str(user.id), ttl=CODE_TTL_SECONDS)
+    frontend = settings.FRONTEND_URL.rstrip("/")
+    return RedirectResponse(url=f"{frontend}/auth/callback?{urlencode({'code': code})}")
 
 
-{%- endif %}
+@router.post("/exchange", response_model=Token)
+async def exchange_code(body: OAuthCodeExchange, redis: Redis, user_service: AuthUserSvc) -> Any:
+    """Trade the one-time code of a sign-in for the access and refresh tokens."""
+    user_id = await redis.raw.getdel(_code_key(body.code))
+    if not user_id:
+        raise AuthenticationError(message="Invalid or expired sign-in code")
+    # The client decodes responses (app/clients/redis.py): the value is the user id as text.
+    user = await user_service.get_by_id(UUID(str(user_id)))
+    if not user.is_active:
+        raise AuthenticationError(message="User account is disabled")
+    return Token(
+        access_token=create_access_token(subject=str(user.id)),
+        refresh_token=create_refresh_token(subject=str(user.id)),
+    )
 {%- else %}
 """OAuth routes - not configured."""
 {%- endif %}

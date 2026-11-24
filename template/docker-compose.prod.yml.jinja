@@ -668,9 +668,6 @@ services:
         - NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL:-http://${PUBLIC_HOST:-localhost}:{{ frontend_port }}}
 {%- endif %}
         - NEXT_PUBLIC_MAX_UPLOAD_SIZE_MB=${NEXT_PUBLIC_MAX_UPLOAD_SIZE_MB:-50}
-{%- if enable_oauth %}
-        - NEXT_PUBLIC_OAUTH_PROVIDERS={% if enable_oauth_google %}google{% endif %}
-{%- endif %}
         - NEXT_PUBLIC_RAG_ENABLED={% if enable_rag %}true{% else %}false{% endif %}
 {%- if enable_brand_from_config %}
         - NEXT_PUBLIC_BRAND_COLOR=${NEXT_PUBLIC_BRAND_COLOR:-{{ brand_color }}}

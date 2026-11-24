@@ -77,7 +77,7 @@ async def introspect_api_key(principal: CurrentApiKey) -> Any:
     """Called with an API key (``X-API-Key``): its organization, scopes and expiry."""
     return ApiKeyIntrospection(
         organization_id=principal.organization_id,
-        prefix=principal.key.prefix,
+        prefix=principal.key.prefix if principal.key else principal.label,
         scopes=sorted(principal.scopes),
         expires_at=principal.expires_at,
     )

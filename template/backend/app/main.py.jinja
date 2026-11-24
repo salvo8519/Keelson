@@ -393,7 +393,7 @@ def create_app() -> FastAPI:
 {%- if enable_oauth %}
         {
             "name": "oauth",
-            "description": "OAuth2 social login endpoints (Google, etc.)",
+            "description": "Single sign-on with OpenID Connect providers (Google, Microsoft Entra ID, Keycloak, any issuer)",
         },
 {%- endif %}
 {%- if enable_session_management and use_jwt %}
@@ -584,7 +584,14 @@ which does not change with the language.
 
 {%- if (enable_admin_panel and admin_require_auth and not admin_env_disabled) or enable_oauth %}
 
-    app.add_middleware(SessionMiddleware, secret_key=settings.SECRET_KEY)
+    # Keelson: the session only carries the state of a sign-in in progress (Authlib's state,
+    # nonce and PKCE verifier); in production its cookie is sent over HTTPS only.
+    app.add_middleware(
+        SessionMiddleware,
+        secret_key=settings.SECRET_KEY,
+        https_only=settings.ENVIRONMENT == "production",
+        same_site="lax",
+    )
 {%- endif %}
 
 {%- if enable_admin_panel %}

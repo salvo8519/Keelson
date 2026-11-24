@@ -19,6 +19,7 @@ import { Route as LayoutAdminRouteImport } from './routes/_layout/admin'
 import { Route as LayoutApiKeysRouteImport } from './routes/_layout/api-keys'
 import { Route as LayoutOrganizationsRouteImport } from './routes/_layout/organizations'
 import { Route as LayoutSettingsRouteImport } from './routes/_layout/settings'
+import { Route as AuthCallbackRouteImport } from './routes/auth/callback'
 
 const LayoutRoute = LayoutRouteImport.update({
   id: '/_layout',
@@ -69,6 +70,11 @@ const LayoutSettingsRoute = LayoutSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => LayoutRoute,
 } as any)
+const AuthCallbackRoute = AuthCallbackRouteImport.update({
+  id: '/auth/callback',
+  path: '/auth/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof LayoutIndexRoute
@@ -80,6 +86,7 @@ export interface FileRoutesByFullPath {
   '/api-keys': typeof LayoutApiKeysRoute
   '/organizations': typeof LayoutOrganizationsRoute
   '/settings': typeof LayoutSettingsRoute
+  '/auth/callback': typeof AuthCallbackRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
@@ -90,6 +97,7 @@ export interface FileRoutesByTo {
   '/api-keys': typeof LayoutApiKeysRoute
   '/organizations': typeof LayoutOrganizationsRoute
   '/settings': typeof LayoutSettingsRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/': typeof LayoutIndexRoute
 }
 export interface FileRoutesById {
@@ -103,6 +111,7 @@ export interface FileRoutesById {
   '/_layout/api-keys': typeof LayoutApiKeysRoute
   '/_layout/organizations': typeof LayoutOrganizationsRoute
   '/_layout/settings': typeof LayoutSettingsRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/_layout/': typeof LayoutIndexRoute
 }
 export interface FileRouteTypes {
@@ -117,6 +126,7 @@ export interface FileRouteTypes {
     | '/api-keys'
     | '/organizations'
     | '/settings'
+    | '/auth/callback'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
@@ -127,6 +137,7 @@ export interface FileRouteTypes {
     | '/api-keys'
     | '/organizations'
     | '/settings'
+    | '/auth/callback'
     | '/'
   id:
     | '__root__'
@@ -139,6 +150,7 @@ export interface FileRouteTypes {
     | '/_layout/api-keys'
     | '/_layout/organizations'
     | '/_layout/settings'
+    | '/auth/callback'
     | '/_layout/'
   fileRoutesById: FileRoutesById
 }
@@ -148,6 +160,7 @@ export interface RootRouteChildren {
   RecoverPasswordRoute: typeof RecoverPasswordRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   SignupRoute: typeof SignupRoute
+  AuthCallbackRoute: typeof AuthCallbackRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -222,6 +235,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutSettingsRouteImport
       parentRoute: typeof LayoutRoute
     }
+    '/auth/callback': {
+      id: '/auth/callback'
+      path: '/auth/callback'
+      fullPath: '/auth/callback'
+      preLoaderRoute: typeof AuthCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -250,6 +270,7 @@ const rootRouteChildren: RootRouteChildren = {
   RecoverPasswordRoute: RecoverPasswordRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   SignupRoute: SignupRoute,
+  AuthCallbackRoute: AuthCallbackRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

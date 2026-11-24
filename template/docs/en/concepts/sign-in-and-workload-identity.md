@@ -1,0 +1,121 @@
+# Sign-in and workload identity
+
+People sign in with a password or through their company's identity provider. CI jobs and other
+systems authenticate with an API key or, without any stored secret, with the identity their
+platform gives them. Every path ends in the same place: a principal that the database
+segregation applies to (see [Tenancy and API keys](tenancy-and-api-keys.md)).
+
+## Passwords
+
+Passwords are hashed with Argon2id. Hashes of earlier versions (bcrypt) are verified and
+replaced at the next sign-in. A sign-in with an unknown address does the same hashing work, so
+response times do not reveal which addresses are registered.
+
+## Single sign-on
+
+Any OpenID Connect provider can be offered on the sign-in page: Google, Microsoft Entra ID,
+Keycloak, Okta, Auth0 or a company's own issuer. Providers are configured at run time, as a
+JSON list in `OIDC_PROVIDERS`; an empty list turns single sign-on off. Projects generated
+without a frontend do not include it.
+
+| Field | Meaning |
+| --- | --- |
+| `name` | Identifier in URLs and on the user's identity; do not rename a provider in use |
+| `label` | Text of the button on the sign-in page |
+| `issuer` | The provider's issuer URL; its metadata is read from `/.well-known/openid-configuration` |
+| `client_id`, `client_secret` | The application registered with the provider |
+| `scopes` | Default `openid email profile` |
+| `trust_email` | `true` for a company directory (Entra ID, Keycloak) that vouches for its addresses |
+| `email_domains` | Optional: only these domains may sign in with this provider |
+
+Register `<PUBLIC_API_URL>/api/v1/oauth/<name>/callback` as the redirect URI with the provider.
+
+```bash
+OIDC_PROVIDERS='[
+  {"name": "entra", "label": "Microsoft",
+   "issuer": "https://login.microsoftonline.com/<tenant-id>/v2.0",
+   "client_id": "...", "client_secret": "...", "trust_email": true,
+   "email_domains": ["example.com"]},
+  {"name": "keycloak", "label": "Company account",
+   "issuer": "https://sso.example.com/realms/<realm>",
+   "client_id": "...", "client_secret": "...", "trust_email": true}
+]'
+```
+
+`GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` remain as a shortcut for a Google provider.
+
+How a sign-in works:
+
+1. The button sends the user to the provider (authorization code flow with PKCE).
+2. The provider sends the user back. The ID token is verified: signature with the provider's
+   published keys, issuer, audience, expiry and nonce.
+3. The user is found by the provider's identity or, the first time, by e-mail address. An
+   address is accepted only if the provider marks it as verified, or the provider is a trusted
+   directory: otherwise anyone could open an account at a provider with someone else's
+   address and sign in as them. A new user gets a personal organization.
+4. The browser returns to the frontend with a code valid once, for one minute, and stored only
+   as a hash. The frontend exchanges it for the session tokens. Tokens never appear in a URL,
+   where browser history, proxies and server logs would keep them.
+
+The user signs in once, at the provider. Multi-factor authentication, password policies and
+account locking are those of the provider.
+
+## Workload identity for CI
+
+GitHub Actions and GitLab CI give every job a short-lived token, signed by their issuer, that
+names the repository, the branch and the workflow. A trust in `WORKLOAD_IDENTITIES` says which
+of those tokens may act for which organization, with which API key scopes. The job exchanges
+its token for a credential of this API, valid for a few minutes, and sends it like an API key.
+No secret is stored in the CI.
+
+| Field | Meaning |
+| --- | --- |
+| `name` | Identifier of the trust, in logs |
+| `issuer` | `https://token.actions.githubusercontent.com` or `https://gitlab.com` (or your GitLab) |
+| `audience` | The audience the job requests; use the URL of this API |
+| `claims` | Claims that must match exactly; at least one, such as the repository |
+| `organization_id` | The organization the job acts for |
+| `scopes` | API key scopes of the credential |
+| `ttl_seconds` | Lifetime of the credential, 60 to 3600 (default 900) |
+
+```bash
+WORKLOAD_IDENTITIES='[
+  {"name": "deploy-main", "issuer": "https://token.actions.githubusercontent.com",
+   "audience": "https://api.example.com",
+   "claims": {"repository": "acme/service", "ref": "refs/heads/main"},
+   "organization_id": "<uuid>", "scopes": ["agent:run"]}
+]'
+```
+
+GitHub Actions:
+
+```yaml
+permissions:
+  id-token: write
+steps:
+  - name: Call the API as this workflow
+    run: |
+      oidc=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+        "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://api.example.com" | jq -r .value)
+      credential=$(curl -sSf -X POST https://api.example.com/api/v1/auth/workload-token \
+        -H "Content-Type: application/json" -d "{\"token\": \"$oidc\"}" | jq -r .credential)
+      curl -sSf -H "X-API-Key: $credential" https://api.example.com/api/v1/api-keys/introspect
+```
+
+GitLab CI:
+
+```yaml
+call-api:
+  id_tokens:
+    API_TOKEN:
+      aud: https://api.example.com
+  script:
+    - credential=$(curl -sSf -X POST https://api.example.com/api/v1/auth/workload-token
+        -H "Content-Type: application/json" -d "{\"token\": \"$API_TOKEN\"}" | jq -r .credential)
+```
+
+For GitLab, useful claims are `project_path`, `ref`, `ref_protected` and `environment`.
+
+A refused token gets the same answer whatever the reason; the reason is in the server log.
+Removing a trust stops new credentials at once; credentials already issued expire with their
+lifetime.
