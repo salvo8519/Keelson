@@ -1,0 +1,16 @@
+{%- if use_taskiq %}
+"""Entry point of the Taskiq worker and scheduler processes.
+
+Importing the task modules registers their tasks and schedule labels on the broker. The API
+process never imports this module; it imports only the task functions it enqueues.
+
+    taskiq worker app.worker.taskiq_worker:broker
+    taskiq scheduler app.worker.taskiq_worker:scheduler
+"""
+
+import app.worker.tasks  # noqa: F401  (registers the tasks)
+import app.worker.tasks.schedules  # noqa: F401  (registers the schedule labels)
+from app.worker.taskiq_app import broker, scheduler
+
+__all__ = ["broker", "scheduler"]
+{%- endif %}

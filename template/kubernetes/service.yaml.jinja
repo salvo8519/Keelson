@@ -1,0 +1,23 @@
+{%- if enable_kubernetes %}
+# Service for {{ project_name }} Backend
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ project_slug }}-backend
+  namespace: {{ project_slug }}
+  labels:
+    app.kubernetes.io/name: {{ project_slug }}
+    app.kubernetes.io/component: backend
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ backend_port }}
+      targetPort: {{ backend_port }}
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: {{ project_slug }}
+    app.kubernetes.io/component: backend
+{%- else %}
+# Kubernetes is disabled for this project
+{%- endif %}

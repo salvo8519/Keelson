@@ -1,0 +1,167 @@
+# Keelson: enterprise FastAPI project template (agent profile).
+# Questions are grouped as: identity, brand, stack axes, delivery.
+# Upstream-derived variables live in copier/vstorm.yml (generated, do not edit).
+
+_min_copier_version: "9.4.0"
+_subdirectory: template
+_templates_suffix: .jinja
+_answers_file: .copier-answers.yml
+
+_exclude:
+  - "{% if web_frontend == 'none' %}frontend{% endif %}"
+
+_tasks:
+  - command: [python3, _post_gen.py]
+  - command: [python3, -c, "import os; os.remove('_post_gen.py')"]
+
+_message_after_copy: |
+  {{ brand_name }} is ready in {{ _copier_conf.dst_path }}.
+  Next steps: see README.md (quick start) and AGENTS.md (how to work on the project).
+
+# --- Identity -------------------------------------------------------------
+project_name:
+  type: str
+  help: Project name in snake_case (used for the Python package and the CLI)
+  default: my_project
+  validator: >-
+    {% if not (project_name | regex_search('^[a-z][a-z0-9_]*$')) %}
+    Use lowercase letters, digits and underscores, starting with a letter.
+    {% endif %}
+
+project_slug:
+  type: str
+  when: false
+  default: "{{ project_name.lower().replace('-', '_') }}"
+
+project_description:
+  type: str
+  help: One-line description
+  default: An enterprise FastAPI service
+
+author_name:
+  type: str
+  help: Author or organization name
+  default: Your Name
+
+author_email:
+  type: str
+  help: Author contact email
+  default: you@example.com
+
+timezone:
+  type: str
+  help: IANA timezone used by schedulers and logs
+  default: UTC
+
+# --- Brand (white label) ---------------------------------------------------
+brand_name:
+  type: str
+  help: Product name shown in the UI and in the API reference
+  default: "{{ project_name | replace('_', ' ') | title }}"
+
+brand_primary_color:
+  type: str
+  help: Primary brand color (hex)
+  default: "#1F3A5F"
+  validator: >-
+    {% if not (brand_primary_color | regex_search('^#[0-9A-Fa-f]{6}$')) %}
+    Use a 6-digit hex color such as #1F3A5F.
+    {% endif %}
+
+# --- Stack axes --------------------------------------------------------------
+web_frontend:
+  type: str
+  help: Web frontend
+  choices:
+    React (Vite, TanStack, shadcn/ui): react
+    None (API only): none
+  default: react
+
+task_backend:
+  type: str
+  help: Background task queue and scheduler
+  choices:
+    Taskiq (async-native): taskiq
+    Celery: celery
+    ARQ: arq
+  default: taskiq
+
+ai_framework:
+  type: str
+  help: Agent framework
+  choices:
+    Pydantic AI: pydantic_ai
+    LangGraph: langgraph
+    LangChain (experimental in Keelson): langchain
+    Deep Agents (experimental in Keelson): deepagents
+    Pydantic Deep (experimental in Keelson): pydantic_deep
+  default: pydantic_ai
+
+llm_provider:
+  type: str
+  help: LLM provider
+  choices:
+    OpenAI: openai
+    Anthropic: anthropic
+    Google Gemini: google
+    OpenRouter: openrouter
+    OpenAI-compatible server (Ollama, vLLM, on-premise gateways): openai_compatible
+    All providers (choose at runtime): all
+  default: openai
+  validator: >-
+    {% if llm_provider in ['openrouter', 'openai_compatible']
+          and ai_framework not in ['pydantic_ai', 'pydantic_deep'] %}
+    This provider requires Pydantic AI or Pydantic Deep.
+    {% endif %}
+
+vector_database:
+  type: str
+  help: Vector database for retrieval (RAG)
+  choices:
+    None: none
+    Qdrant: qdrant
+    pgvector (PostgreSQL): pgvector
+  default: qdrant
+
+# --- Delivery ----------------------------------------------------------------
+ci_provider:
+  type: str
+  help: CI/CD system for the generated project
+  choices:
+    GitLab CI: gitlab
+    GitHub Actions: github
+  default: gitlab
+
+kubernetes:
+  type: bool
+  help: Generate Kubernetes manifests
+  default: true
+
+logfire:
+  type: bool
+  help: Enable Pydantic Logfire (OpenTelemetry export is always available)
+  default: false
+
+# --- Provenance ----------------------------------------------------------------
+keelson_url:
+  type: str
+  when: false
+  # Single source of the template's home, used by NOTICE and README of generated projects.
+  default: https://gitlab.com/salvo8519/keelson
+
+generator_name:
+  type: str
+  when: false
+  default: keelson
+
+generator_version:
+  type: str
+  when: false
+  default: "{{ _copier_conf.vcs_ref_hash or 'local' }}"
+
+generated_at:
+  type: str
+  when: false
+  default: ""
+
+--- !include copier/vstorm.yml
