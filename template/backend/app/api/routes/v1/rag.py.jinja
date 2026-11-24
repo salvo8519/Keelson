@@ -543,8 +543,11 @@ async def rag_status_stream(
 ) -> AsyncIterable[ServerSentEvent]:
     """SSE endpoint for real-time RAG ingestion status updates.
 
-    Subscribes to the active organization's ``rag_status:<id>`` Redis pub/sub channel
-    (Keelson); the browser auto-reconnects via the EventSource API.
+    Events of the active organization only; the browser reconnects automatically through the
+    EventSource API.
+
+    \f
+    Keelson: one Redis pub/sub channel per organization, ``rag_status:<id>``.
 
     The endpoint is itself an async generator: FastAPI's native SSE producer
     streams what it yields. Returning the generator object instead (with

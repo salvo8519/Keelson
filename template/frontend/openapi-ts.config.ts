@@ -1,7 +1,8 @@
 import { defineConfig } from "@hey-api/openapi-ts"
 
 export default defineConfig({
-  input: "./openapi.json",
+  // The API contract kept in the repository (scripts/openapi.py).
+  input: "../openapi/openapi.json",
   output: "./src/client",
 
   plugins: [

@@ -44,11 +44,36 @@ def test_default_project_documentation_builds(render: Render) -> None:
     """Zensical site of the generated project: reference from the code, strict build."""
     project = render({"project_name": "acme_service"})
     _run(["uv", "sync", "--quiet"], project / "backend")
+    _run(["make", "openapi"], project)
     _run(["make", "docs-check"], project)
     _run(["make", "docs"], project)
+    assert (project / "site" / "openapi.json").read_bytes() == (
+        project / "openapi" / "openapi.json"
+    ).read_bytes(), "the site publishes the contract"
     for lang in ("en", "it"):
         site = project / "site" / ("" if lang == "en" else lang)
         api = (site / "reference" / "api" / "index.html").read_text(encoding="utf-8")
         assert "/api/v1/api-keys" in api
         settings = (site / "reference" / "settings" / "index.html").read_text(encoding="utf-8")
         assert "SECRET_KEY" in settings
+
+
+def test_default_project_api_contract(render: Render) -> None:
+    """openapi/openapi.json: the same on every export, and the committed client matches it."""
+    project = render({"project_name": "acme_service"})
+    backend, frontend = project / "backend", project / "frontend"
+    _run(["uv", "sync", "--quiet"], backend)
+    _run(["make", "openapi"], project)
+    _run(["make", "openapi-check"], project)
+    client = frontend / "src" / "client"
+    committed = {path.name: path.read_bytes() for path in sorted(client.glob("*.ts"))}
+    _run(["bun", "install"], frontend)
+    _run(["bun", "run", "generate-client"], frontend)
+    _run(["bun", "run", "lint"], frontend)
+    regenerated = {path.name: path.read_bytes() for path in sorted(client.glob("*.ts"))}
+    stale = sorted(
+        name
+        for name in committed.keys() | regenerated.keys()
+        if committed.get(name) != regenerated.get(name)
+    )
+    assert stale == [], f"the template's frontend client is out of date: {stale}"

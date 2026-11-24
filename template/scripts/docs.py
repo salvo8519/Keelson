@@ -150,6 +150,13 @@ def page_list(nav: list[Any]) -> list[str]:
     return pages
 
 
+def publish_openapi() -> None:
+    """Publish the API contract with the site, at /openapi.json, when the project has one."""
+    document = ROOT / "openapi" / "openapi.json"
+    if document.exists():
+        shutil.copy2(document, ROOT / "site" / "openapi.json")
+
+
 def llms_txt() -> None:
     """Agent-readable context (llmstxt.org): an index and the full English documentation."""
     base = tomllib.loads((ROOT / "zensical.toml").read_text(encoding="utf-8"))["project"]
@@ -266,6 +273,7 @@ def main() -> None:
                 ["zensical", "build", "--strict", "-f", configs[lang]], cwd=ROOT, check=True
             )
         llms_txt()
+        publish_openapi()
     elif args.command == "serve":
         subprocess.run(["zensical", "serve", "-f", configs[args.lang]], cwd=ROOT, check=True)
 

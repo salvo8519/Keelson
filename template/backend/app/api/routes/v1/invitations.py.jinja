@@ -73,6 +73,7 @@ async def accept_invitation(
 ) -> None:
     """Accept an invitation token. Adds the current user to the organization.
 
+    \f
     Keelson: the invitee is not a member yet, so the database would refuse the membership;
     the token proves the right, and the system session records the reason."""
     await service.accept(token, accepting_user_id=user.id)
@@ -86,6 +87,7 @@ async def revoke_invitation(
 ) -> None:
     """Revoke a pending invitation. Owner/Admin of the org, or the invitee themselves.
 
+    \f
     Keelson: the invitee is not a member, so the token lookup runs as the system; the service
     checks who may revoke."""
     await service.revoke(token, requester_id=user.id)

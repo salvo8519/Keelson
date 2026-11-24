@@ -4516,6 +4516,12 @@ export type ragListDocumentsResponse = ragListDocumentsResponses[keyof ragListDo
 
 export type ragSearchDocumentsData = {
     body: RAGSearchRequest;
+    headers?: {
+        /**
+         * X-Organization-Id
+         */
+        'x-organization-id'?: string | null;
+    };
     path?: never;
     query?: {
         /**
@@ -5041,10 +5047,25 @@ export type ragListConnectorsResponse = ragListConnectorsResponses[keyof ragList
 
 export type ragRagStatusStreamData = {
     body?: never;
+    headers?: {
+        /**
+         * X-Organization-Id
+         */
+        'x-organization-id'?: string | null;
+    };
     path?: never;
     query?: never;
     url: '/api/v1/rag/status/stream';
 };
+
+export type ragRagStatusStreamErrors = {
+    /**
+     * Validation Error
+     */
+    422: HTTPValidationError;
+};
+
+export type ragRagStatusStreamError = ragRagStatusStreamErrors[keyof ragRagStatusStreamErrors];
 
 export type ragRagStatusStreamResponses = {
     /**

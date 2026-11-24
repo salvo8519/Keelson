@@ -72,6 +72,38 @@ i18n-check:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# Keelson: openapi/openapi.json is the contract of the API. It must match the code, and a merge
+# request must not break it (oasdiff, pinned and verified against its published checksums).
+api-contract:
+  stage: lint
+  extends: .python_base
+  variables:
+    OASDIFF_VERSION: "1.35.0"
+    GIT_DEPTH: "0"
+  script:
+    - uv run python ../scripts/openapi.py check
+    - |
+      if [ "$CI_PIPELINE_SOURCE" = "merge_request_event" ]; then
+        cd "$CI_PROJECT_DIR"
+        apt-get update -qq && apt-get install -y -qq curl git >/dev/null
+        base="origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
+        git fetch --depth=1 origin "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
+        if git cat-file -e "$base:openapi/openapi.json" 2>/dev/null; then
+          url="https://github.com/oasdiff/oasdiff/releases/download/v$OASDIFF_VERSION"
+          archive="oasdiff_${OASDIFF_VERSION}_linux_amd64.tar.gz"
+          curl -fsSLO "$url/$archive" && curl -fsSLO "$url/checksums.txt"
+          sha256sum --check --ignore-missing checksums.txt
+          tar -xzf "$archive" oasdiff
+          git show "$base:openapi/openapi.json" > /tmp/base-openapi.json
+          ./oasdiff breaking /tmp/base-openapi.json openapi/openapi.json --fail-on ERR
+        else
+          echo "The target branch has no contract yet: nothing to compare."
+        fi
+      fi
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 {%- if use_frontend %}
 
 # Keelson: the official React frontend (Biome, translations, tsc and Vite). Its Playwright

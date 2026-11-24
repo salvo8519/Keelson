@@ -11,7 +11,6 @@ site always matches the code and the strict build fails when they are missing.
 from __future__ import annotations
 
 import re
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -112,12 +111,13 @@ def settings_page(settings_class: Any, labels: dict[str, str]) -> str:
 
 
 def main() -> None:
-    sys.path.insert(0, str(ROOT / "backend"))
-    # The backend of the generated project (run from backend/, see the module docstring).
-    from app.core.config import Settings  # type: ignore[import-not-found]
-    from app.main import create_app  # type: ignore[import-not-found]
+    # The same document as openapi/openapi.json: built from the defaults, without a .env.
+    from openapi import build
 
-    schema = create_app().openapi()
+    schema = build()
+    # The backend of the generated project, on the path once build() has loaded it.
+    from app.core.config import Settings  # type: ignore[import-not-found]
+
     for lang in languages():
         labels = LABELS.get(lang, LABELS["en"])
         target = OUT / lang / "reference"

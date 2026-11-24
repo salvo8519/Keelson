@@ -5,6 +5,7 @@ import logging
 import secrets
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager, suppress
+from importlib import metadata
 {%- if enable_redis or enable_rag or use_telegram or use_slack %}
 from typing import {% if use_telegram or use_slack %}Any, {% endif %}TypedDict
 {%- endif %}
@@ -477,7 +478,8 @@ Every error is a Problem Details document (RFC 9457, `application/problem+json`)
 language of the user, the organization or the `Accept-Language` header. Branch on `code`,
 which does not change with the language.
         """.strip(),
-        version="0.1.0",
+        # Keelson: the version of the backend package (pyproject.toml), one source.
+        version=metadata.version("{{ project_slug }}"),
         openapi_url=openapi_url,
         # Keelson: the reference is Scalar at /docs (app/core/api_docs.py); Swagger UI and ReDoc
         # load FastAPI's assets from a CDN and carry its branding.

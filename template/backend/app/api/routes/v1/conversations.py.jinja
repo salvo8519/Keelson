@@ -171,6 +171,7 @@ async def get_tool_stats(
 ) -> Any:
     """Top tools used by the active org over the given window.
 
+    \f
     Keelson: members' conversations are private, so the aggregate over the organization runs
     as the system and returns counts only, never content (app/db/tenancy.py)."""
     items = await conversation_service.aggregate_tool_calls(

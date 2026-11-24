@@ -130,6 +130,61 @@ jobs:
         working-directory: frontend
 {%- endif %}
 
+  api-contract:
+    # Keelson: openapi/openapi.json is the contract of the API. It must match the code, a pull
+    # request must not break it (oasdiff, against the target branch), and the frontend client
+    # must be generated from it. See the documentation, Reference > API.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.2.0
+
+      - name: Set up Python
+        run: uv python install {{ python_version }}
+
+      - name: Install backend dependencies
+        run: uv sync --directory backend
+
+      - name: The contract matches the code
+        run: make openapi-check
+
+      - name: Find the contract of the target branch
+        id: base
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --depth=1 origin "${{ '{{' }} github.base_ref {{ '}}' }}"
+          if git cat-file -e "origin/${{ '{{' }} github.base_ref {{ '}}' }}:openapi/openapi.json" 2>/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "The target branch has no contract yet: nothing to compare."
+          fi
+
+      - name: No breaking change against the target branch
+        if: steps.base.outputs.exists == 'true'
+        uses: oasdiff/oasdiff-action/breaking@v0
+        with:
+          base: "origin/${{ '{{' }} github.base_ref {{ '}}' }}:openapi/openapi.json"
+          revision: "HEAD:openapi/openapi.json"
+          fail-on: ERR
+{%- if use_frontend %}
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: The frontend client is generated from the contract
+        working-directory: frontend
+        run: |
+          bun install --frozen-lockfile
+          bun run generate-client
+          bun run lint
+          git diff --exit-code -- src/client || {
+            echo "The frontend client is out of date: run make client and commit the result."
+            exit 1
+          }
+{%- endif %}
+
   docs:
     # Keelson: the documentation site (Zensical). The API and settings reference is generated
     # from the code; the build is strict (broken links fail) and translations must be current.

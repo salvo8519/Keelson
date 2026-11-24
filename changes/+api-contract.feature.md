@@ -1,0 +1,1 @@
+Generated projects keep their OpenAPI document in `openapi/openapi.json`: the pipeline fails on drift and on breaking changes against the target branch, the frontend client is generated from it, and the documentation site publishes it.

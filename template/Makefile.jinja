@@ -1,4 +1,4 @@
-.PHONY: install format lint test run clean help db-init dev dev-down dev-logs dev-rebuild dev-frontend docker-clean stage stage-down prod prod-down upgrade upgrade-dry-run skills skills-check i18n-extract i18n-check docs docs-serve docs-check
+.PHONY: install format lint test run clean help db-init dev dev-down dev-logs dev-rebuild dev-frontend docker-clean stage stage-down prod prod-down upgrade upgrade-dry-run skills skills-check i18n-extract i18n-check docs docs-serve docs-check openapi openapi-check{% if use_frontend %} client{% endif %}
 
 # === Environments ===========================================================
 # `make dev`   — local development (docker-compose.dev.yml + bind-mounted source)
@@ -139,6 +139,7 @@ quickstart: dev
 # === Setup ===
 install:
 	uv sync --directory backend --dev
+	cd backend && uv run python ../scripts/openapi.py export
 {%- if enable_precommit %}
 	@if git rev-parse --git-dir > /dev/null 2>&1; then \
 		uv run --directory backend pre-commit install; \
@@ -161,6 +162,19 @@ install:
 {%- if generate_env %}
 	@echo ""
 	@echo "Note: backend/.env is pre-configured for development"
+{%- endif %}
+
+# === API contract (openapi/openapi.json, see docs: Reference > API) ===
+openapi:
+	cd backend && uv run python ../scripts/openapi.py export
+
+openapi-check:
+	cd backend && uv run python ../scripts/openapi.py check
+{%- if use_frontend %}
+
+# The contract, then the frontend client generated from it.
+client:
+	./scripts/generate-client.sh
 {%- endif %}
 
 # === Template upgrade ===
