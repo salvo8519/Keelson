@@ -1,0 +1,101 @@
+# Agent skills published by the maintainers of the components of this project.
+# Install or refresh: python scripts/agent_skills.py install   (check: ... check)
+# Only official skills are listed, and only for the components this project uses.
+# Git sources are pinned to a commit; package sources follow the installed version.
+{%- set backend_python = "backend/.venv/bin/python" %}
+
+[[skill]]
+name = "fastapi"
+maintainer = "FastAPI"
+license = "MIT"
+path = "{{ 'fastapi/' if keelson_dev | default(false) }}.agents/skills/fastapi"
+{%- if keelson_dev | default(false) %}
+repository = "https://github.com/fastapi/fastapi"
+commit = "05e6df7e906c3decba377c37548019973f40bf15"
+{%- else %}
+package = "fastapi"
+python = "{{ backend_python }}"
+{%- endif %}
+
+[[skill]]
+name = "pydantic"
+maintainer = "Pydantic"
+license = "MIT"
+repository = "https://github.com/pydantic/skills"
+commit = "98f591c0886eb11df0bdd57804419e11439efc93"
+path = "skills/pydantic"
+{%- if use_pydantic_ai or use_pydantic_deep %}
+
+[[skill]]
+name = "building-pydantic-ai-agents"
+maintainer = "Pydantic"
+license = "MIT"
+{%- if keelson_dev | default(false) %}
+repository = "https://github.com/pydantic/skills"
+commit = "98f591c0886eb11df0bdd57804419e11439efc93"
+path = "skills/building-pydantic-ai-agents"
+{%- else %}
+package = "pydantic_ai"
+python = "{{ backend_python }}"
+path = ".agents/skills/building-pydantic-ai-agents"
+{%- endif %}
+{%- endif %}
+{%- if use_langchain or use_langgraph or use_deepagents %}
+
+[[skill]]
+name = "langchain-build-agent"
+maintainer = "LangChain"
+license = "MIT"
+repository = "https://github.com/langchain-ai/langchain-skills"
+commit = "ab84b0b5a3164ee17eb78b0828e58c48186f54ce"
+path = "skills/langchain-build-agent"
+{%- endif %}
+{%- if enable_logfire %}
+
+[[skill]]
+name = "logfire-instrumentation"
+maintainer = "Pydantic"
+license = "MIT"
+repository = "https://github.com/pydantic/skills"
+commit = "98f591c0886eb11df0bdd57804419e11439efc93"
+path = "skills/logfire-instrumentation"
+{%- endif %}
+{%- if use_qdrant %}
+{%- for qdrant_skill in ["qdrant-clients-sdk", "qdrant-multitenancy", "qdrant-search-quality"] %}
+
+[[skill]]
+name = "{{ qdrant_skill }}"
+maintainer = "Qdrant"
+license = "Apache-2.0"
+repository = "https://github.com/qdrant/skills"
+commit = "e80a4d52201fb68ba3163f608f41e228d65fdff3"
+path = "skills/{{ qdrant_skill }}"
+{%- endfor %}
+{%- endif %}
+{%- if web_frontend == "react" %}
+
+[[skill]]
+name = "vercel-react-best-practices"
+maintainer = "Vercel"
+license = "MIT"
+repository = "https://github.com/vercel-labs/agent-skills"
+commit = "5a37a6329fbad3666c3207392a6a7c0110e92efb"
+path = "skills/react-best-practices"
+
+[[skill]]
+name = "vercel-composition-patterns"
+maintainer = "Vercel"
+license = "MIT"
+repository = "https://github.com/vercel-labs/agent-skills"
+commit = "5a37a6329fbad3666c3207392a6a7c0110e92efb"
+path = "skills/composition-patterns"
+
+[[skill]]
+name = "shadcn"
+maintainer = "shadcn"
+license = "MIT"
+repository = "https://github.com/shadcn-ui/ui"
+commit = "055aa6b7837b1808456a24beb4c97a677864aa82"
+path = "skills/shadcn"
+note = "Runs 'npx shadcn@latest info --json' (read-only) when the skill loads, to read components.json."
+{%- endif %}
