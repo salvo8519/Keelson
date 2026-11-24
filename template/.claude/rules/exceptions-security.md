@@ -29,10 +29,10 @@ JWT auth (`core/security.py`):
 - `verify_token(token)` → `dict | None` — decode with `jwt.decode()`
 - Token payload: `{"exp": ..., "sub": user_id, "type": "access"|"refresh"}`
 
-Password hashing:
-- `get_password_hash(password)` — bcrypt
-- `verify_password(plain, hashed)` — bcrypt `checkpw`
-- NEVER store plain passwords
+Password hashing (pwdlib):
+- `get_password_hash(password)` — Argon2id
+- `verify_password(plain, hashed)`; at sign-in `verify_and_update_password` also upgrades bcrypt hashes
+- NEVER store plain passwords; never log them (tests/test_log_trap.py)
 
 API keys:
 - `secrets.compare_digest()` for constant-time comparison

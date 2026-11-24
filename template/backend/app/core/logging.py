@@ -40,6 +40,8 @@ class PiiRedactionFilter(logging.Filter):
         (re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"), "[EMAIL_REDACTED]"),
         # JWT tokens (header.payload.signature)
         (re.compile(r"eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]+"), "[JWT_REDACTED]"),
+        # Keelson API keys: the prefix identifies the key and stays, the secret goes.
+        (re.compile(r"(key_[A-Za-z0-9_-]{12})\.[A-Za-z0-9_-]{20,}"), r"\1.[REDACTED]"),
         (re.compile(r"sk-[a-zA-Z0-9]{20,}"), "[API_KEY_REDACTED]"),
         (re.compile(r"sk-ant-[a-zA-Z0-9_-]{20,}"), "[API_KEY_REDACTED]"),
         # Generic long hex/base64 secrets (40+ chars, likely tokens)
@@ -57,20 +59,44 @@ class PiiRedactionFilter(logging.Filter):
     ]
 
     def filter(self, record: logging.LogRecord) -> bool:
-        """Redact PII from log record message and args."""
-        if isinstance(record.msg, str):
-            record.msg = self._redact(record.msg)
-        if record.args:
-            if isinstance(record.args, dict):
-                record.args = {k: self._redact(v) if isinstance(v, str) else v for k, v in record.args.items()}
-            elif isinstance(record.args, tuple):
-                record.args = tuple(self._redact(a) if isinstance(a, str) else a for a in record.args)
+        """Redact PII from the formatted message.
+
+        Keelson: upstream redacted the template and the arguments separately. A template such
+        as ``"password=%s"`` lost its ``%s`` to the redaction, formatting then failed, and
+        logging printed the raw arguments, the password included, to standard error. The
+        message is now formatted first and redacted as a whole.
+        """
+        record.msg = self._redact(record.getMessage())
+        record.args = None
         return True
 
-    def _redact(self, value: str) -> str:
-        for pattern, replacement in self.PATTERNS:
+    @classmethod
+    def _redact(cls, value: str) -> str:
+        for pattern, replacement in cls.PATTERNS:
             value = pattern.sub(replacement, value)
         return value
+
+
+# Keelson: fields passed with ``extra=`` whose name says they hold a secret are never written.
+# Matched on the whole name or its last part (``refresh_token``), so ``input_tokens`` stays.
+SENSITIVE_FIELD = re.compile(
+    r"(^|_)(password|passwd|secret|token|api_?key|authori[sz]ation|cookies?|credentials?"
+    r"|private_?key|hashed_password)$",
+    re.IGNORECASE,
+)
+
+
+def scrub(value: Any, name: str = "") -> Any:
+    """``extra=`` values as they may be written: secrets by name dropped, text redacted."""
+    if name and SENSITIVE_FIELD.search(name):
+        return "[REDACTED]"
+    if isinstance(value, str):
+        return PiiRedactionFilter._redact(value)
+    if isinstance(value, dict):
+        return {k: scrub(v, str(k)) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [scrub(v) for v in value]
+    return value
 
 
 class ContextFilter(logging.Filter):
@@ -96,14 +122,23 @@ class JsonFormatter(logging.Formatter):
         }
         for key, value in vars(record).items():
             if key not in _RECORD_FIELDS and key not in _TERMINAL_FIELDS and value is not None:
-                entry[key] = value
+                # Keelson: upstream redacted the message only; extra fields went out as given.
+                entry[key] = scrub(value, key)
         if record.exc_info:
-            entry["exception"] = self.formatException(record.exc_info)
+            # Exceptions carry SQL parameters, request data and URLs: redacted like messages.
+            entry["exception"] = PiiRedactionFilter._redact(self.formatException(record.exc_info))
         return json.dumps(entry, default=str, ensure_ascii=False)
 
 
 class _AppHandler(logging.StreamHandler):  # type: ignore[type-arg]
-    """The application's handler, recognised when logging is configured again."""
+    """The application's handler, recognised when logging is configured again.
+
+    Keelson: the whole line is redacted once more, so the text format, whose exception text
+    is added by the formatter, gets the same protection as JSON.
+    """
+
+    def format(self, record: logging.LogRecord) -> str:
+        return PiiRedactionFilter._redact(super().format(record))
 
 
 TEXT_FORMAT = "%(asctime)s %(levelname)s %(name)s [%(request_id)s] %(message)s"

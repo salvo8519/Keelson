@@ -6,6 +6,7 @@ from uuid import uuid4
 
 import pytest
 
+from app.core.security import DUMMY_HASH
 from app.core.exceptions import AlreadyExistsError, AuthenticationError, NotFoundError
 {%- if enable_email %}
 from app.core.security import get_password_hash
@@ -154,7 +155,7 @@ class TestUserServicePostgresql:
         """Test successful authentication."""
         with (
             patch("app.services.user.user_repo") as mock_repo,
-            patch("app.services.user.verify_password", return_value=True),
+            patch("app.services.user.verify_and_update_password", return_value=(True, None)),
         ):
             mock_repo.get_by_email = AsyncMock(return_value=mock_user)
 
@@ -167,7 +168,7 @@ class TestUserServicePostgresql:
         """Test authentication with wrong password."""
         with (
             patch("app.services.user.user_repo") as mock_repo,
-            patch("app.services.user.verify_password", return_value=False),
+            patch("app.services.user.verify_and_update_password", return_value=(False, None)),
         ):
             mock_repo.get_by_email = AsyncMock(return_value=mock_user)
 
@@ -177,11 +178,38 @@ class TestUserServicePostgresql:
     @pytest.mark.anyio
     async def test_authenticate_user_not_found(self, user_service: UserService):
         """Test authentication with non-existent user."""
-        with patch("app.services.user.user_repo") as mock_repo:
+        with (
+            patch("app.services.user.user_repo") as mock_repo,
+            patch("app.services.user.verify_password", return_value=False) as check,
+        ):
             mock_repo.get_by_email = AsyncMock(return_value=None)
 
             with pytest.raises(AuthenticationError):
                 await user_service.authenticate("unknown@example.com", "password")
+            # Keelson (official template): the same hashing work as for a real account.
+            check.assert_called_once_with("password", DUMMY_HASH)
+
+    @pytest.mark.anyio
+    async def test_authenticate_upgrades_an_outdated_hash(
+        self, user_service: UserService, mock_user: MockUser
+    ):
+        """A bcrypt hash is replaced with Argon2id at sign-in."""
+        with (
+            patch("app.services.user.user_repo") as mock_repo,
+            patch(
+                "app.services.user.verify_and_update_password",
+                return_value=(True, "$argon2id$new"),
+            ),
+        ):
+            mock_repo.get_by_email = AsyncMock(return_value=mock_user)
+            mock_repo.update = AsyncMock(return_value=mock_user)
+
+            await user_service.authenticate("test@example.com", "password123")
+
+            mock_repo.update.assert_awaited_once()
+            assert mock_repo.update.call_args.kwargs["update_data"] == {
+                "hashed_password": "$argon2id$new"
+            }
 
     @pytest.mark.anyio
     async def test_authenticate_inactive_user(self, user_service: UserService):
@@ -189,7 +217,7 @@ class TestUserServicePostgresql:
         inactive_user = MockUser(is_active=False)
         with (
             patch("app.services.user.user_repo") as mock_repo,
-            patch("app.services.user.verify_password", return_value=True),
+            patch("app.services.user.verify_and_update_password", return_value=(True, None)),
         ):
             mock_repo.get_by_email = AsyncMock(return_value=inactive_user)
 

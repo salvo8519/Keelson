@@ -32,7 +32,7 @@ class TestPasswordHashing:
 
         assert hashed != password
         assert len(hashed) > 0
-        assert hashed.startswith("$2")  # bcrypt prefix
+        assert hashed.startswith("$argon2id$")
 
     def test_verify_password_correct(self):
         """Test verifying correct password."""
@@ -48,6 +48,33 @@ class TestPasswordHashing:
         hashed = get_password_hash(password)
 
         assert verify_password(wrong_password, hashed) is False
+
+
+class TestPasswordUpgrade:
+    """Keelson: bcrypt hashes of earlier versions keep working and are upgraded to Argon2id."""
+
+    def test_bcrypt_hash_is_verified_and_upgraded(self):
+        import bcrypt
+
+        from app.core.security import verify_and_update_password
+
+        old = bcrypt.hashpw(b"mysecretpassword", bcrypt.gensalt()).decode()
+        verified, upgraded = verify_and_update_password("mysecretpassword", old)
+        assert verified is True
+        assert upgraded is not None and upgraded.startswith("$argon2id$")
+        assert verify_password("mysecretpassword", upgraded) is True
+
+    def test_current_hash_needs_no_upgrade(self):
+        from app.core.security import verify_and_update_password
+
+        verified, upgraded = verify_and_update_password("pw-123456", get_password_hash("pw-123456"))
+        assert (verified, upgraded) == (True, None)
+
+    def test_wrong_password_and_unknown_format_never_match(self):
+        from app.core.security import verify_and_update_password
+
+        assert verify_and_update_password("x", get_password_hash("y")) == (False, None)
+        assert verify_password("x", "plain-text-is-not-a-hash") is False
 
 
 class TestAccessToken:

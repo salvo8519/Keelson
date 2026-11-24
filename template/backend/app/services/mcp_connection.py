@@ -33,7 +33,7 @@ from app.agents.mcp import (
 )
 from app.agents.mcp_oauth import McpOAuthPayload, OAuthError
 from app.core.config import settings
-from app.core.crypto import decrypt_value, encrypt_value
+from app.core.crypto import decrypt_secret, encrypt_secret
 from app.core.exceptions import AlreadyExistsError, NotFoundError
 from app.db.models.mcp_connection import McpConnection
 from app.db.session import get_db_context
@@ -77,7 +77,7 @@ def _decode_payload(encrypted: str | None, connection_name: str) -> McpOAuthPayl
     if not encrypted:
         return None
     try:
-        return McpOAuthPayload.model_validate_json(decrypt_value(encrypted, settings.SECRET_KEY))
+        return McpOAuthPayload.model_validate_json(decrypt_secret(encrypted))
     except Exception:
         logger.warning("Cannot decrypt OAuth payload for MCP connection %r", connection_name)
         return None
@@ -131,7 +131,7 @@ async def _refresh_under_lock(db: AsyncSession, connection: McpConnection) -> st
         db,
         db_connection=locked,
         update_data={
-            "oauth_payload": encrypt_value(payload.model_dump_json(), settings.SECRET_KEY)
+            "oauth_payload": encrypt_secret(payload.model_dump_json())
         },
     )
     return payload.access_token
@@ -162,7 +162,7 @@ async def _resolve_auth_headers(
     if connection.auth_token is None:
         return {}
     try:
-        token = decrypt_value(connection.auth_token, settings.SECRET_KEY)
+        token = decrypt_secret(connection.auth_token)
     except Exception:
         logger.warning("Cannot decrypt auth token for MCP connection %r", connection.name)
         return None
@@ -191,7 +191,7 @@ class McpConnectionService:
                 user_id=user_id,
                 name=data.name,
                 url=url,
-                auth_token=encrypt_value(token, settings.SECRET_KEY) if token else None,
+                auth_token=encrypt_secret(token) if token else None,
                 allowed_tools=data.allowed_tools,
                 is_enabled=data.is_enabled,
             )
@@ -225,7 +225,7 @@ class McpConnectionService:
         if "auth_token" in update_data:
             token = (update_data["auth_token"] or "").strip()
             # "" clears the stored token; a non-empty value replaces it.
-            update_data["auth_token"] = encrypt_value(token, settings.SECRET_KEY) if token else None
+            update_data["auth_token"] = encrypt_secret(token) if token else None
 
         if data.clear_allowed_tools:
             update_data["allowed_tools"] = None
@@ -311,7 +311,7 @@ class McpConnectionService:
             redirect_uri=redirect_uri,
             code_verifier=pkce.code_verifier,
         )
-        enc = encrypt_value(payload.model_dump_json(), settings.SECRET_KEY)
+        enc = encrypt_secret(payload.model_dump_json())
 
         existing = await mcp_connection_repo.get_by_name(self.db, user_id=user_id, name=name)
         if existing is not None:
@@ -384,7 +384,7 @@ class McpConnectionService:
             update_data={
                 # The URL moves together with the tokens issued for it.
                 "url": payload.server_url,
-                "oauth_payload": encrypt_value(payload.model_dump_json(), settings.SECRET_KEY),
+                "oauth_payload": encrypt_secret(payload.model_dump_json()),
                 "oauth_pending_payload": None,
                 "oauth_state": None,
                 "last_status": "ok",

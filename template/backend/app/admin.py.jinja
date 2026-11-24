@@ -291,7 +291,9 @@ def get_sync_engine() -> Engine:
     """Get or create the synchronous engine for SQLAdmin."""
     global _sync_engine
     if _sync_engine is None:
-        _sync_engine = create_engine(settings.DATABASE_URL_SYNC, echo=settings.DEBUG)
+        _sync_engine = create_engine(
+            settings.DATABASE_URL_SYNC, echo=settings.DEBUG, hide_parameters=not settings.DEBUG
+        )
     return _sync_engine
 
 

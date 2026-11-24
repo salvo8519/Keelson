@@ -3,7 +3,7 @@
 # ruff: noqa: I001 - Imports structured for Jinja2 template conditionals
 {% endif %}
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 from urllib.parse import quote
 
 {% if use_database or enable_redis or enable_rag -%}
@@ -11,7 +11,7 @@ from pydantic import computed_field, field_validator, model_validator{% if use_j
 {% else -%}
 from pydantic import field_validator, model_validator{% if use_jwt or use_api_key or enable_cors %}, ValidationInfo{% endif %}
 {% endif -%}
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 {%- if enable_mcp_client %}
 from pydantic import BaseModel, Field
 {%- endif %}
@@ -150,6 +150,28 @@ class Settings(BaseSettings):
 {%- if use_jwt or (enable_admin_panel and admin_require_auth) or enable_oauth %}
 
     SECRET_KEY: str = "change-me-in-production-use-openssl-rand-hex-32"
+
+    # Keelson: keys for secrets stored in the database (connector credentials, MCP tokens),
+    # newest first, comma separated; separate from SECRET_KEY, which signs tokens. Empty in
+    # development: SECRET_KEY is used. Generate one with: openssl rand -hex 32
+    DATA_ENCRYPTION_KEYS: Annotated[list[str], NoDecode] = []
+
+    @field_validator("DATA_ENCRYPTION_KEYS", mode="before")
+    @classmethod
+    def split_data_keys(cls, v: object) -> object:
+        return [part.strip() for part in v.split(",") if part.strip()] if isinstance(v, str) else v
+
+    @field_validator("DATA_ENCRYPTION_KEYS")
+    @classmethod
+    def require_data_keys_in_production(cls, v: list[str], info: ValidationInfo) -> list[str]:
+        env = info.data.get("ENVIRONMENT", "local") if info.data else "local"
+        if env == "production" and not v:
+            raise ValueError(
+                "DATA_ENCRYPTION_KEYS must be set in production: openssl rand -hex 32"
+            )
+        if any(len(key) < 32 for key in v):
+            raise ValueError("each DATA_ENCRYPTION_KEYS entry must be at least 32 characters")
+        return v
 
     @field_validator("SECRET_KEY")
     @classmethod

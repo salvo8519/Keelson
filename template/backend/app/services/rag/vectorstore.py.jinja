@@ -328,7 +328,9 @@ class PgVectorStore(BaseVectorStore):
         self.settings = settings
         self.embedder = embedding_service
         self.dim = settings.embeddings_config.dim
-        self.engine = create_async_engine(app_settings.DATABASE_URL, echo=False)
+        self.engine = create_async_engine(
+            app_settings.DATABASE_URL, echo=False, hide_parameters=not app_settings.DEBUG
+        )
         self.async_session = sessionmaker(self.engine, class_=AsyncSession, expire_on_commit=False)
 
     async def aclose(self) -> None:

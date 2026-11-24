@@ -132,7 +132,7 @@ backend/app/
 │   └── routes/v1/        # HTTP endpoints — call services, never repos
 ├── core/
 │   ├── config.py         # pydantic-settings (reads .env)
-│   ├── security.py       # JWT, bcrypt, API key verification
+│   ├── security.py       # JWT, Argon2id password hashing, API key verification
 │   ├── exceptions.py     # AppException → NotFound / Auth / etc.
 │   └── middleware.py
 ├── db/

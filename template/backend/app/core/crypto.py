@@ -19,7 +19,7 @@ Usage:
 import base64
 import hashlib
 
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, MultiFernet
 
 _PREFIX = "enc:"
 
@@ -46,3 +46,41 @@ def decrypt_value(value: str, raw_key: str) -> str:
 def is_encrypted(value: object) -> bool:
     """Return True if *value* is a string produced by :func:`encrypt_value`."""
     return isinstance(value, str) and value.startswith(_PREFIX)
+
+
+# --- Keelson: keys for data at rest, separate from the signing key ----------------------------
+# ``DATA_ENCRYPTION_KEYS`` (newest first) encrypts secrets stored in the database. Older keys,
+# and SECRET_KEY used before, still decrypt, so rotating means adding a key in front; values
+# are re-encrypted with the newest key when written again (or by ``rotate_secret``). With no
+# key configured (development) SECRET_KEY is used, as upstream did.
+
+
+def _keys() -> list[str]:
+    from app.core.config import settings
+
+    keys = [key for key in settings.DATA_ENCRYPTION_KEYS if key]
+    legacy = getattr(settings, "CHANNEL_ENCRYPTION_KEY", None)
+    return [*keys, *([legacy] if legacy else []), settings.SECRET_KEY]
+
+
+def _multi() -> MultiFernet:
+    return MultiFernet([_fernet(key) for key in dict.fromkeys(_keys())])
+
+
+def encrypt_secret(plaintext: str) -> str:
+    """Encrypt with the newest data key."""
+    return f"{_PREFIX}{_multi().encrypt(plaintext.encode()).decode()}"
+
+
+def decrypt_secret(value: str) -> str:
+    """Decrypt with any configured key; a value that is not encrypted is returned unchanged."""
+    if not value.startswith(_PREFIX):
+        return value
+    return _multi().decrypt(value[len(_PREFIX) :].encode()).decode()
+
+
+def rotate_secret(value: str) -> str:
+    """The same secret encrypted with the newest data key."""
+    if not value.startswith(_PREFIX):
+        return encrypt_secret(value)
+    return f"{_PREFIX}{_multi().rotate(value[len(_PREFIX) :].encode()).decode()}"

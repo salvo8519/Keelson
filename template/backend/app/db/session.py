@@ -34,6 +34,9 @@ def _engine(url: str) -> AsyncEngine:
         pool_size=settings.DB_POOL_SIZE,
         max_overflow=settings.DB_MAX_OVERFLOW,
         pool_timeout=settings.DB_POOL_TIMEOUT,
+        # Keelson: errors and echo carry the values of a statement (hashes, e-mail addresses,
+        # message text); they reach the logs only when debugging.
+        hide_parameters=not settings.DEBUG,
     )
 
 
@@ -103,6 +106,7 @@ async def get_worker_db_context() -> AsyncGenerator[AsyncSession, None]:
         settings.DATABASE_URL,
         echo=False,
         poolclass=NullPool,
+        hide_parameters=not settings.DEBUG,
     )
     factory = async_sessionmaker(
         worker_engine,

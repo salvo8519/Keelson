@@ -4,8 +4,11 @@ import hashlib
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-import bcrypt
 import jwt
+from pwdlib import PasswordHash
+from pwdlib.exceptions import UnknownHashError
+from pwdlib.hashers.argon2 import Argon2Hasher
+from pwdlib.hashers.bcrypt import BcryptHasher
 
 from app.core.config import settings
 
@@ -212,17 +215,35 @@ def verify_special_token(token: str, expected_type: str) -> dict[str, Any] | Non
     return payload
 
 
+# Keelson, from the official FastAPI template: new passwords are hashed with Argon2id (RFC 9106,
+# OWASP's first choice); bcrypt hashes of earlier versions are still verified and replaced with
+# Argon2id at the next sign-in (verify_and_update_password). Passwords are never stored.
+password_hash = PasswordHash((Argon2Hasher(), BcryptHasher()))
+
+# Verified when no account matches, so that a sign-in takes the same time whether or not the
+# e-mail address is registered (official template).
+DUMMY_HASH = (
+    "$argon2id$v=19$m=65536,t=3,p=4$MjQyZWE1MzBjYjJlZTI0Yw$"
+    "YTU4NGM5ZTZmYjE2NzZlZjY0ZWY3ZGRkY2U2OWFjNjk"
+)
+
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a password against a hash."""
-    return bcrypt.checkpw(
-        plain_password.encode("utf-8"),
-        hashed_password.encode("utf-8"),
-    )
+    """Verify a password against a hash; an unknown hash format never matches."""
+    try:
+        return password_hash.verify(plain_password, hashed_password)
+    except UnknownHashError:
+        return False
+
+
+def verify_and_update_password(plain_password: str, hashed_password: str) -> tuple[bool, str | None]:
+    """Verify a password; when it matches an outdated hash, also return its Argon2id hash."""
+    try:
+        return password_hash.verify_and_update(plain_password, hashed_password)
+    except UnknownHashError:
+        return False, None
 
 
 def get_password_hash(password: str) -> str:
-    """Hash a password."""
-    return bcrypt.hashpw(
-        password.encode("utf-8"),
-        bcrypt.gensalt(),
-    ).decode("utf-8")
+    """Hash a password with Argon2id."""
+    return password_hash.hash(password)
