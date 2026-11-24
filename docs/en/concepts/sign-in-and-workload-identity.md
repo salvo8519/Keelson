@@ -1,0 +1,1 @@
+--8<-- "template/docs/en/concepts/sign-in-and-workload-identity.md"

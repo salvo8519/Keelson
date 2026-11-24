@@ -1,0 +1,1 @@
+--8<-- "template/docs/en/concepts/security-controls.md"

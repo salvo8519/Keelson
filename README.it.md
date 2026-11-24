@@ -1,4 +1,4 @@
-<!-- i18n source: README.md source_hash: 0e6300e0616d -->
+<!-- i18n source: README.md source_hash: da9123ea94c0 -->
 <p align="center">
   <img src="docs/_shared/assets/brand/mark.svg" alt="Keelson" width="96">
 </p>
@@ -70,6 +70,46 @@ Kubernetes.
 Istruzioni, ruoli e skill di processo per Claude Code, Codex, Copilot e Cursor, più le skill
 ufficiali di FastAPI, Pydantic, LangChain, Qdrant e dello stack React, scelte in base alle
 vostre risposte.
+
+## In sintesi
+
+| Area | Cosa ha un progetto generato | Verificato da |
+| --- | --- | --- |
+| Tenancy | Row level security su ogni tabella; login applicativo separato; tenancy dei vettori | test di copertura delle tabelle e di attacco su PostgreSQL, test di tenancy del retrieval |
+| Identità | Single sign-on OpenID Connect, Argon2id, API key con scope, identità dei workload di CI | test di accesso, API key e identità dei workload |
+| API | Contratto OpenAPI versionato, controllo delle modifiche incompatibili, client generato, riferimento Scalar, errori RFC 9457 | controlli di disallineamento del contratto e del client nella pipeline |
+| Sicurezza | Oscuramento dei log, chiavi dei dati ruotabili, traccia di audit, gitleaks, scansioni di dipendenze e immagini, SBOM | test-trappola sui log, test delle impostazioni di produzione, controlli della pipeline |
+| Operatività | Log JSON, OpenTelemetry, Prometheus, sonde di salute, `make prod-local`, Compose con Traefik, Kubernetes | stack Compose risolti nei test |
+| Lingue | Inglese e italiano in errori delle API, e-mail, interfaccia e documentazione | controlli dei cataloghi nella pipeline |
+
+| Livello | Stack |
+| --- | --- |
+| Backend | Python 3.13, FastAPI, Pydantic 2, SQLAlchemy 2 (async), Alembic, PostgreSQL 16 |
+| Lavoro in background | Taskiq, Celery o ARQ, con uno scheduler; Redis (Valkey) |
+| Agenti e retrieval | Pydantic AI, LangGraph, LangChain, Deep Agents o Pydantic Deep; Qdrant o pgvector |
+| Frontend | React, TypeScript, Vite, TanStack Router e Query, Tailwind CSS, shadcn/ui |
+| Rilascio | Docker Compose, Traefik con Let's Encrypt, manifest Kubernetes, GitHub Actions o GitLab CI |
+| Documentazione | Zensical, inglese e italiano, riferimento di API e impostazioni generato dal codice |
+
+## Controlli di sicurezza
+
+Un progetto generato implementa controlli richiesti da ISO/IEC 27001:2022 e SOC 2, ognuno
+supportato da un file o da un test. Supporta un audit; non sostituisce i controlli
+dell'organizzazione. La [mappa completa](docs/it/concepts/security-controls.md) elenca ogni
+controllo, la sua evidenza e ciò che resta all'organizzazione.
+
+| Controllo | ISO 27001 | SOC 2 | Evidenza |
+| --- | --- | --- | --- |
+| Segregazione dei tenant | A.8.3 | CC6.1, C1.1 | `tests/test_segregation_postgres.py` |
+| Privilegio minimo | A.5.15, A.8.2 | CC6.3 | `tests/test_rbac_teams.py` |
+| Autenticazione sicura | A.8.5, A.5.17 | CC6.1, CC6.2 | `tests/test_sso.py`, `tests/test_security.py` |
+| Crittografia | A.8.24 | CC6.1, CC6.7 | `tests/test_data_encryption.py` |
+| Prevenzione della fuga di dati | A.8.12 | CC6.7 | `tests/test_log_trap.py` |
+| Log e traccia di audit | A.8.15 | CC7.2 | `app/core/audit.py`, `tests/test_observability.py` |
+| Configurazione sicura | A.8.9 | CC7.1 | `tests/test_production_settings.py` |
+| Gestione delle modifiche | A.8.32 | CC8.1 | controlli del contratto API e delle migrazioni |
+| Gestione delle vulnerabilità | A.8.8 | CC7.1 | scansioni di dipendenze e immagini |
+| Catena di fornitura | A.5.21 | CC6.8, CC9.2 | SBOM, skill degli agenti vincolate e scansionate |
 
 ## Avvio rapido
 

@@ -67,6 +67,46 @@ Instructions, roles and process skills for Claude Code, Codex, Copilot and Curso
 official skills of FastAPI, Pydantic, LangChain, Qdrant and the React stack, selected by your
 answers.
 
+## At a glance
+
+| Area | What a generated project has | Verified by |
+| --- | --- | --- |
+| Tenancy | Row level security on every table; separate application login; vector tenancy | table coverage and attack tests on PostgreSQL, retrieval tenancy tests |
+| Identity | OpenID Connect single sign-on, Argon2id, API keys with scopes, CI workload identity | sign-in, API key and workload identity tests |
+| API | Versioned OpenAPI contract, breaking-change check, generated client, Scalar reference, RFC 9457 errors | contract drift and client checks in the pipeline |
+| Security | Log redaction, rotatable data keys, audit trail, gitleaks, dependency and image scans, SBOM | log trap test, production settings test, pipeline gates |
+| Operations | JSON logs, OpenTelemetry, Prometheus, health probes, `make prod-local`, Compose with Traefik, Kubernetes | Compose stacks resolved in the tests |
+| Languages | English and Italian in API errors, e-mails, interface and documentation | catalog checks in the pipeline |
+
+| Layer | Stack |
+| --- | --- |
+| Backend | Python 3.13, FastAPI, Pydantic 2, SQLAlchemy 2 (async), Alembic, PostgreSQL 16 |
+| Background work | Taskiq, Celery or ARQ, with a scheduler; Redis (Valkey) |
+| Agents and retrieval | Pydantic AI, LangGraph, LangChain, Deep Agents or Pydantic Deep; Qdrant or pgvector |
+| Frontend | React, TypeScript, Vite, TanStack Router and Query, Tailwind CSS, shadcn/ui |
+| Delivery | Docker Compose, Traefik with Let's Encrypt, Kubernetes manifests, GitHub Actions or GitLab CI |
+| Documentation | Zensical, English and Italian, API and settings reference generated from the code |
+
+## Security controls
+
+A generated project implements controls that ISO/IEC 27001:2022 and SOC 2 ask for, each backed
+by a file or a test. It supports an audit; it does not replace the organization's own
+controls. The [full map](docs/en/concepts/security-controls.md) lists every control, its
+evidence and what remains with the organization.
+
+| Control | ISO 27001 | SOC 2 | Evidence |
+| --- | --- | --- | --- |
+| Tenant segregation | A.8.3 | CC6.1, C1.1 | `tests/test_segregation_postgres.py` |
+| Least privilege | A.5.15, A.8.2 | CC6.3 | `tests/test_rbac_teams.py` |
+| Secure authentication | A.8.5, A.5.17 | CC6.1, CC6.2 | `tests/test_sso.py`, `tests/test_security.py` |
+| Cryptography | A.8.24 | CC6.1, CC6.7 | `tests/test_data_encryption.py` |
+| Data leakage prevention | A.8.12 | CC6.7 | `tests/test_log_trap.py` |
+| Logging and audit trail | A.8.15 | CC7.2 | `app/core/audit.py`, `tests/test_observability.py` |
+| Secure configuration | A.8.9 | CC7.1 | `tests/test_production_settings.py` |
+| Change management | A.8.32 | CC8.1 | API contract and migration checks |
+| Vulnerability management | A.8.8 | CC7.1 | dependency and image scans |
+| Supply chain | A.5.21 | CC6.8, CC9.2 | SBOM, pinned and scanned agent skills |
+
 ## Quick start
 
 ```bash
