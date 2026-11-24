@@ -1,0 +1,19 @@
+Keelson
+Copyright 2026 Salvatore Miseo and the Keelson contributors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Keelson is assembled from two project templates released under the MIT License:
+
+- Full-Stack AI Agent Template, Copyright (c) 2025 Vstorm
+  https://github.com/vstorm-co/full-stack-ai-agent-template
+- Full Stack FastAPI Template, Copyright (c) 2019 Sebastian Ramirez
+  https://github.com/fastapi/full-stack-fastapi-template
+
+Their licence texts are reproduced in THIRD_PARTY_NOTICES.md. What was imported, from which
+commit, and what Keelson changed is recorded in PROVENANCE.md.
+
+Projects generated from Keelson that are distributed in source or binary form must keep this
+notice, as section 4(d) of the Apache License requires.
+
+The Keelson name and logo are not licensed under the Apache License (section 6).

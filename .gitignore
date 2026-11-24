@@ -1,0 +1,22 @@
+.venv/
+__pycache__/
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+.coverage
+site/
+.generated/
+node_modules/
+
+# Shared docs assets are copied into each language at build time (scripts/docs.py)
+/docs/en/assets/
+/docs/en/stylesheets/
+/docs/it/assets/
+/docs/it/stylesheets/
+/zensical.it.toml
+
+# Personal agent preferences
+CLAUDE.local.md
+
+# Internal research and design notes: never published
+/internal/
