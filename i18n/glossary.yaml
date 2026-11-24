@@ -1,0 +1,16 @@
+# Terms kept in English in the Italian edition, and agreed translations.
+keep_english:
+  - template
+  - tenant
+  - multi-tenant
+  - API key
+  - worker
+  - scheduler
+  - skill
+  - merge request
+  - pipeline
+  - upstream
+translations:
+  organization: organizzazione
+  answers: risposte
+  rendered project: progetto generato

@@ -1,0 +1,22 @@
+# Italian edition of the documentation. English (docs/en) is the source of truth;
+# docs/it holds tracked translations (see scripts/i18n.py).
+language: it
+name: Italiano
+site_description: "Template di progetto FastAPI enterprise con livello agentico, assemblato da due template open source collaudati."
+copyright: "Copyright &copy; 2026 Salvatore Miseo e i contributori di Keelson &middot; Apache License 2.0"
+sections:
+  Home: Home
+  Getting started: Per iniziare
+  Concepts: Concetti
+  Reference: Riferimento
+  Project: Progetto
+# Pages that must exist in Italian (glob patterns relative to docs/en)
+required:
+  - index.md
+  - getting-started/*.md
+  - concepts/*.md
+  - reference/*.md
+# Pages kept in English only: the Italian site links to the English version
+english_only:
+  - project/*.md
+generated: []

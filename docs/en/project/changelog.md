@@ -1,0 +1,1 @@
+--8<-- ".generated/docs/CHANGELOG.md"
