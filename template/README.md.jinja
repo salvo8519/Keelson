@@ -47,77 +47,48 @@
 
 ---
 
-## Quick Start (Local Dev)
-
-### First time
+## Quick start
 
 ```bash
-make bootstrap       # = make dev + make seed
+make quickstart      # backend/.env from the example, development stack, migrations{% if use_jwt %}, admin user{% endif %}
+make help            # every command, by area
 ```
 
-That's the only command you need on a fresh clone. After this, day-to-day is just `make dev`.
+Then:
 
-### Subsequent runs
-
-```bash
-make dev
-```
-
-`make dev` is **idempotent** — re-run it any time. It will:
-
-1. Build the backend Docker image (cached after first run)
-2. Start services via `docker-compose.dev.yml` (with hot-reload bind mounts)
-3. Poll Postgres until it accepts connections (`pg_isready` — no fixed sleeps)
-4. Apply pending Alembic migrations (no-op if already at head)
-
-It does **not** re-seed the admin user — that lives in `make seed` and is run once. This way `make dev` stays cheap to re-run after every code/config change.
-
-**Then access:**
-
-- API: <http://localhost:{{ backend_port }}>
-- Docs: <http://localhost:{{ backend_port }}/docs>
+- API: <http://localhost:{{ backend_port }}>, reference at <http://localhost:{{ backend_port }}/docs>
 {%- if use_jwt %}
-- Admin: <http://localhost:{{ backend_port }}/admin> — `admin@example.com` / `admin123` after `make seed`
+- Development administrator: `admin@example.com` / `admin123` (created by `make seed`, for development only)
 {%- endif %}
 {%- if use_frontend %}
-- Frontend: <http://localhost:{{ frontend_port }}> — start with `make dev-frontend` (Docker) or `cd frontend && bun install && bun dev` (local)
+- Frontend: `make dev-frontend` serves it on <http://localhost:{{ frontend_port }}>, or `cd frontend && bun install && bun dev`
 {%- endif %}
 
-### Day-to-day commands
+`make dev` is idempotent: it builds the backend image, starts the stack with the source
+mounted and reload on change, waits for PostgreSQL and applies pending migrations. Re-run it
+after any change.
+
+To run the backend on the host instead (breakpoints, IDE debugging):
 
 ```bash
-make dev           # bootstrap or restart (idempotent, no admin re-seed)
-{%- if use_jwt %}
-make seed          # one-shot admin creation (no-op if admin already exists)
-{%- endif %}
-make dev-down      # stop everything
-make dev-logs      # tail logs (Ctrl-C to exit)
-make dev-rebuild   # force-rebuild backend image (after pyproject.toml change)
-{%- if use_frontend %}
-make dev-frontend  # start the Next.js container
-{%- endif %}
-```
-
-If you prefer running the backend on the host (not in Docker) — useful for breakpoints / IDE debugging:
-
-```bash
-make install       # uv sync + pre-commit install
-docker compose -f docker-compose.dev.yml up -d db{% if enable_redis %} redis{% endif %}{% if enable_rag %} milvus etcd minio{% endif %}
-make db-upgrade    # apply migrations
-make run           # run uvicorn locally with --reload
+make install       # backend dependencies, API contract{% if enable_precommit %}, pre-commit hooks{% endif %}
+make docker-db{% if enable_redis %} docker-redis{% endif %}
+make db-upgrade
+make run
 ```
 
 ---
 
 ## Environments
 
-| `make` target | Compose file | Use case |
+| Command | Compose files | Use |
 |---|---|---|
-| `make dev` | `docker-compose.dev.yml` | Local development with hot-reload + bind-mounted source. |
-| `make stage` | `docker-compose.yml` | Production-like build, no bind mounts, runs on localhost. Good for sanity-checking before deploy. |
-| `make prod` | `docker-compose.prod.yml` | Production. Requires `backend/.env` (copy from `backend/.env.example`, fill real secrets) and an external Nginx using `nginx/nginx.conf`. |
+| `make dev` | `docker-compose.dev.yml` | Development: source mounted, reload on change. |
+| `make prod-local` | `docker-compose.prod.yml` + `docker-compose.prod-local.yml` | The production stack on this machine, as a rehearsal: production images and settings (`ENVIRONMENT=production`), random secrets generated in `.env.prod-local`, plain HTTP on localhost. |
+| `make prod` | `docker-compose.prod.yml` | Production behind Traefik with TLS. Requires `backend/.env` with real secrets, `DOMAIN` and `ACME_EMAIL`. |
 
-Each env has matching `-down`, `-logs`, `-rebuild` siblings (e.g. `make stage-down`).
+Each has `-down` and `-logs` siblings (`make prod-local-down`). For Kubernetes, see
+`kubernetes/`.
 
 ---
 
@@ -253,8 +224,20 @@ For production, **never** commit secrets — `backend/.env` is gitignored. Fill 
 
 ## Development
 
+`make help` lists every command by area. The ones used every day:
+
 | Command | What it does |
 |---|---|
+| `make test` | Backend tests |
+| `make lint` | Lint, format check and type check |
+| `make db-migrate` | A migration from the model changes |
+| `make openapi` | The API contract (`openapi/openapi.json`) from the code |
+{%- if use_frontend %}
+| `make client` | The contract, then the frontend client generated from it |
+{%- endif %}
+| `make docs-serve` | Preview the documentation |
+
+---|---|
 | `make test` | Run pytest |
 | `make lint` | Run ruff check + format check + ty |
 | `make format` | Auto-format with ruff |
@@ -326,41 +309,27 @@ i18n (PL + EN) ships out of the box via `next-intl`. Add a new locale by extendi
 
 ## Deployment
 
-### Frontend → Vercel
+Rehearse first: `make prod-local` runs the production images and settings on this machine.
+
+### Docker Compose on a server
 
 ```bash
-cd frontend && npx vercel --prod
-```
-
-Set in the Vercel dashboard:
-
-- `BACKEND_URL` = `https://api.your-domain.com` (server-side only)
-- `NEXT_PUBLIC_API_URL` = `https://api.your-domain.com`
-- `NEXT_PUBLIC_WS_URL` = `wss://api.your-domain.com`
-- `NEXT_PUBLIC_SITE_URL` = `https://your-domain.com`
-{%- if enable_rag %}
-- `NEXT_PUBLIC_RAG_ENABLED` = `true`
-{%- endif %}
-
-`NEXT_PUBLIC_*` values are inlined into the browser bundle at build time, so
-changing one needs a redeploy, and each must be an address the **browser** can
-reach.
-
-### Backend → your server
-
-```bash
-# 1. SSH to the box, clone the repo
-# 2. cp backend/.env.example backend/.env, fill in real secrets
-# 3. Configure nginx using nginx/nginx.conf as reference
-# 4. Bring up the stack:
+# 1. Clone the repository on the server (ports 80 and 443 free, a DNS record for DOMAIN
+#    and api.DOMAIN).
+# 2. cp backend/.env.example backend/.env and set real secrets, DOMAIN and ACME_EMAIL.
+# 3. Start the stack behind Traefik, with certificates from Let's Encrypt:
 make prod
-
-# Day-to-day:
 make prod-logs
 make prod-down
 ```
 
-Migrations run automatically on `make prod`. For a fresh deploy on a new host, the same `make prod` is the bootstrap command.
+Migrations run on every `make prod`. The frontend is built with `VITE_API_URL`
+(default `https://api.DOMAIN`), the address the browser uses to reach the API.
+
+### Kubernetes
+
+Manifests are in `kubernetes/` (deployment, service, ingress, secrets). Set the values of
+`kubernetes/secret.yaml` from your secret manager, never from the repository.
 
 ---
 

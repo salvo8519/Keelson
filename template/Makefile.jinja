@@ -1,558 +1,325 @@
-.PHONY: install format lint test run clean help db-init dev dev-down dev-logs dev-rebuild dev-frontend docker-clean stage stage-down prod prod-down upgrade upgrade-dry-run skills skills-check i18n-extract i18n-check docs docs-serve docs-check openapi openapi-check{% if use_frontend %} client{% endif %}
+# {{ project_name }}: development, checks and deployment commands.
+# Run `make` or `make help` for the list. Each target documents itself with `## text` on its
+# line, and sections start with `##@`: the help is read from this file, so it cannot drift.
 
-# === Environments ===========================================================
-# `make dev`   — local development (docker-compose.dev.yml + bind-mounted source)
-# `make stage` — staging (docker-compose.yml — built images, no live reload)
-# `make prod`  — production (docker-compose.prod.yml — needs backend/.env + nginx)
-# Each env has matching -down / -logs / -rebuild siblings.
+.DEFAULT_GOAL := help
+SHELL := /bin/bash
 
+.PHONY: help quickstart install bootstrap dev seed dev-down dev-logs dev-rebuild docker-clean \
+	dev-frontend prod-local prod-local-down prod-local-logs prod prod-down prod-logs \
+	run run-prod routes test test-cov lint format openapi openapi-check client \
+	db-init db-migrate db-upgrade db-downgrade db-current db-history \
+	create-admin user-create user-list celery-worker celery-beat celery-flower \
+	taskiq-worker taskiq-scheduler docker-db docker-db-stop docker-redis docker-redis-stop \
+	docker-shell skills skills-check skills-scan i18n-extract i18n-check docs docs-serve \
+	docs-check upgrade upgrade-dry-run clean
+
+help: ## Show this help
+	@awk 'BEGIN {FS = ":.*## "} \
+		/^##@/ {printf "\n%s\n", substr($$0, 5); next} \
+		/^[a-zA-Z0-9_-]+:.*## / {printf "  make %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@echo ""
 {%- if enable_docker %}
 
-# Wait for postgres to accept connections. Polls pg_isready instead of a
-# fixed sleep — handles slow startups and cold-start image pulls.
+DEV = docker compose -f docker-compose.dev.yml $(COMPOSE_DEV_PROFILES)
+PROD = docker compose --env-file backend/.env -f docker-compose.prod.yml
+PROD_LOCAL = docker compose --env-file .env.prod-local -f docker-compose.prod.yml -f docker-compose.prod-local.yml
+
+# Wait until PostgreSQL accepts connections in the stack run by $(1).
 define _wait_for_db
-	@echo "Waiting for PostgreSQL ($(1))..."
-	@for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do \
-		if docker compose -f $(1) exec -T db pg_isready -U postgres >/dev/null 2>&1; then \
-			echo "  OK DB ready"; exit 0; \
-		fi; \
+	@echo "Waiting for PostgreSQL..."
+	@for i in $$(seq 1 30); do \
+		if $(1) exec -T db pg_isready -U postgres >/dev/null 2>&1; then echo "  database ready"; exit 0; fi; \
 		printf '.'; sleep 2; \
 	done; \
-	echo "  ERROR DB not ready after 30s — check 'make dev-logs'"; exit 1
+	echo "  the database did not start within 60 seconds; see the logs"; exit 1
 endef
-{%- endif %}
 
-{%- if enable_docker %}
+backend/.env:
+	cp backend/.env.example backend/.env
+	@echo "Created backend/.env from backend/.env.example (development values)."
 
-# === Local dev: build → up → migrate ===
-# Idempotent — re-run anytime. Migrations are no-ops when already at head;
-# admin seeding is a separate target (`make seed`) so re-running `make dev`
-# doesn't keep retrying user creation.
-dev:
-	@echo "-> Building backend image…"
-	docker compose -f docker-compose.dev.yml build app
-	@echo "-> Starting services…"
-	@if ! docker compose -f docker-compose.dev.yml $(COMPOSE_DEV_PROFILES) up -d; then \
-		echo ""; \
-		echo "WARNING: First start failed. Tearing down stale containers and retrying once…"; \
-		echo "  (volumes preserved — DB data is safe; use 'make clean' for a full wipe)"; \
-		docker compose -f docker-compose.dev.yml down --remove-orphans; \
-		docker compose -f docker-compose.dev.yml $(COMPOSE_DEV_PROFILES) up -d; \
-	fi
-	$(call _wait_for_db,docker-compose.dev.yml)
-	@echo "-> Applying migrations…"
-	docker compose -f docker-compose.dev.yml exec -T app {{ project_slug }} db upgrade
+##@ Getting started
+
+quickstart: backend/.env dev{% if use_jwt %} seed{% endif %} ## First run from a fresh clone: configuration, dev stack, migrations{% if use_jwt %}, an admin user{% endif %}
 	@echo ""
-	@echo "Dev stack ready:"
-	@echo "   API:      http://localhost:{{ backend_port }}"
-	@echo "   Docs:     http://localhost:{{ backend_port }}/docs"
-{%- if use_jwt %}
-	@echo "   Admin:    http://localhost:{{ backend_port }}/admin"
-{%- endif %}
+	@echo "Ready. Next:"
 {%- if use_frontend %}
-	@echo "   Frontend: http://localhost:{{ frontend_port }}  (run 'make dev-frontend' or 'cd frontend && bun dev')"
+	@echo "  make dev-frontend     the web interface on http://localhost:{{ frontend_port }}"
 {%- endif %}
-{%- if use_jwt %}
-	@echo ""
-	@echo "First time? Run 'make seed' to create the default admin user."
-{%- endif %}
-
-{%- if use_jwt %}
-
-# === First-time setup: seed default admin user (one-shot) ===
-# Skipped when admin@example.com already exists. Safe to run again — exits
-# clean either way. Replace email/password before deploying anywhere real.
-seed:
-	@echo "-> Seeding admin user (admin@example.com / admin123)…"
-	@if docker compose -f docker-compose.dev.yml exec -T app \
-		{{ project_slug }} user list 2>/dev/null \
-		| grep -q "admin@example.com"; then \
-		echo "  (admin@example.com already exists — nothing to do)"; \
-	else \
-		docker compose -f docker-compose.dev.yml exec -T app \
-			{{ project_slug }} user create \
-				--email admin@example.com --password admin123 --superuser \
-		&& echo "  OK Admin created. Login at http://localhost:{{ backend_port }}/admin"; \
-	fi
-
-# Convenience: bootstrap a fresh checkout end-to-end.
-bootstrap: dev seed
-{%- else %}
-
-bootstrap: dev
+	@echo "  make test             the backend test suite"
+	@echo "  make prod-local       the production stack on this machine"
+	@echo "  make help             every command"
 {%- endif %}
 
-dev-down:
-	docker compose -f docker-compose.dev.yml $(COMPOSE_DEV_PROFILES) down
-
-# Full wipe — containers, networks, AND volumes. Use after a corrupted state
-# (e.g. detached networks, port conflicts that left orphans). DESTROYS DB data.
-docker-clean:
-	@echo "-> Removing containers, networks, AND volumes for the dev stack…"
-	@echo "  WARNING:  This deletes all local DB data and uploaded files."
-	docker compose -f docker-compose.dev.yml $(COMPOSE_DEV_PROFILES) down -v --remove-orphans
-	@echo "OK Cleaned. Run 'make dev' to start fresh."
-
-dev-logs:
-	docker compose -f docker-compose.dev.yml $(COMPOSE_DEV_PROFILES) logs -f
-
-dev-rebuild:
-	docker compose -f docker-compose.dev.yml build --no-cache app
-	docker compose -f docker-compose.dev.yml up -d --force-recreate app
-
-{%- if use_frontend %}
-dev-frontend:
-	docker compose -f docker-compose.frontend.yml up -d
-	@echo ""
-	@echo "OK Frontend at http://localhost:{{ frontend_port }}  (backend must be up — 'make dev')"
-{%- endif %}
-
-# === Staging: built images, no bind mounts (production-like, local DB) ===
-stage:
-	docker compose -f docker-compose.yml up -d --build
-	$(call _wait_for_db,docker-compose.yml)
-	docker compose -f docker-compose.yml exec -T app {{ project_slug }} db upgrade
-	@echo "OK Staging stack at http://localhost:{{ backend_port }}"
-
-stage-down:
-	docker compose -f docker-compose.yml down
-
-# === Production: external Nginx, real secrets in backend/.env ===
-prod:
-	@test -f backend/.env || (echo "ERROR backend/.env missing — run 'cp backend/.env.example backend/.env' and fill in real secrets" && exit 1)
-	docker compose --env-file backend/.env -f docker-compose.prod.yml up -d --build
-	@echo "-> Waiting for DB then running migrations…"
-	@sleep 5
-	docker compose --env-file backend/.env -f docker-compose.prod.yml exec -T app {{ project_slug }} db upgrade
-	@echo "OK Production stack up. Configure your nginx host with nginx/nginx.conf"
-
-prod-down:
-	docker compose --env-file backend/.env -f docker-compose.prod.yml down
-
-prod-logs:
-	docker compose --env-file backend/.env -f docker-compose.prod.yml logs -f
-
-# Legacy alias
-quickstart: dev
-{%- endif %}
-
-# === Setup ===
-install:
+install: ## Install the backend locally (no Docker) and write the API contract
 	uv sync --directory backend --dev
 	cd backend && uv run python ../scripts/openapi.py export
 {%- if enable_precommit %}
 	@if git rev-parse --git-dir > /dev/null 2>&1; then \
 		uv run --directory backend pre-commit install; \
 	else \
-		echo "WARNING:  Not a git repository - skipping pre-commit install"; \
-		echo "   Run 'git init && make install' to set up pre-commit hooks"; \
+		echo "Not a git repository: pre-commit hooks not installed (git init, then make install)"; \
 	fi
 {%- endif %}
+{%- if enable_docker %}
+
+##@ Development stack (Docker, source mounted, reload on change)
+
+dev: backend/.env ## Build and start the development stack, apply migrations (idempotent)
+	$(DEV) build app
+	@if ! $(DEV) up -d; then \
+		echo "First start failed: removing stale containers and retrying once (volumes kept)"; \
+		$(DEV) down --remove-orphans; \
+		$(DEV) up -d; \
+	fi
+	$(call _wait_for_db,$(DEV))
+	$(DEV) exec -T app {{ project_slug }} db upgrade
 	@echo ""
-	@echo "OK Installation complete!"
-	@echo ""
-	@echo "Next steps:"
-{%- if not generate_env %}
-	@echo "  • cd backend && cp .env.example .env"
-	@echo "  • Edit backend/.env with your settings"
+	@echo "Development stack ready:"
+	@echo "  API            http://localhost:{{ backend_port }}"
+	@echo "  API reference  http://localhost:{{ backend_port }}/docs"
+{%- if use_frontend %}
+	@echo "  Frontend       make dev-frontend, or: cd frontend && bun dev"
 {%- endif %}
-	@echo "  • make docker-db        # Start PostgreSQL"
-	@echo "  • make db-upgrade       # Apply migrations"
-	@echo "  • make run              # Start development server"
-{%- if generate_env %}
-	@echo ""
-	@echo "Note: backend/.env is pre-configured for development"
+{%- if use_jwt %}
+
+seed: ## Create the development administrator (admin@example.com / admin123), once
+	@if $(DEV) exec -T app {{ project_slug }} user list 2>/dev/null | grep -q "admin@example.com"; then \
+		echo "admin@example.com already exists"; \
+	else \
+		$(DEV) exec -T app {{ project_slug }} user create \
+			--email admin@example.com --password admin123 --superuser \
+		&& echo "Created admin@example.com / admin123 (development only: never in production)"; \
+	fi
+
+bootstrap: dev seed ## Same as quickstart, without creating backend/.env
+{%- else %}
+
+bootstrap: dev ## Same as quickstart, without creating backend/.env
 {%- endif %}
 
-# === API contract (openapi/openapi.json, see docs: Reference > API) ===
-openapi:
-	cd backend && uv run python ../scripts/openapi.py export
+dev-down: ## Stop the development stack
+	$(DEV) down
 
-openapi-check:
-	cd backend && uv run python ../scripts/openapi.py check
+dev-logs: ## Follow the logs of the development stack
+	$(DEV) logs -f
+
+dev-rebuild: ## Rebuild the backend image from scratch and restart it
+	$(DEV) build --no-cache app
+	$(DEV) up -d --force-recreate app
+
+docker-clean: ## Remove the development stack with its volumes (deletes local data)
+	$(DEV) down -v --remove-orphans
 {%- if use_frontend %}
 
-# The contract, then the frontend client generated from it.
-client:
-	./scripts/generate-client.sh
+dev-frontend: ## Build and serve the frontend on http://localhost:{{ frontend_port }} (after make dev)
+	docker compose -f docker-compose.frontend.yml up -d --build
 {%- endif %}
 
-# === Template upgrade ===
-# Keelson: the project follows its template with Copier (.copier-answers.yml), as a three-way
-# merge with your own changes. The upstream fastapi-fullstack upgrade does not apply here.
-upgrade:
-	uvx copier update --trust $(ARGS)
+docker-shell: ## Open a shell in the backend container
+	$(DEV) exec app /bin/bash
 
-upgrade-dry-run:
-	uvx copier update --trust --pretend $(ARGS)
+##@ Production stack on this machine (a rehearsal, not a deployment)
 
-# === Agent skills and translations (Keelson) ===
-skills:
-	python3 scripts/agent_skills.py install
+.env.prod-local:
+	@python3 -c "import secrets; t = secrets.token_hex; \
+	print('# Generated by make prod-local: random local secrets, never committed.'); \
+	print(f'SECRET_KEY={t(32)}'); print(f'API_KEY={t(32)}'); \
+	print(f'POSTGRES_PASSWORD={t(24)}'); print(f'POSTGRES_APP_PASSWORD={t(24)}'); \
+	print(f'REDIS_PASSWORD={t(24)}'); print(f'DATA_ENCRYPTION_KEYS={t(32)}'){% if use_celery %}; \
+	print(f'FLOWER_PASSWORD={t(16)}'){% endif %}" > $@
+	@echo "Generated .env.prod-local with random secrets (ignored by git)."
 
-skills-check:
-	python3 scripts/agent_skills.py check
+prod-local: backend/.env .env.prod-local ## Build and start the production stack on localhost (production settings, plain HTTP)
+	$(PROD_LOCAL) up -d --build
+	$(call _wait_for_db,$(PROD_LOCAL))
+	$(PROD_LOCAL) exec -T app {{ project_slug }} db upgrade
+	@echo ""
+	@echo "Production stack running on this machine (ENVIRONMENT=production):"
+	@echo "  API       http://localhost:{{ backend_port }}  (the reference at /docs is off in production)"
+{%- if use_frontend %}
+	@echo "  Frontend  http://localhost:{{ frontend_port }}"
+{%- endif %}
 
-i18n-extract:
-	uv run --directory backend python -m app.core.i18n_catalog extract
+prod-local-down: ## Stop the local production stack (volumes kept)
+	$(PROD_LOCAL) down
 
-i18n-check:
-	uv run --directory backend python -m app.core.i18n_catalog check
+prod-local-logs: ## Follow the logs of the local production stack
+	$(PROD_LOCAL) logs -f
 
-# === Documentation (Zensical, docs/) ===
-DOCS_RUN = uv run --no-project --with-requirements docs/requirements.txt python
-DOCS_LANG ?= en
+##@ Production (Docker Compose with Traefik and TLS, secrets in backend/.env)
 
-# Reference pages generated from the code (API, settings), then every edition, strict.
-docs:
-	cd backend && uv run python ../scripts/docs_reference.py
-	$(DOCS_RUN) scripts/docs.py build
+prod: ## Build and start the production stack, apply migrations
+	@test -f backend/.env || (echo "backend/.env is missing: copy backend/.env.example and set real secrets" && exit 1)
+	$(PROD) up -d --build
+	$(call _wait_for_db,$(PROD))
+	$(PROD) exec -T app {{ project_slug }} db upgrade
+	@echo "Production stack running behind Traefik (DOMAIN and ACME_EMAIL in backend/.env)."
 
-docs-serve:
-	cd backend && uv run python ../scripts/docs_reference.py
-	$(DOCS_RUN) scripts/docs.py serve --lang $(DOCS_LANG)
+prod-down: ## Stop the production stack
+	$(PROD) down
 
-# Translations missing or older than their English page.
-docs-check:
-	$(DOCS_RUN) scripts/i18n.py check
+prod-logs: ## Follow the logs of the production stack
+	$(PROD) logs -f
+{%- endif %}
 
-# === Code Quality ===
-format:
-	uv run --directory backend ruff format app tests cli
-	uv run --directory backend ruff check app tests cli --fix
+##@ Backend without Docker
 
-lint:
+run: ## Start the API with reload on change
+	uv run --directory backend {{ project_slug }} server run --reload
+
+run-prod: ## Start the API as in production (no reload)
+	uv run --directory backend {{ project_slug }} server run --host 0.0.0.0 --port {{ backend_port }}
+
+routes: ## List the API routes
+	uv run --directory backend {{ project_slug }} server routes
+{%- if use_celery %}
+
+celery-worker: ## Start a Celery worker
+	uv run --directory backend {{ project_slug }} celery worker
+
+celery-beat: ## Start the Celery scheduler
+	uv run --directory backend {{ project_slug }} celery beat
+
+celery-flower: ## Start Flower, the Celery monitor, on http://localhost:5555
+	uv run --directory backend {{ project_slug }} celery flower
+{%- endif %}
+{%- if use_taskiq %}
+
+taskiq-worker: ## Start a Taskiq worker
+	uv run --directory backend {{ project_slug }} taskiq worker
+
+taskiq-scheduler: ## Start the Taskiq scheduler
+	uv run --directory backend {{ project_slug }} taskiq scheduler
+{%- endif %}
+{%- if enable_docker %}
+
+docker-db: ## Start only PostgreSQL in Docker, for a backend run on the host
+	docker compose up -d db
+
+docker-db-stop: ## Stop that PostgreSQL
+	docker compose stop db
+{%- if enable_redis %}
+
+docker-redis: ## Start only Redis in Docker, for a backend run on the host
+	docker compose up -d redis
+
+docker-redis-stop: ## Stop that Redis
+	docker compose stop redis
+{%- endif %}
+{%- endif %}
+
+##@ Quality
+
+test: ## Run the backend tests (PostgreSQL tests need a database: make docker-db)
+	uv run --directory backend pytest tests/ -v
+
+test-cov: ## Run the backend tests with a coverage report (htmlcov/)
+	uv run --directory backend pytest tests/ -v --cov=app --cov-report=html --cov-report=term-missing
+
+lint: ## Lint, format check and type check of the backend
 	uv run --directory backend ruff check app tests cli
 	uv run --directory backend ruff format app tests cli --check
 	uv run --directory backend ty check
 
-# === Testing ===
-test:
-	uv run --directory backend pytest tests/ -v
+format: ## Format the backend and apply safe lint fixes
+	uv run --directory backend ruff format app tests cli
+	uv run --directory backend ruff check app tests cli --fix
 
-test-cov:
-	uv run --directory backend pytest tests/ -v --cov=app --cov-report=html --cov-report=term-missing
+##@ API contract (openapi/openapi.json)
 
+openapi: ## Write the API contract from the code
+	cd backend && uv run python ../scripts/openapi.py export
 
-# === Database ===
-{%- if enable_docker %}
-db-init: docker-db
-	@echo "Waiting for PostgreSQL to be ready..."
-	@sleep 8
-	cd backend && uv run {{ project_slug }} db migrate -m "initial" || true
-	cd backend && uv run {{ project_slug }} db upgrade
-	@echo ""
-	@echo "OK Database initialized!"
-{%- else %}
-db-init:
-	cd backend && uv run {{ project_slug }} db migrate -m "initial" || true
-	cd backend && uv run {{ project_slug }} db upgrade
-	@echo ""
-	@echo "OK Database initialized!"
+openapi-check: ## Fail when the API contract does not match the code
+	cd backend && uv run python ../scripts/openapi.py check
+{%- if use_frontend %}
+
+client: ## Write the contract, then regenerate the frontend API client from it
+	./scripts/generate-client.sh
 {%- endif %}
 
-db-migrate:
+##@ Database
+
+db-init: ## Start PostgreSQL{% if enable_docker %} (Docker){% endif %} and apply the migrations
+{%- if enable_docker %}
+	docker compose up -d db
+	@sleep 5
+{%- endif %}
+	cd backend && uv run {{ project_slug }} db upgrade
+
+db-migrate: ## Create a migration from the model changes (asks for a message)
 	@read -p "Migration message: " msg; \
 	uv run --directory backend {{ project_slug }} db migrate -m "$$msg"
 
-db-upgrade:
+db-upgrade: ## Apply the migrations
 	uv run --directory backend {{ project_slug }} db upgrade
 
-db-downgrade:
+db-downgrade: ## Revert the last migration
 	uv run --directory backend {{ project_slug }} db downgrade
 
-db-current:
+db-current: ## Show the current migration
 	uv run --directory backend {{ project_slug }} db current
 
-db-history:
+db-history: ## Show the migration history
 	uv run --directory backend {{ project_slug }} db history
-
-# === Server ===
-run:
-	uv run --directory backend {{ project_slug }} server run --reload
-
-run-prod:
-	uv run --directory backend {{ project_slug }} server run --host 0.0.0.0 --port 8000
-
-routes:
-	uv run --directory backend {{ project_slug }} server routes
-
 {%- if use_jwt %}
 
-# === Users ===
-create-admin:
-	@echo "Creating admin user..."
+##@ Users
+
+create-admin: ## Create an administrator (interactive)
 	uv run --directory backend {{ project_slug }} user create-admin
 
-user-create:
+user-create: ## Create a user (interactive)
 	uv run --directory backend {{ project_slug }} user create
 
-user-list:
+user-list: ## List the users
 	uv run --directory backend {{ project_slug }} user list
 {%- endif %}
 
-{%- if use_celery %}
+##@ Agent skills, translations and documentation
 
-# === Celery ===
-celery-worker:
-	uv run --directory backend {{ project_slug }} celery worker
+skills: ## Install the agent skills of the components (pinned, verified, scanned)
+	python3 scripts/agent_skills.py install
 
-celery-beat:
-	uv run --directory backend {{ project_slug }} celery beat
+skills-check: ## Fail when an installed skill is missing, stale or changed
+	python3 scripts/agent_skills.py check
 
-celery-flower:
-	uv run --directory backend {{ project_slug }} celery flower
-	@echo ""
-	@echo "OK Flower started at http://localhost:5555"
-{%- endif %}
+skills-scan: ## Show the content scan of the installed skills
+	python3 scripts/agent_skills.py scan
 
-{%- if use_taskiq %}
+i18n-extract: ## Update the message catalogs from the code
+	uv run --directory backend python -m app.core.i18n_catalog extract
 
-# === Taskiq ===
-taskiq-worker:
-	uv run --directory backend {{ project_slug }} taskiq worker
+i18n-check: ## Fail when a message is untranslated
+	uv run --directory backend python -m app.core.i18n_catalog check
 
-taskiq-scheduler:
-	uv run --directory backend {{ project_slug }} taskiq scheduler
-{%- endif %}
+DOCS_RUN = uv run --no-project --with-requirements docs/requirements.txt python
+DOCS_LANG ?= en
 
-{%- if enable_docker %}
+docs: ## Build the documentation site (every language, strict, reference from the code)
+	cd backend && uv run python ../scripts/docs_reference.py
+	$(DOCS_RUN) scripts/docs.py build
 
-# === Docker: Backend (Development) ===
-docker-up:
-	docker compose build app
-	docker compose up -d
-	@echo ""
-	@echo "OK Backend services started!"
-	@echo "   API: http://localhost:{{ backend_port }}"
-	@echo "   Docs: http://localhost:{{ backend_port }}/docs"
-{%- if use_celery %}
-	@echo "   Flower: http://localhost:5555"
-{%- endif %}
-	@echo "   PostgreSQL: localhost:5432"
-{%- if enable_redis %}
-	@echo "   Redis: localhost:6379"
-{%- endif %}
+docs-serve: ## Preview the documentation (DOCS_LANG=it for the Italian edition)
+	cd backend && uv run python ../scripts/docs_reference.py
+	$(DOCS_RUN) scripts/docs.py serve --lang $(DOCS_LANG)
 
-docker-down:
-	docker compose down
-{%- if use_frontend %}
-	docker compose -f docker-compose.frontend.yml down 2>/dev/null || true
-{%- endif %}
+docs-check: ## Fail when a translation is missing or older than its English page
+	$(DOCS_RUN) scripts/i18n.py check
 
-docker-logs:
-	docker compose logs -f
+##@ Maintenance
 
-docker-build:
-	docker compose build
+upgrade: ## Bring in the latest template changes (Copier, three-way merge)
+	uvx copier update --trust $(ARGS)
 
-docker-shell:
-	docker compose exec app /bin/bash
+upgrade-dry-run: ## Preview the template changes without applying them
+	uvx copier update --trust --pretend $(ARGS)
 
-{%- if use_frontend %}
-
-# === Docker: Frontend (Development) ===
-docker-frontend:
-	docker compose -f docker-compose.frontend.yml up -d
-	@echo ""
-	@echo "OK Frontend started!"
-	@echo "   URL: http://localhost:{{ frontend_port }}"
-	@echo ""
-	@echo "Note: Backend must be running (make docker-up)"
-
-docker-frontend-down:
-	docker compose -f docker-compose.frontend.yml down
-
-docker-frontend-logs:
-	docker compose -f docker-compose.frontend.yml logs -f
-
-docker-frontend-build:
-	docker compose -f docker-compose.frontend.yml build
-{%- endif %}
-
-# === Docker: Production (with Traefik) ===
-docker-prod:
-	docker compose -f docker-compose.prod.yml up -d
-	@echo ""
-	@echo "OK Production services started with Traefik!"
-	@echo ""
-	@echo "Endpoints (replace DOMAIN with your domain):"
-{%- if use_frontend %}
-	@echo "   Frontend: https://$$DOMAIN"
-{%- endif %}
-	@echo "   API: https://api.$$DOMAIN"
-{%- if use_celery %}
-	@echo "   Flower: https://flower.$$DOMAIN"
-{%- endif %}
-	@echo "   Traefik: https://traefik.$$DOMAIN"
-
-docker-prod-down:
-	docker compose -f docker-compose.prod.yml down
-
-docker-prod-logs:
-	docker compose -f docker-compose.prod.yml logs -f
-
-docker-prod-build:
-	docker compose -f docker-compose.prod.yml build
-
-
-# === Docker: Individual Services ===
-docker-db:
-	docker compose up -d db
-	@echo ""
-	@echo "OK PostgreSQL started on port 5432"
-	@echo "   Connection: postgresql://postgres:postgres@localhost:5432/{{ project_slug }}"
-
-docker-db-stop:
-	docker compose stop db
-
-{%- if enable_redis %}
-
-docker-redis:
-	docker compose up -d redis
-	@echo ""
-	@echo "OK Redis started on port 6379"
-
-docker-redis-stop:
-	docker compose stop redis
-{%- endif %}
-
-{%- if use_frontend %}
-
-# === Vercel (Frontend Deployment) ===
-vercel-deploy:
-	cd frontend && npx vercel --prod
-	@echo ""
-	@echo "OK Frontend deployed to Vercel!"
-	@echo "   Set environment variables in Vercel dashboard:"
-	@echo "   BACKEND_URL=https://api.your-domain.com"
-	@echo "   NEXT_PUBLIC_API_URL=https://api.your-domain.com"
-	@echo "   NEXT_PUBLIC_WS_URL=wss://api.your-domain.com"
-	@echo "   NEXT_PUBLIC_SITE_URL=https://your-domain.com"
-{%- if enable_rag %}
-	@echo "   NEXT_PUBLIC_RAG_ENABLED=true"
-{%- endif %}
-{%- endif %}
-{%- endif %}
-
-# === Cleanup ===
-clean:
+clean: ## Remove caches and coverage files
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	find . -type d -name .pytest_cache -exec rm -rf {} + 2>/dev/null || true
 	find . -type d -name .ruff_cache -exec rm -rf {} + 2>/dev/null || true
 	find . -type d -name .ty_cache -exec rm -rf {} + 2>/dev/null || true
 	rm -rf htmlcov/ .coverage coverage.xml
-
-# === Help ===
-help:
-	@echo ""
-	@echo "{{ project_name }} - Available Commands"
-	@echo "======================================"
-	@echo ""
-{%- if enable_docker %}
-	@echo "Bootstrap (first-time setup):"
-	@echo "  make bootstrap      'make dev' + 'make seed' — full setup from a fresh clone"
-	@echo ""
-	@echo "Day-to-day dev:"
-	@echo "  make dev            Build + start dev stack + apply migrations (idempotent)"
-{%- if use_jwt %}
-	@echo "  make seed           One-shot admin seed (admin@example.com / admin123)"
-{%- endif %}
-	@echo "  make dev-down       Stop dev stack"
-	@echo "  make dev-logs       Tail dev container logs"
-	@echo "  make dev-rebuild    Force-rebuild backend image"
-	@echo "  make docker-clean   Wipe containers + networks + volumes (DESTROYS data)"
-{%- if use_frontend %}
-	@echo "  make dev-frontend   Start frontend container (after 'make dev')"
-{%- endif %}
-	@echo ""
-	@echo "Other environments:"
-	@echo "  make stage          Production-like stack on localhost (no bind mounts)"
-	@echo "  make prod           Production stack (requires backend/.env + nginx)"
-	@echo ""
-{%- endif %}
-	@echo "Setup (without Docker):"
-	@echo "  make install       Install Python deps + pre-commit hooks"
-	@echo ""
-	@echo "Development:"
-	@echo "  make run           Start dev server (with hot reload)"
-	@echo "  make test          Run tests"
-	@echo "  make lint          Check code quality"
-	@echo "  make format        Auto-format code"
-	@echo ""
-	@echo "Database:"
-	@echo "  make db-init       Initialize database (start + migrate)"
-	@echo "  make db-migrate    Create new migration"
-	@echo "  make db-upgrade    Apply migrations"
-	@echo "  make db-downgrade  Rollback last migration"
-	@echo "  make db-current    Show current migration"
-	@echo ""
-{%- if use_jwt %}
-	@echo "Users:"
-	@echo "  make create-admin  Create admin user (for SQLAdmin access)"
-	@echo "  make user-create   Create new user (interactive)"
-	@echo "  make user-list     List all users"
-	@echo ""
-{%- endif %}
-{%- if enable_rag %}
-	@echo "RAG:"
-	@echo "  uv run {{ project_slug }} rag-ingest <path> -c <collection>  Ingest files"
-	@echo "  uv run {{ project_slug }} rag-search <query> -c <collection>  Search"
-	@echo "  uv run {{ project_slug }} rag-collections                     List collections"
-	@echo "  uv run {{ project_slug }} rag-sources                         List sync sources"
-	@echo "  uv run {{ project_slug }} rag-source-add                      Add sync source"
-	@echo "  uv run {{ project_slug }} rag-source-sync <id>                Trigger sync"
-	@echo ""
-{%- endif %}
-{%- if use_celery %}
-	@echo "Celery:"
-	@echo "  make celery-worker  Start Celery worker"
-	@echo "  make celery-beat    Start Celery beat scheduler"
-	@echo "  make celery-flower  Start Flower monitoring UI"
-	@echo ""
-{%- endif %}
-{%- if use_taskiq %}
-	@echo "Taskiq:"
-	@echo "  make taskiq-worker     Start Taskiq worker"
-	@echo "  make taskiq-scheduler  Start Taskiq scheduler"
-	@echo ""
-{%- endif %}
-{%- if enable_docker %}
-	@echo "Docker (Development):"
-	@echo "  make docker-up            Start backend services"
-	@echo "  make docker-down          Stop all services"
-	@echo "  make docker-logs          View backend logs"
-	@echo "  make docker-build         Build backend images"
-{%- if use_frontend %}
-	@echo "  make docker-frontend      Start frontend (separate)"
-	@echo "  make docker-frontend-down Stop frontend"
-{%- endif %}
-	@echo "  make docker-db            Start only PostgreSQL"
-{%- if enable_redis %}
-	@echo "  make docker-redis         Start only Redis"
-{%- endif %}
-	@echo ""
-	@echo "Docker (Production with Traefik):"
-	@echo "  make docker-prod          Start production stack"
-	@echo "  make docker-prod-down     Stop production stack"
-	@echo "  make docker-prod-logs     View production logs"
-	@echo ""
-{%- endif %}
-	@echo "Template upgrade (Copier):"
-	@echo "  make upgrade-dry-run       Preview template updates (no changes)"
-	@echo "  make upgrade               Pull latest template changes (3-way merge)"
-	@echo ""
-	@echo "Agent skills and translations:"
-	@echo "  make skills                Install the official skills of the components"
-	@echo "  make i18n-extract          Update the message catalogs from the code"
-	@echo "  make i18n-check            Fail when a message is untranslated"
-	@echo ""
-	@echo "Documentation:"
-	@echo "  make docs                  Build every edition (strict), reference from the code"
-	@echo "  make docs-serve            Live preview (DOCS_LANG=it for the Italian edition)"
-	@echo "  make docs-check            Fail when a translation is missing or out of date"
-	@echo ""
-	@echo "Other:"
-	@echo "  make routes        Show all API routes"
-	@echo "  make clean         Clean cache files"
-	@echo ""

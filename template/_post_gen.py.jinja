@@ -498,6 +498,7 @@ if not enable_docker:
         "docker-compose.yml",
         "docker-compose.dev.yml",
         "docker-compose.prod.yml",
+        "docker-compose.prod-local.yml",
         "docker-compose.frontend.yml",
     ):
         remove_file(os.path.join(project_root, compose_file))

@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+import yaml
 from conftest import Render
 
 pytestmark = pytest.mark.generated
@@ -77,3 +78,35 @@ def test_default_project_api_contract(render: Render) -> None:
         if committed.get(name) != regenerated.get(name)
     )
     assert stale == [], f"the template's frontend client is out of date: {stale}"
+
+
+def test_default_project_compose_stacks_are_valid(render: Render) -> None:
+    """Every Compose stack resolves, and the local production rehearsal is production-like."""
+    project = render({"project_name": "acme_service"})
+    _run(["cp", "backend/.env.example", "backend/.env"], project)
+    _run(["make", "-s", ".env.prod-local"], project)
+    stacks = {
+        "dev": ["-f", "docker-compose.dev.yml"],
+        "frontend": ["-f", "docker-compose.frontend.yml"],
+        "prod": ["--env-file", ".env.prod-local", "-f", "docker-compose.prod.yml"],
+        "prod-local": [
+            "--env-file",
+            ".env.prod-local",
+            "-f",
+            "docker-compose.prod.yml",
+            "-f",
+            "docker-compose.prod-local.yml",
+        ],
+    }
+    resolved = {
+        name: yaml.safe_load(_run(["docker", "compose", *args, "config"], project))
+        for name, args in stacks.items()
+    }
+    local = resolved["prod-local"]["services"]
+    assert "traefik" not in local, "the rehearsal publishes ports instead of running Traefik"
+    assert local["app"]["environment"]["ENVIRONMENT"] == "production"
+    assert local["frontend"]["build"]["args"]["VITE_API_URL"] == "http://localhost:8000"
+    images = {svc.get("image") for svc in resolved["prod"]["services"].values()}
+    assert "acme_service_backend:dev" not in images, "production must not run the dev image"
+    for path in project.glob("docker-compose*.yml"):
+        assert "NEXT_PUBLIC" not in path.read_text(encoding="utf-8"), path.name

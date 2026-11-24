@@ -3,143 +3,28 @@
 This project provides commands via two interfaces: **Make** targets for common
 workflows and a **project CLI** for fine-grained control.
 
-## Make Commands
+## Make commands
 
-Run these from the project root directory.
+`make help` lists every target, grouped by area. Each target documents itself in the
+`Makefile` (`## description` on its line), so the list cannot fall out of date; this page
+gives only the entry points.
 
-### Quick Start
-
-| Command | Description |
-|---------|-------------|
+| Command | Use |
+|---------|-----|
 {%- if enable_docker %}
-| `make quickstart` | Install deps, start Docker, run migrations, create admin user |
+| `make quickstart` | First run from a fresh clone: configuration, development stack, migrations{% if use_jwt %}, a development administrator{% endif %} |
+| `make dev` | Development stack in Docker, source mounted, reload on change |
+| `make prod-local` | The production stack on this machine: production images and settings, random local secrets, plain HTTP |
+| `make prod` | Production behind Traefik with TLS (secrets in `backend/.env`) |
 {%- endif %}
-| `make install` | Install backend dependencies with uv{% if enable_precommit %} + pre-commit hooks{% endif %} |
-
-### Development
-
-| Command | Description |
-|---------|-------------|
-| `make run` | Start development server with hot reload |
-| `make run-prod` | Start production server (0.0.0.0:8000) |
-| `make routes` | Show all registered API routes |
-| `make test` | Run tests with verbose output |
-| `make test-cov` | Run tests with coverage report (HTML + terminal) |
-| `make format` | Auto-format code with ruff |
-| `make lint` | Lint and type-check code (ruff + ty) |
-| `make clean` | Remove cache files (__pycache__, .pytest_cache, etc.) |
-
-
-### Database
-
-| Command | Description |
-|---------|-------------|
-| `make db-init` | {% if use_postgresql and enable_docker %}Start PostgreSQL + create{% else %}Create{% endif %} initial migration + apply |
-| `make db-migrate` | Create new migration (prompts for message) |
-| `make db-upgrade` | Apply pending migrations |
-| `make db-downgrade` | Rollback last migration |
-| `make db-current` | Show current migration revision |
-| `make db-history` | Show full migration history |
-
-{%- if use_jwt %}
-
-### Users
-
-| Command | Description |
-|---------|-------------|
-| `make create-admin` | Create admin user (interactive) |
-| `make user-create` | Create new user (interactive) |
-| `make user-list` | List all users |
-{%- endif %}
-
-{%- if use_celery %}
-
-### Celery
-
-| Command | Description |
-|---------|-------------|
-| `make celery-worker` | Start Celery worker |
-| `make celery-beat` | Start Celery beat scheduler |
-| `make celery-flower` | Start Flower monitoring UI (port 5555) |
-{%- endif %}
-
-{%- if use_taskiq %}
-
-### Taskiq
-
-| Command | Description |
-|---------|-------------|
-| `make taskiq-worker` | Start Taskiq worker |
-| `make taskiq-scheduler` | Start Taskiq scheduler |
-{%- endif %}
-
-{%- if use_arq %}
-
-### ARQ
-
-The ARQ worker runs as a service in the dev stack (`make dev`). To run it directly:
-
-```bash
-uv run --directory backend arq app.worker.arq_app.WorkerSettings
-```
-{%- endif %}
-
-{%- if use_prefect %}
-
-### Prefect
-
-Prefect runs as two containers in the dev stack — they start automatically with `make dev`:
-
-- **`prefect-server`** — orchestration API + web UI at <http://localhost:4200>
-- **`prefect-runner`** — registers the scheduled deployments and polls for work
-
-The runner is `python -m app.worker.prefect_app`; flows live in `app/worker/tasks/`.
-Open the UI to watch flow runs, inspect logs, and trigger deployments manually.
-Self-hosted by default — set `PREFECT_API_KEY` (and a Cloud `PREFECT_API_URL`) to use Prefect Cloud instead.
-{%- endif %}
-
-{%- if enable_docker %}
-
-### Docker (Development)
-
-| Command | Description |
-|---------|-------------|
-| `make docker-up` | Start all backend services |
-| `make docker-down` | Stop all services |
-| `make docker-logs` | Follow backend logs |
-| `make docker-build` | Build backend images |
-| `make docker-shell` | Open shell in app container |
+| `make install` | The backend on the host, without Docker |
+| `make test`, `make lint` | Tests; lint, format and type checks |
+| `make openapi`, `make openapi-check` | Write or check the API contract (`openapi/openapi.json`) |
 {%- if use_frontend %}
-| `make docker-frontend` | Start frontend (separate compose) |
-| `make docker-frontend-down` | Stop frontend |
-| `make docker-frontend-logs` | Follow frontend logs |
-| `make docker-frontend-build` | Build frontend image |
+| `make client` | Regenerate the frontend API client from the contract |
 {%- endif %}
-| `make docker-db` | Start only PostgreSQL |
-| `make docker-db-stop` | Stop PostgreSQL |
-{%- if enable_redis %}
-| `make docker-redis` | Start only Redis |
-| `make docker-redis-stop` | Stop Redis |
-{%- endif %}
-
-### Docker (Production with Traefik)
-
-| Command | Description |
-|---------|-------------|
-| `make docker-prod` | Start production stack |
-| `make docker-prod-down` | Stop production stack |
-| `make docker-prod-logs` | Follow production logs |
-| `make docker-prod-build` | Build production images |
-
-{%- if use_frontend %}
-
-### Vercel (Frontend Deployment)
-
-| Command | Description |
-|---------|-------------|
-| `make vercel-deploy` | Deploy frontend to Vercel |
-{%- endif %}
-{%- endif %}
+| `make docs`, `make docs-serve` | Build or preview the documentation |
+| `make skills` | Install the agent skills of the components |
 
 ---
 
