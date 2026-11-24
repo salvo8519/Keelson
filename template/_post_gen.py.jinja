@@ -536,6 +536,12 @@ if not (
 ):
     remove_file(os.path.join(os.getcwd(), "backend", "tests", "test_conversation_resume.py"))
 
+# Keelson: the row level security migration exists only with organizations on PostgreSQL.
+if not (enable_teams and use_postgresql):
+    remove_file(os.path.join(os.getcwd(), "backend", "alembic", "versions",
+                             "k0001_tenant_row_level_security.py"))
+    remove_file(os.path.join(os.getcwd(), "backend", "tests", "test_tenant_rls.py"))
+
 # Scan all .py files under backend/app — catches any template that rendered to
 # a stub docstring because its feature gate was disabled.
 for root, _dirs, files in os.walk(backend_app):

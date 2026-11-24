@@ -389,6 +389,9 @@ CurrentAdmin = Annotated[User, Depends(RoleChecker(UserRole.ADMIN))]
 {%- if enable_teams %}
 from app.core.exceptions import AuthorizationError, NotFoundError
 from app.db.models.organization import Organization, OrgRole
+{%- if use_postgresql %}
+from app.db.tenancy import bind_organization
+{%- endif %}
 
 # Module-level alias so tests can patch via `app.api.deps._member_repo`.
 # RequireOrgRole methods reference this alias instead of importing the repo
@@ -405,12 +408,20 @@ async def get_active_organization(
 
     Reads ``X-Organization-Id`` header. Falls back to the user's Personal Org
     when the header is absent. Raises 404 if the user is not a member.
+{%- if use_postgresql %}
+
+    Keelson: the request's database session is then bound to the organization, so row level
+    security restricts every later query of the request to it (app/db/tenancy.py).
+{%- endif %}
     """
 
     if x_organization_id is None:
         org = await organization_repo.get_personal_for_user(db, user.id)
         if not org:
             raise NotFoundError(message="Personal organization not found — please re-register")
+{%- if use_postgresql %}
+        await bind_organization(db, org.id)
+{%- endif %}
         return org
 
     membership = await member_repo.get(db, organization_id=x_organization_id, user_id=user.id)
@@ -422,6 +433,9 @@ async def get_active_organization(
     org = await organization_repo.get_by_id(db, x_organization_id)
     if not org:
         raise NotFoundError(message="Organization not found", details={"org_id": str(x_organization_id)})
+{%- if use_postgresql %}
+    await bind_organization(db, org.id)
+{%- endif %}
     return org
 
 

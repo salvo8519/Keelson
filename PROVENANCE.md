@@ -47,6 +47,7 @@ small and marked in the file with a `Keelson:` comment where the reason is not o
 | M0 | Licensing | `NOTICE` and `THIRD_PARTY_NOTICES.md` added to generated projects. |
 | M0 | House style | Emoji and icons replaced in imported files. |
 | M0 | Workers (fix) | Taskiq: task modules are loaded by the new entry point `app/worker/taskiq_worker.py`, no longer by `taskiq_app.py`; this removes the circular import found in the audit. Compose, CLI and Kubernetes point to the new entry point; regression test runs the imports in a fresh interpreter. |
+| M1 | Tenancy | New `app/db/tenancy.py`: PostgreSQL row level security on `TENANT_TABLES`, a restricted role per project, and a session listener that restricts every transaction of a session bound to an organization. `get_active_organization` binds the request session (`app/api/deps.py`). Migration `k0001_tenant_row_level_security`. Tests against a real PostgreSQL in a throwaway schema, and a guard that every table with `organization_id` is isolated or exempted with a reason. |
 | M0 | Kubernetes (fix) | Taskiq scheduler deployment added (one replica): upstream deployed only the worker, so scheduled jobs never ran on Kubernetes. |
 
 ## Audit of the imported code (M0)
@@ -63,7 +64,8 @@ Upstream vstorm, generated with the Keelson defaults (Taskiq, Pydantic AI, Qdran
 - Gaps confirmed against the plan: API keys are a single static key from the settings (no
   per-organization keys, scopes, rotation or audit); the backend has no internationalisation;
   tenant isolation relies on each repository filtering by `organization_id`, with no database
-  enforcement.
+  enforcement, and the filter is optional in some repository functions
+  (`if organization_id is not None`). Closed in M1 by row level security.
 
 Official template frontend: React, TypeScript, Vite, TanStack Router and Query, Tailwind CSS,
 shadcn/ui, generated API client, Playwright. It targets the official backend API, so its client

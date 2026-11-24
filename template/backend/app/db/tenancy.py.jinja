@@ -1,0 +1,136 @@
+{%- if enable_teams and use_postgresql %}
+"""Tenant isolation enforced by PostgreSQL row level security (Keelson).
+
+Repositories filter by ``organization_id`` in their queries. This module adds the database
+as a second, independent barrier: once a session is bound to an organization, every
+transaction of that session runs under a restricted role whose row level security policies
+show and accept only that organization's rows. A query that forgets the filter returns
+nothing from other organizations, and an insert for another organization is refused.
+
+How it works:
+
+* The migration ``k0001_tenant_row_level_security`` creates the role ``TENANT_ROLE`` (no
+  login), grants it the table privileges, and creates one policy per table in
+  ``TENANT_TABLES``. The policies apply to ``TENANT_ROLE`` only: sessions that are not bound
+  (migrations, administration, workers that span organizations) keep the owner's view.
+* ``bind_organization(session, org_id)`` marks the session. At the start of each of its
+  transactions, a listener runs ``SET LOCAL ROLE`` and sets ``TENANT_SETTING`` for that
+  transaction only, so nothing leaks to the next user of a pooled connection.
+
+Rows whose ``organization_id`` is NULL are personal rows of their user: they stay visible
+under the policy and remain protected by the user filter of the repositories. New rows must
+carry the bound organization.
+"""
+
+from uuid import UUID
+
+from sqlalchemy import event, text
+from sqlalchemy.engine import Connection
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session, SessionTransaction
+
+# Restricted role used by bound sessions. Roles are cluster-wide in PostgreSQL, so the name
+# carries the project, keeping projects that share a server apart.
+TENANT_ROLE = "{{ project_slug }}_tenant"
+
+# Transaction-local setting that holds the organization of the bound session.
+TENANT_SETTING = "app.current_organization_id"
+
+# Tables isolated by organization. The migration skips the ones a project does not have.
+TENANT_TABLES = ("conversations", "knowledge_bases", "rag_documents", "sync_sources")
+
+# Tables that carry organization_id but are not isolated, with the reason. A test fails when a
+# table with organization_id is in neither list, so a new table cannot be forgotten.
+UNISOLATED_TABLES = {
+    "organization_members": "membership lookups span the organizations of a user",
+    "invitations": "an invitation is read by its token before the invitee is a member",
+    "app_admin_audit_logs": "written by system processes and read by application administrators",
+    "subscription": "billing, updated by payment webhooks outside any organization session",
+    "credit_transaction": "billing, updated by payment webhooks outside any organization session",
+    "usage_event": "billing, written by metering outside any organization session",
+}
+
+POLICY_NAME = "tenant_isolation"
+
+_SESSION_KEY = "keelson_organization_id"
+_CURRENT = f"NULLIF(current_setting('{TENANT_SETTING}', true), '')::uuid"
+
+
+def grant_statements(schema: str = "public") -> list[str]:
+    """SQL that creates the restricted role and grants it the privileges of the application."""
+    return [
+        f"""
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{TENANT_ROLE}') THEN
+                CREATE ROLE "{TENANT_ROLE}" NOLOGIN;
+            END IF;
+        END $$
+        """,
+        f'GRANT "{TENANT_ROLE}" TO CURRENT_USER',
+        f'GRANT USAGE ON SCHEMA "{schema}" TO "{TENANT_ROLE}"',
+        f'GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA "{schema}" TO "{TENANT_ROLE}"',
+        f'GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA "{schema}" TO "{TENANT_ROLE}"',
+        f'ALTER DEFAULT PRIVILEGES IN SCHEMA "{schema}" '
+        f'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO "{TENANT_ROLE}"',
+        f'ALTER DEFAULT PRIVILEGES IN SCHEMA "{schema}" '
+        f'GRANT USAGE, SELECT ON SEQUENCES TO "{TENANT_ROLE}"',
+    ]
+
+
+def policy_statements(table: str) -> list[str]:
+    """SQL that isolates ``table`` by organization for the restricted role."""
+    return [
+        f'ALTER TABLE "{table}" ENABLE ROW LEVEL SECURITY',
+        f'DROP POLICY IF EXISTS {POLICY_NAME} ON "{table}"',
+        f'CREATE POLICY {POLICY_NAME} ON "{table}" TO "{TENANT_ROLE}" '
+        f"USING (organization_id IS NULL OR organization_id = {_CURRENT}) "
+        f"WITH CHECK (organization_id = {_CURRENT})",
+    ]
+
+
+def drop_policy_statements(table: str) -> list[str]:
+    """SQL that removes the isolation of ``table`` (migration downgrade)."""
+    return [
+        f'DROP POLICY IF EXISTS {POLICY_NAME} ON "{table}"',
+        f'ALTER TABLE "{table}" DISABLE ROW LEVEL SECURITY',
+    ]
+
+
+def _apply(connection: Connection, organization_id: UUID) -> None:
+    connection.execute(text(f'SET LOCAL ROLE "{TENANT_ROLE}"'))
+    connection.execute(
+        text("SELECT set_config(:name, :value, true)"),
+        {"name": TENANT_SETTING, "value": str(organization_id)},
+    )
+
+
+@event.listens_for(Session, "after_begin")
+def _bind_transaction(
+    session: Session, transaction: SessionTransaction, connection: Connection
+) -> None:
+    """Restrict every transaction of a bound session to its organization."""
+    organization_id = session.info.get(_SESSION_KEY)
+    if organization_id is not None:
+        _apply(connection, organization_id)
+
+
+async def bind_organization(session: AsyncSession, organization_id: UUID) -> None:
+    """Bind ``session`` to ``organization_id`` for the rest of its life.
+
+    Applies at once to the transaction in progress, if any, and to every later transaction.
+    A session is bound to one organization only: binding it to another raises ValueError.
+    """
+    current = session.info.get(_SESSION_KEY)
+    if current is not None and current != organization_id:
+        raise ValueError("session already bound to another organization")
+    session.info[_SESSION_KEY] = organization_id
+    if current is None and session.in_transaction():
+        connection = await session.connection()
+        await connection.run_sync(lambda sync_connection: _apply(sync_connection, organization_id))
+
+
+def bound_organization(session: AsyncSession) -> UUID | None:
+    """The organization ``session`` is bound to, if any."""
+    value = session.info.get(_SESSION_KEY)
+    return value if isinstance(value, UUID) else None
+{%- endif %}
