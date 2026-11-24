@@ -36,6 +36,12 @@ VSTORM_EXCLUDED_TOP_LEVEL = {
     "frontend",  # replaced by the official React frontend
 }
 
+# Upstream top-level directories moved by Keelson (relative to the generated project root).
+VSTORM_RELOCATED_TOP_LEVEL = {
+    # The email loader resolves emails/ next to app/, and only backend/ is in the image.
+    "emails": Path("backend") / "emails",
+}
+
 JINJA_MARKERS = ("{{", "{%", "{#")
 
 # House style: no emoji or pictographic icons in any file (same rule and range as
@@ -90,6 +96,8 @@ def import_vstorm(vstorm_root: Path, dest: Path) -> int:
         rel = src.relative_to(src_root)
         if rel.parts[0] in VSTORM_EXCLUDED_TOP_LEVEL:
             continue
+        if rel.parts[0] in VSTORM_RELOCATED_TOP_LEVEL:
+            rel = VSTORM_RELOCATED_TOP_LEVEL[rel.parts[0]].joinpath(*rel.parts[1:])
         target = dest / Path(_convert_text(str(rel)))
         target.parent.mkdir(parents=True, exist_ok=True)
         if _is_text(src):

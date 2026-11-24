@@ -4,9 +4,12 @@ from __future__ import annotations
 import enum
 import logging
 import uuid
+from datetime import timedelta
 from typing import Any
 
 from app.core.config import settings
+from app.core.i18n import N_, current_language, gettext, supported
+from app.core.security import MAGIC_LINK_TTL, PASSWORD_RESET_TTL
 from app.services.email import get_email_provider
 from app.services.email.exceptions import EmailSuppressedError, EmailUnsubscribedError
 from app.services.email.providers.base import EmailMessage, EmailProvider, SendResult
@@ -62,6 +65,17 @@ _CATEGORIES: dict[EmailKey, EmailCategory] = {
 }
 
 
+def duration_text(duration: timedelta, language: str) -> str:
+    """``duration`` as words in ``language``, in whole hours when exact, otherwise minutes."""
+    minutes = int(duration.total_seconds() // 60)
+    if minutes % 60 == 0:
+        hours = minutes // 60
+        message = N_("1 hour") if hours == 1 else N_("{count} hours")
+        return gettext(message, language).format(count=hours)
+    message = N_("1 minute") if minutes == 1 else N_("{count} minutes")
+    return gettext(message, language).format(count=minutes)
+
+
 class EmailService:
     def __init__(self, provider: EmailProvider) -> None:
         self.provider = provider
@@ -73,9 +87,14 @@ class EmailService:
         to: str,
         context: dict[str, Any],
         force: bool = False,
+        language: str | None = None,
     ) -> SendResult:
-        """`force=True` skips category opt-out checks — use for critical notifications."""
-        subject, html, text = render_email(key.value, context)
+        """`force=True` skips category opt-out checks — use for critical notifications.
+
+        Keelson: the email is written in ``language`` (the recipient's saved preference) when
+        given and supported, otherwise in the language of the current request.
+        """
+        subject, html, text = render_email(key.value, context, self.language(language))
 
         message = EmailMessage(
             to=[to],
@@ -96,25 +115,57 @@ class EmailService:
             )
         return result
 
-    async def send_welcome(self, *, to: str, name: str, login_url: str) -> SendResult:
+    @staticmethod
+    def language(preferred: str | None = None) -> str:
+        return supported(preferred) or current_language()
+
+    async def send_welcome(
+        self, *, to: str, name: str, login_url: str, language: str | None = None
+    ) -> SendResult:
         return await self.send(
             key=EmailKey.WELCOME,
             to=to,
             context={"name": name, "login_url": login_url, "app_name": "{{ project_name }}"},
+            language=language,
         )
 
-    async def send_password_reset(self, *, to: str, name: str, reset_url: str) -> SendResult:
+    async def send_password_reset(
+        self, *, to: str, name: str, reset_url: str, language: str | None = None
+    ) -> SendResult:
+        expires_in = duration_text(PASSWORD_RESET_TTL, self.language(language))
         return await self.send(
             key=EmailKey.PASSWORD_RESET,
             to=to,
-            context={"name": name, "reset_url": reset_url, "expires_in": "1 hour", "app_name": "{{ project_name }}"},
+            context={"name": name, "reset_url": reset_url, "expires_in": expires_in, "app_name": "{{ project_name }}"},
+            language=language,
         )
 
-    async def send_invitation(self, *, to: str, inviter_name: str, org_name: str, accept_url: str) -> SendResult:
+    async def send_magic_link(
+        self, *, to: str, name: str, magic_url: str, language: str | None = None
+    ) -> SendResult:
+        """Keelson: upstream sent the sign-in link with the welcome template."""
+        expires_in = duration_text(MAGIC_LINK_TTL, self.language(language))
+        return await self.send(
+            key=EmailKey.MAGIC_LINK,
+            to=to,
+            context={"name": name, "magic_url": magic_url, "expires_in": expires_in, "app_name": "{{ project_name }}"},
+            language=language,
+        )
+
+    async def send_invitation(
+        self,
+        *,
+        to: str,
+        inviter_name: str,
+        org_name: str,
+        accept_url: str,
+        language: str | None = None,
+    ) -> SendResult:
         return await self.send(
             key=EmailKey.INVITATION,
             to=to,
             context={"inviter_name": inviter_name, "org_name": org_name, "accept_url": accept_url, "app_name": "{{ project_name }}"},
+            language=language,
         )
 
 {%- if enable_billing %}

@@ -1,16 +1,31 @@
 {%- if enable_email %}
-"""Template loader — reads pre-rendered HTML/text from emails/dist/."""
+"""Template loader — reads pre-rendered HTML/text from emails/compiled/.
+
+Keelson: a translated template lives in emails/compiled/<language>/; when a language has no
+translation of a template, the English one in emails/compiled/ is used.
+"""
 
 from pathlib import Path
 
 from app.services.email.exceptions import EmailTemplateError
 
-# Emails compiled directory sits alongside `backend/` at the project root
+# Keelson: the compiled emails live in backend/emails/compiled, so they are part of the backend
+# image. Upstream kept them at the project root and mounted them in Compose only, which left
+# local runs and Kubernetes without emails.
 _DIST_DIR = Path(__file__).parent.parent.parent.parent / "emails" / "compiled"
 
 
-def _load_raw(key: str, ext: str) -> str:
-    path = _DIST_DIR / f"{key}.{ext}"
+def template_path(key: str, ext: str, language: str | None = None) -> Path:
+    """Path of the template in `language`, or of the English one when it is not translated."""
+    if language:
+        translated = _DIST_DIR / language / f"{key}.{ext}"
+        if translated.exists():
+            return translated
+    return _DIST_DIR / f"{key}.{ext}"
+
+
+def _load_raw(key: str, ext: str, language: str | None = None) -> str:
+    path = template_path(key, ext, language)
     if not path.exists():
         raise EmailTemplateError(
             message=f"Email template '{key}.{ext}' not found",
@@ -26,13 +41,10 @@ def _render(template: str, context: dict) -> str:
     return template
 
 
-def render_email(key: str, context: dict) -> tuple[str, str, str]:
-    """Return (subject, html, text) for the given template key and context."""
-    try:
-        html_raw = _load_raw(key, "html")
-        text_raw = _load_raw(key, "txt")
-    except EmailTemplateError:
-        raise
+def render_email(key: str, context: dict, language: str | None = None) -> tuple[str, str, str]:
+    """Return (subject, html, text) for the given template key, context and language."""
+    html_raw = _load_raw(key, "html", language)
+    text_raw = _load_raw(key, "txt", language)
 
     # Subject is stored in the first line of .txt as "Subject: ..."
     lines = text_raw.splitlines()

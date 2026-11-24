@@ -8,6 +8,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import useOrganizations from "@/hooks/useOrganizations"
+import { t } from "@/i18n"
 
 export function OrganizationSwitcher() {
   const { organizations, active, switchTo } = useOrganizations()
@@ -19,10 +20,10 @@ export function OrganizationSwitcher() {
       <Select value={active?.id} onValueChange={switchTo}>
         <SelectTrigger
           className="w-full"
-          aria-label="Active organization"
+          aria-label={t("Active organization")}
           data-testid="organization-switcher"
         >
-          <SelectValue placeholder="Organization" />
+          <SelectValue placeholder={t("Organization")} />
         </SelectTrigger>
         <SelectContent>
           {organizations.map((org) => (

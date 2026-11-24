@@ -545,6 +545,7 @@ if not (enable_teams and use_postgresql):
                              "k0001_tenant_row_level_security.py"))
     remove_file(os.path.join(os.getcwd(), "backend", "tests", "test_tenant_rls.py"))
     remove_file(os.path.join(os.getcwd(), "backend", "alembic", "versions", "k0002_api_keys.py"))
+    remove_file(os.path.join(os.getcwd(), "backend", "alembic", "versions", "k0003_locales.py"))
     for name in ("test_api_keys.py", "test_api_keys_postgres.py"):
         remove_file(os.path.join(os.getcwd(), "backend", "tests", name))
 

@@ -9,11 +9,12 @@ import { memberColumns } from "@/components/Organizations/columns"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import useOrganizations from "@/hooks/useOrganizations"
+import { t } from "@/i18n"
 
 export const Route = createFileRoute("/_layout/organizations")({
   component: Organizations,
   head: () => ({
-    meta: [{ title: "Organizations" }],
+    meta: [{ title: t("Organizations") }],
   }),
 })
 
@@ -34,9 +35,11 @@ function Organizations() {
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Organizations</h1>
+          <h1 className="text-2xl font-bold tracking-tight">
+            {t("Organizations")}
+          </h1>
           <p className="text-muted-foreground">
-            Every request acts on the active organization.
+            {t("Every request acts on the active organization.")}
           </p>
         </div>
         <AddOrganization />
@@ -50,18 +53,20 @@ function Organizations() {
           >
             <div className="flex items-center gap-2">
               <span className="font-medium">{org.name}</span>
-              {org.is_personal && <Badge variant="outline">Personal</Badge>}
+              {org.is_personal && (
+                <Badge variant="outline">{t("Personal")}</Badge>
+              )}
               <Badge variant="secondary">{org.role}</Badge>
             </div>
             {org.id === active?.id ? (
-              <Badge>Active</Badge>
+              <Badge>{t("Active")}</Badge>
             ) : (
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => switchTo(org.id)}
               >
-                Make active
+                {t("Make active")}
               </Button>
             )}
           </li>
@@ -70,7 +75,9 @@ function Organizations() {
 
       {active && (
         <section className="flex flex-col gap-2">
-          <h2 className="text-lg font-semibold">Members of {active.name}</h2>
+          <h2 className="text-lg font-semibold">
+            {t("Members of {{name}}", { name: active.name })}
+          </h2>
           <Members organizationId={active.id} />
         </section>
       )}

@@ -1,0 +1,28 @@
+{%- if enable_teams and use_postgresql %}
+"""preferred languages of users and organizations (Keelson)
+
+Revision ID: k0003_locales
+Revises: k0002_api_keys
+Create Date: 2026-11-24T00:00:00+00:00
+
+See app/core/i18n.py for how the language of a request is chosen.
+"""
+
+import sqlalchemy as sa
+from alembic import op
+
+revision = "k0003_locales"
+down_revision = "k0002_api_keys"
+branch_labels = None
+depends_on = None
+
+
+def upgrade() -> None:
+    op.add_column("users", sa.Column("locale", sa.String(8), nullable=True))
+    op.add_column("organizations", sa.Column("default_locale", sa.String(8), nullable=True))
+
+
+def downgrade() -> None:
+    op.drop_column("organizations", "default_locale")
+    op.drop_column("users", "locale")
+{%- endif %}

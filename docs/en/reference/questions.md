@@ -10,6 +10,7 @@ The questions Copier asks, with their default. Answers are recorded in `.copier-
 | `timezone` | `UTC` | IANA timezone for schedulers and logs |
 | `brand_name` | from `project_name` | Product name in the UI and the API reference |
 | `brand_primary_color` | `#1F3A5F` | Six-digit hex color |
+| `languages` | `en`, `it` | Languages of the API, emails and interface; `en` is required |
 | `web_frontend` | `react` | `react`, `none` |
 | `task_backend` | `taskiq` | `taskiq`, `celery`, `arq` |
 | `ai_framework` | `pydantic_ai` | `pydantic_ai`, `langgraph`, `langchain`, `deepagents`, `pydantic_deep` |

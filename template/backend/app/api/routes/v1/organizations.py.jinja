@@ -28,6 +28,7 @@ def _build_org_read(org: Any, member_count: int, role: str) -> OrganizationRead:
         slug=org.slug,
         is_personal=org.is_personal,
         avatar_url=org.avatar_url,
+        default_locale=getattr(org, "default_locale", None),
         member_count=member_count,
         role=role,
         created_at=org.created_at,

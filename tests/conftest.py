@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -21,10 +22,10 @@ def render(tmp_path_factory: pytest.TempPathFactory) -> Render:
 
     Results are cached per set of answers for the whole session.
     """
-    cache: dict[tuple[tuple[str, Any], ...], Path] = {}
+    cache: dict[str, Path] = {}
 
     def _render(answers: dict[str, Any]) -> Path:
-        key = tuple(sorted(answers.items()))
+        key = json.dumps(answers, sort_keys=True)  # answers may hold lists (languages)
         if key not in cache:
             dst = tmp_path_factory.mktemp("render")
             run_copy(

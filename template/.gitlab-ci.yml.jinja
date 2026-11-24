@@ -63,6 +63,37 @@ ty:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
+i18n-check:
+  stage: lint
+  extends: .python_base
+  script:
+    - uv run python -m app.core.i18n_catalog check
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+{%- if use_frontend %}
+
+# Keelson: the official React frontend (Biome, translations, tsc and Vite). Its Playwright
+# suite needs a running stack and is not part of this job.
+frontend:
+  stage: lint
+  image: oven/bun:1
+  before_script:
+    - cd frontend
+    - bun install --frozen-lockfile
+  script:
+    - bunx biome check ./
+    - bun run i18n:check
+    - bun run build
+  cache:
+    key: "$CI_COMMIT_REF_SLUG-frontend"
+    paths:
+      - frontend/node_modules
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+{%- endif %}
+
 # =============================================================================
 # Test Stage
 # =============================================================================

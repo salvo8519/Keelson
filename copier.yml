@@ -9,6 +9,9 @@ _answers_file: .copier-answers.yml
 
 _exclude:
   - "{% if web_frontend == 'none' %}frontend{% endif %}"
+  - "{% if 'it' not in languages %}backend/app/locales/it{% endif %}"
+  - "{% if 'it' not in languages %}frontend/src/locales/it.json{% endif %}"
+  - "{% if 'it' not in languages %}backend/emails/compiled/it{% endif %}"
 
 _tasks:
   - command: [python3, _post_gen.py]
@@ -67,6 +70,17 @@ brand_primary_color:
     {% if not (brand_primary_color | regex_search('^#[0-9A-Fa-f]{6}$')) %}
     Use a 6-digit hex color such as #1F3A5F.
     {% endif %}
+
+languages:
+  type: str
+  help: Languages of the interface and of API messages (English is the source language)
+  multiselect: true
+  choices:
+    English: en
+    Italiano: it
+  default: [en, it]
+  validator: >-
+    {% if 'en' not in languages %}English is the source language and cannot be removed.{% endif %}
 
 # --- Stack axes --------------------------------------------------------------
 web_frontend:

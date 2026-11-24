@@ -13,7 +13,18 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from starlette.requests import HTTPConnection
 
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
 from app.core.exceptions import AppException
+from app.core.i18n import N_
+from app.core.problems import problem_response
+
+# Keelson: messages of the framework's own errors, so that they are translated too.
+FRAMEWORK_MESSAGES = (
+    N_("Not authenticated"),
+    N_("Not Found"),
+    N_("Method Not Allowed"),
+)
 
 logger = logging.getLogger(__name__)
 
@@ -58,19 +69,17 @@ async def app_exception_handler(
     if _is_websocket(request):
         return None
 
-    headers: dict[str, str] = {}
+    headers: dict[str, str] = dict(exc.headers or {})
     if exc.status_code == 401:
         headers["WWW-Authenticate"] = "Bearer"
 
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={
-            "error": {
-                "code": exc.code,
-                "message": exc.message,
-                "details": exc.details,
-            }
-        },
+    # Keelson: Problem Details (RFC 9457) with a translated detail (app/core/problems.py).
+    return problem_response(
+        status=exc.status_code,
+        code=exc.code,
+        detail=exc.message,
+        details=exc.details,
+        request_id=getattr(request.state, "request_id", None),
         headers=headers,
     )
 
@@ -88,15 +97,31 @@ async def unhandled_exception_handler(
     if _is_websocket(request):
         return None
 
-    return JSONResponse(
-        status_code=500,
-        content={
-            "error": {
-                "code": "INTERNAL_ERROR",
-                "message": "An unexpected error occurred",
-                "details": None,
-            }
-        },
+    return problem_response(
+        status=500,
+        code="INTERNAL_ERROR",
+        detail=N_("An unexpected error occurred"),
+        request_id=getattr(request.state, "request_id", None),
+    )
+
+
+async def http_exception_handler(
+    request: HTTPConnection, exc: StarletteHTTPException
+) -> JSONResponse | None:
+    """Keelson: errors raised by the framework (401 of the OAuth2 scheme, unknown routes)
+    as Problem Details too. A non-string detail keeps the framework's response."""
+    if _is_websocket(request):
+        return None
+    if not isinstance(exc.detail, str):
+        return JSONResponse(
+            status_code=exc.status_code, content={"detail": exc.detail}, headers=exc.headers
+        )
+    return problem_response(
+        status=exc.status_code,
+        code=f"HTTP_{exc.status_code}",
+        detail=exc.detail,
+        request_id=getattr(request.state, "request_id", None),
+        headers=dict(exc.headers or {}),
     )
 
 
@@ -108,4 +133,5 @@ def register_exception_handlers(app: FastAPI) -> None:
     # Handler returns None for WebSocket connections (no JSONResponse there),
     # which Starlette's HTTP-handler type doesn't model.
     app.add_exception_handler(AppException, app_exception_handler)  # ty: ignore[invalid-argument-type]
+    app.add_exception_handler(StarletteHTTPException, http_exception_handler)  # ty: ignore[invalid-argument-type]
     app.add_exception_handler(Exception, unhandled_exception_handler)  # ty: ignore[invalid-argument-type]

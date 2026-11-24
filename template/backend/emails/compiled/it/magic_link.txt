@@ -1,0 +1,11 @@
+Subject: Il tuo link di accesso a [[app_name]]
+
+Ciao [[name]],
+
+usa il link qui sotto per accedere. Scade tra [[expires_in]].
+
+[[magic_url]]
+
+Se non l'hai richiesto, ignora questa email.
+
+Il team di [[app_name]]

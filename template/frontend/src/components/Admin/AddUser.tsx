@@ -29,24 +29,25 @@ import {
 import { Input } from "@/components/ui/input"
 import { LoadingButton } from "@/components/ui/loading-button"
 import useCustomToast from "@/hooks/useCustomToast"
+import { t } from "@/i18n"
 import { handleError } from "@/utils"
 
 const formSchema = z
   .object({
-    email: z.email({ message: "Invalid email address" }),
+    email: z.email({ message: t("Invalid email address") }),
     full_name: z.string().optional(),
     password: z
       .string()
-      .min(1, { message: "Password is required" })
-      .min(8, { message: "Password must be at least 8 characters" }),
+      .min(1, { message: t("Password is required") })
+      .min(8, { message: t("Password must be at least 8 characters") }),
     confirm_password: z
       .string()
-      .min(1, { message: "Please confirm your password" }),
+      .min(1, { message: t("Please confirm your password") }),
     is_admin: z.boolean(),
     is_active: z.boolean(),
   })
   .refine((data) => data.password === data.confirm_password, {
-    message: "The passwords don't match",
+    message: t("The passwords don't match"),
     path: ["confirm_password"],
   })
 
@@ -74,7 +75,7 @@ const AddUser = () => {
   const mutation = useMutation({
     mutationFn: (data: UserCreate) => UsersService.createUser({ body: data }),
     onSuccess: () => {
-      showSuccessToast("User created successfully")
+      showSuccessToast(t("User created successfully"))
       form.reset()
       setIsOpen(false)
     },
@@ -93,14 +94,14 @@ const AddUser = () => {
       <DialogTrigger asChild>
         <Button className="my-4">
           <Plus className="mr-2" />
-          Add User
+          {t("Add User")}
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Add User</DialogTitle>
+          <DialogTitle>{t("Add User")}</DialogTitle>
           <DialogDescription>
-            Fill in the form below to add a new user to the system.
+            {t("Fill in the form below to add a new user to the system.")}
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -116,7 +117,7 @@ const AddUser = () => {
                     </FormLabel>
                     <FormControl>
                       <Input
-                        placeholder="Email"
+                        placeholder={t("Email")}
                         type="email"
                         {...field}
                         required
@@ -132,9 +133,13 @@ const AddUser = () => {
                 name="full_name"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Full Name</FormLabel>
+                    <FormLabel>{t("Full Name")}</FormLabel>
                     <FormControl>
-                      <Input placeholder="Full name" type="text" {...field} />
+                      <Input
+                        placeholder={t("Full name")}
+                        type="text"
+                        {...field}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -151,7 +156,7 @@ const AddUser = () => {
                     </FormLabel>
                     <FormControl>
                       <Input
-                        placeholder="Password"
+                        placeholder={t("Password")}
                         type="password"
                         {...field}
                         required
@@ -173,7 +178,7 @@ const AddUser = () => {
                     </FormLabel>
                     <FormControl>
                       <Input
-                        placeholder="Password"
+                        placeholder={t("Password")}
                         type="password"
                         {...field}
                         required
@@ -195,7 +200,9 @@ const AddUser = () => {
                         onCheckedChange={field.onChange}
                       />
                     </FormControl>
-                    <FormLabel className="font-normal">Administrator</FormLabel>
+                    <FormLabel className="font-normal">
+                      {t("Administrator")}
+                    </FormLabel>
                   </FormItem>
                 )}
               />
@@ -211,7 +218,9 @@ const AddUser = () => {
                         onCheckedChange={field.onChange}
                       />
                     </FormControl>
-                    <FormLabel className="font-normal">Is active?</FormLabel>
+                    <FormLabel className="font-normal">
+                      {t("Is active?")}
+                    </FormLabel>
                   </FormItem>
                 )}
               />
@@ -220,11 +229,11 @@ const AddUser = () => {
             <DialogFooter>
               <DialogClose asChild>
                 <Button variant="outline" disabled={mutation.isPending}>
-                  Cancel
+                  {t("Cancel")}
                 </Button>
               </DialogClose>
               <LoadingButton type="submit" loading={mutation.isPending}>
-                Save
+                {t("Save")}
               </LoadingButton>
             </DialogFooter>
           </form>

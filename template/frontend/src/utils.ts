@@ -1,4 +1,5 @@
 import { AxiosError } from "axios"
+import { t } from "@/i18n"
 
 function extractErrorMessage(err: Error): string {
   if (err instanceof AxiosError) {
@@ -11,7 +12,7 @@ function extractErrorMessage(err: Error): string {
     }
     return err.message
   }
-  return "Something went wrong."
+  return t("Something went wrong.")
 }
 
 export const handleError = function (this: (msg: string) => void, err: Error) {

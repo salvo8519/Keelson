@@ -1,0 +1,139 @@
+"""Languages of API messages (Keelson).
+
+Messages are written in English in the code; English is the msgid of the gettext catalogs in
+``app/locales/<language>/LC_MESSAGES/messages.po``. The language of a request is chosen in
+this order, the first that applies:
+
+1. the language saved in the user's profile (``users.locale``);
+2. the default language of the active organization (``organizations.default_locale``);
+3. the ``Accept-Language`` header;
+4. ``DEFAULT_LANGUAGE``.
+
+The catalogs are read directly from the ``.po`` files, so there is no compile step.
+
+    make i18n-extract   # update the template and the catalogs from the code
+"""
+
+from contextvars import ContextVar
+from enum import IntEnum
+from functools import cache
+from http import HTTPStatus
+from pathlib import Path
+
+from babel.messages.pofile import read_po
+
+DEFAULT_LANGUAGE = "en"
+SUPPORTED_LANGUAGES: tuple[str, ...] = ({% for language in languages %}"{{ language }}", {% endfor %})
+LOCALES_DIR = Path(__file__).resolve().parent.parent / "locales"
+DOMAIN = "messages"
+
+
+def N_(message: str) -> str:
+    """Mark ``message`` for extraction without translating it here."""
+    return message
+
+
+# HTTP reason phrases used as Problem Details titles (app/core/problems.py).
+STATUS_TITLES = (
+    N_("Bad Request"),
+    N_("Unauthorized"),
+    N_("Payment Required"),
+    N_("Forbidden"),
+    N_("Not Found"),
+    N_("Conflict"),
+    N_("Unprocessable Content"),
+    N_("Too Many Requests"),
+    N_("Internal Server Error"),
+    N_("Bad Gateway"),
+    N_("Service Unavailable"),
+    N_("Error"),
+)
+
+
+class LanguageSource(IntEnum):
+    """Where the language of a request came from; a stronger source wins."""
+
+    DEFAULT = 0
+    HEADER = 1
+    ORGANIZATION = 2
+    USER = 3
+
+
+_current: ContextVar[tuple[str, LanguageSource]] = ContextVar(
+    "keelson_language", default=(DEFAULT_LANGUAGE, LanguageSource.DEFAULT)
+)
+
+
+def supported(language: str | None) -> str | None:
+    """``language`` reduced to a supported language code, or None."""
+    if not language:
+        return None
+    code = language.strip().lower().replace("_", "-").split("-")[0]
+    return code if code in SUPPORTED_LANGUAGES else None
+
+
+def negotiate(accept_language: str | None) -> str | None:
+    """The best supported language of an ``Accept-Language`` header (RFC 9110), or None."""
+    if not accept_language:
+        return None
+    ranked: list[tuple[float, int, str]] = []
+    for position, part in enumerate(accept_language.split(",")):
+        tag, _, params = part.strip().partition(";")
+        quality = 1.0
+        for param in params.split(";"):
+            name, _, value = param.strip().partition("=")
+            if name == "q":
+                try:
+                    quality = float(value)
+                except ValueError:
+                    quality = 0.0
+        code = supported(tag)
+        if code and quality > 0:
+            ranked.append((-quality, position, code))
+    return min(ranked)[2] if ranked else None
+
+
+def set_language(language: str | None, source: LanguageSource) -> None:
+    """Use ``language`` for this request if supported and ``source`` is not weaker."""
+    code = supported(language)
+    if code is None:
+        return
+    _, current_source = _current.get()
+    if source >= current_source:
+        _current.set((code, source))
+
+
+def reset_language() -> None:
+    _current.set((DEFAULT_LANGUAGE, LanguageSource.DEFAULT))
+
+
+def current_language() -> str:
+    return _current.get()[0]
+
+
+@cache
+def _catalog(language: str) -> dict[str, str]:
+    path = LOCALES_DIR / language / "LC_MESSAGES" / f"{DOMAIN}.po"
+    if not path.is_file():
+        return {}
+    with path.open("rb") as handle:
+        catalog = read_po(handle)
+    return {
+        str(message.id): str(message.string)
+        for message in catalog
+        if message.id and isinstance(message.string, str) and message.string
+    }
+
+
+def gettext(message: str, language: str | None = None) -> str:
+    """``message`` in the request's language (or ``language``); English when not translated."""
+    return _catalog(language or current_language()).get(message, message)
+
+
+def status_title(status_code: int) -> str:
+    """The HTTP reason phrase of ``status_code``, translated."""
+    try:
+        phrase = HTTPStatus(status_code).phrase
+    except ValueError:
+        phrase = "Error"
+    return gettext(phrase)

@@ -1,6 +1,6 @@
 ---
 source: reference/questions.md
-source_hash: ddeb23ad257a
+source_hash: 762dad863165
 ---
 # Domande
 
@@ -15,6 +15,7 @@ Le domande poste da Copier, con il valore predefinito. Le risposte sono registra
 | `timezone` | `UTC` | Fuso orario IANA per scheduler e log |
 | `brand_name` | da `project_name` | Nome del prodotto nell'interfaccia e nella documentazione delle API |
 | `brand_primary_color` | `#1F3A5F` | Colore esadecimale a sei cifre |
+| `languages` | `en`, `it` | Lingue di API, email e interfaccia; `en` è obbligatoria |
 | `web_frontend` | `react` | `react`, `none` |
 | `task_backend` | `taskiq` | `taskiq`, `celery`, `arq` |
 | `ai_framework` | `pydantic_ai` | `pydantic_ai`, `langgraph`, `langchain`, `deepagents`, `pydantic_deep` |

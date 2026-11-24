@@ -36,9 +36,14 @@ deployment on Docker and Kubernetes, and a development process for coding agents
   the active organization. A test fails when a new table with an organization is not isolated.
 - **API keys for other systems.** Per organization, with scopes, expiry, rotation with a grace
   period, revocation, rate limits and audit; stored only as a keyed hash.
-- **Defects fixed at import.** The audit of the imported code found and fixed a circular import
-  that stopped Taskiq projects at start-up, a missing scheduler on Kubernetes, and a profile
-  endpoint that changed passwords without the current one, each with a regression test.
+- **English and Italian, end to end.** API errors are Problem Details (RFC 9457) in the
+  language of the user, the organization or the request; emails follow the recipient's
+  language; the interface has a language switcher. CI fails on any untranslated text.
+- **Defects fixed at import.** The audit of the imported code found and fixed, each with a
+  regression test: a circular import that stopped Taskiq projects at start-up, a missing
+  scheduler on Kubernetes, a profile endpoint that changed passwords without the current one,
+  an unauthenticated stream that exposed every organization's file names, and emails that were
+  never sent outside Docker Compose.
 - **Built for coding agents.** Instructions, roles and process skills, plus the official skills
   of FastAPI, Pydantic, LangChain, Qdrant and the React stack, selected by your answers and
   pinned.

@@ -27,6 +27,20 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         return response
 
 
+class LanguageMiddleware(BaseHTTPMiddleware):
+    """Keelson: choose the language of the request from Accept-Language (app/core/i18n.py).
+
+    Authentication can later replace it with the user's or the organization's language.
+    """
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        from app.core.i18n import LanguageSource, negotiate, reset_language, set_language
+
+        reset_language()
+        set_language(negotiate(request.headers.get("Accept-Language")), LanguageSource.HEADER)
+        return await call_next(request)
+
+
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """Middleware that adds security headers to all responses.
 

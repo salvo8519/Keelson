@@ -56,6 +56,15 @@ small and marked in the file with a `Keelson:` comment where the reason is not o
 | M2 | Post-generation hook (fix) | The upstream hook removed `scripts/` wholesale when the demo export is off; it now removes only the exporter, keeping `scripts/agent_skills.py` and `scripts/generate-client.sh`. Render test added. |
 | M2 | Retrieval (fix) | Qdrant returns `payload=None` for points stored without one; `vectorstore.py` read it with `.get` (found by `ty`, the type checker of the generated project). |
 | M0 | Kubernetes (fix) | Taskiq scheduler deployment added (one replica): upstream deployed only the worker, so scheduled jobs never ran on Kubernetes. |
+| M3 | Errors (new) | Every error is a Problem Details document (RFC 9457, `application/problem+json`) with a translated `title` and `detail`, a stable `code`, `request_id` and a `Content-Language` header: `app/core/problems.py`, `app/api/exception_handlers.py` (framework errors such as 401 and 404 included). Upstream returned `{"error": {...}}`; its tests were updated to the new format. `RateLimitError` replaces the upstream `HTTPException` for 429, so the limit is reported in the same format. |
+| M3 | i18n backend (new) | `app/core/i18n.py`: language of the request in a context variable, chosen in the order user preference, organization default, `Accept-Language`, default (`LanguageMiddleware`, `get_current_user`, `get_active_organization`). Babel catalogs in `app/locales` read from the `.po` files; `app/core/i18n_catalog.py` extracts the messages of every `AppException` subclass and of `N_()` and fails on untranslated ones (`make i18n-extract`, `make i18n-check`). `users.locale` and `organizations.default_locale` (migration `k0003_locales`), editable through `PATCH /users/me` and the organization update. Italian catalog with all messages. |
+| M3 | Emails (i18n) | Emails are written in the recipient's saved language, otherwise in the language of the request (invitations use the organization's default): translated templates in `backend/emails/compiled/<language>/`, English fallback, link lifetimes from `PASSWORD_RESET_TTL` and `MAGIC_LINK_TTL` in `app/core/security.py` instead of a fixed `"1 hour"`. Italian templates for the transactional emails; billing and credits emails stay English (outside the Keelson profile). |
+| M3 | Emails (fix) | Upstream kept the compiled emails at the project root and mounted them in Compose only: the loader found no template when the backend ran locally or on Kubernetes, and every email failed (logged, not raised). They now live in `backend/emails` and ship in the backend image; the Compose mounts are gone and `scripts/upstream/import_upstream.py` relocates the directory on re-sync. |
+| M3 | Emails (fix) | The magic-link request sent the welcome template with the sign-in link; it now sends the `magic_link` template (`EmailService.send_magic_link`). |
+| M3 | i18n frontend (new) | The official frontend has no i18n. `src/i18n.ts` uses `i18next` (core only: the English text is the key, `t()` is a plain function so module-level texts such as table headers and form messages are translated, and changing language reloads the page); `react-i18next`, named in the plan, was not needed. `src/locales/languages.ts` comes from the Copier answer `languages`; `src/locales/it.json` holds every key. Language switcher in the sidebar, saved in the user profile; after login the interface adopts the saved language. Every request sends `Accept-Language`. `bun run i18n:check` (`scripts/check-i18n.mjs`) fails on untranslated keys. |
+| M3 | Frontend (fix) | The official frontend signed the user out on any 403. With organization roles and API key scopes a 403 is a missing permission, so only 401 ends the session now. |
+| M3 | RAG status stream (security fix) | `GET /rag/status/stream` had no authentication and streamed the ingestion events (document ids and file names) of every organization from one Redis channel; its dependency also built `RAGStatusService` without the Redis client it requires, so every call failed (found by `ty`). The worker now publishes on a per-organization channel (`rag_status_channel` in `app/services/rag/config.py`) and the endpoint requires a user and streams only the active organization's channel, on the shared Redis client. Tests in `tests/test_rag_status.py`. |
+| M3 | Redis client | The connection check repeated in every `RedisClient` method now goes through the existing `raw` property. |
 
 ## Audit of the imported code (M0)
 
@@ -87,6 +96,11 @@ organization model (M1).
 - The Docker images (`frontend/Dockerfile`, compose files) were not built in the environment
   where Keelson is developed, which has no Docker daemon; the generated project's pipeline
   builds them.
+- The 50% milestone asks that the default project starts with `docker compose up`: for the
+  same reason this was not run. What was run: the backend suite of the default project against
+  PostgreSQL 16 (388 tests, row level security and API keys included), Alembic upgrade and
+  downgrade, ruff, the message catalog check, and Biome, the translation check, `tsc` and the
+  Vite build of the frontend.
 
 ## Re-sync procedure
 

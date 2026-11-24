@@ -1,0 +1,12 @@
+// Keelson: languages of the interface, from the Copier answer `languages`. English is the
+// source language: its texts are the translation keys.
+export const LANGUAGES = [
+{%- if 'en' in languages %}
+  { code: "en", label: "English" },
+{%- endif %}
+{%- if 'it' in languages %}
+  { code: "it", label: "Italiano" },
+{%- endif %}
+] as const
+
+export type LanguageCode = (typeof LANGUAGES)[number]["code"]

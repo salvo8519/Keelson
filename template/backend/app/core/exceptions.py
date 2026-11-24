@@ -26,10 +26,13 @@ class AppException(Exception):
         message: str | None = None,
         code: str | None = None,
         details: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
     ):
         self.message = message or self.__class__.message
         self.code = code or self.__class__.code
         self.details = details
+        # Keelson: response headers, such as Retry-After on 429.
+        self.headers = headers
         super().__init__(self.message)
 
     def __repr__(self) -> str:

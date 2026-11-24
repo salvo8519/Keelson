@@ -28,10 +28,14 @@ import {
 import { Input } from "@/components/ui/input"
 import { LoadingButton } from "@/components/ui/loading-button"
 import useCustomToast from "@/hooks/useCustomToast"
+import { t } from "@/i18n"
 import { handleError } from "@/utils"
 
 const formSchema = z.object({
-  name: z.string().min(1, { message: "Name is required" }).max(128),
+  name: z
+    .string()
+    .min(1, { message: t("Name is required") })
+    .max(128),
   slug: z.string().max(64).optional(),
 })
 
@@ -56,7 +60,7 @@ const AddOrganization = () => {
     mutationFn: (data: OrganizationCreate) =>
       OrganizationsService.createOrganization({ body: data }),
     onSuccess: () => {
-      showSuccessToast("Organization created")
+      showSuccessToast(t("Organization created"))
       form.reset()
       setIsOpen(false)
     },
@@ -75,14 +79,14 @@ const AddOrganization = () => {
       <DialogTrigger asChild>
         <Button className="my-4">
           <Plus className="mr-2" />
-          New organization
+          {t("New organization")}
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>New organization</DialogTitle>
+          <DialogTitle>{t("New organization")}</DialogTitle>
           <DialogDescription>
-            Create an organization and become its owner.
+            {t("Create an organization and become its owner.")}
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -98,7 +102,7 @@ const AddOrganization = () => {
                     </FormLabel>
                     <FormControl>
                       <Input
-                        placeholder="Acme Ltd"
+                        placeholder={t("Acme Ltd")}
                         type="text"
                         {...field}
                         required
@@ -114,7 +118,7 @@ const AddOrganization = () => {
                 name="slug"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Slug</FormLabel>
+                    <FormLabel>{t("Slug")}</FormLabel>
                     <FormControl>
                       <Input placeholder="acme" type="text" {...field} />
                     </FormControl>
@@ -127,11 +131,11 @@ const AddOrganization = () => {
             <DialogFooter>
               <DialogClose asChild>
                 <Button variant="outline" disabled={mutation.isPending}>
-                  Cancel
+                  {t("Cancel")}
                 </Button>
               </DialogClose>
               <LoadingButton type="submit" loading={mutation.isPending}>
-                Save
+                {t("Save")}
               </LoadingButton>
             </DialogFooter>
           </form>

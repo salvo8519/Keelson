@@ -152,6 +152,8 @@ class User(Base, TimestampMixin):
     onboarding_completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Keelson: preferred language of the interface and of API messages (app/core/i18n.py).
+    locale: Mapped[str | None] = mapped_column(String(8), nullable=True)
 {%- if enable_email %}
     # Bumped every time a magic link is redeemed. Each link carries the epoch
     # in force when it was issued, so redeeming one invalidates every

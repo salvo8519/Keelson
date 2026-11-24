@@ -234,6 +234,7 @@ async def request_password_reset(
                 to=body.email,
                 name=reset_user.full_name or body.email,
                 reset_url=reset_url,
+                language=reset_user.locale,
             )
         except Exception:
             logger.exception("password_reset_email_failed", extra={"email": body.email})
@@ -271,10 +272,11 @@ async def request_magic_link(
         link_user, token = issued
         try:
             login_url = f"{settings.FRONTEND_URL.rstrip('/')}/auth/magic-link?token={token}"
-            await get_email_service().send_welcome(
+            await get_email_service().send_magic_link(
                 to=body.email,
                 name=link_user.full_name or body.email,
-                login_url=login_url,
+                magic_url=login_url,
+                language=link_user.locale,
             )
         except Exception:
             logger.exception("magic_link_email_failed", extra={"email": body.email})

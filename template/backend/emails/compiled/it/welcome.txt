@@ -1,0 +1,12 @@
+Subject: Benvenuto in [[app_name]], [[name]]
+
+Ciao [[name]],
+
+benvenuto in [[app_name]]. Il tuo account è pronto.
+
+Inizia da qui:
+[[login_url]]
+
+Per qualsiasi domanda rispondi a questa email: siamo qui per aiutarti.
+
+Il team di [[app_name]]

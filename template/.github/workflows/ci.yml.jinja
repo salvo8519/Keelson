@@ -33,6 +33,9 @@ jobs:
       - name: Run ty
         run: uv run --directory backend ty check
 
+      - name: Check translations
+        run: uv run --directory backend python -m app.core.i18n_catalog check
+
   test:
     runs-on: ubuntu-latest
     services:
@@ -97,6 +100,8 @@ jobs:
 {%- if use_frontend %}
 
   test-frontend:
+    # Keelson: the official React frontend (Biome, translations, tsc and Vite). Its Playwright
+    # suite needs a running stack and is not part of this job.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -108,27 +113,17 @@ jobs:
         run: bun install --frozen-lockfile
         working-directory: frontend
 
-      - name: Run lint
-        run: bun run lint
+      - name: Run Biome
+        run: bunx biome check ./
         working-directory: frontend
 
-      - name: Run type check
-        run: bun run type-check
+      - name: Check translations
+        run: bun run i18n:check
         working-directory: frontend
 
-      - name: Run unit tests with coverage
-        run: bun run test:coverage
+      - name: Build
+        run: bun run build
         working-directory: frontend
-
-      - name: Install Playwright browsers
-        run: bunx playwright install --with-deps
-        working-directory: frontend
-
-      - name: Run E2E tests
-        run: bun run test:e2e
-        working-directory: frontend
-        env:
-          CI: true
 {%- endif %}
 
   security:

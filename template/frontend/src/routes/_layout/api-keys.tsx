@@ -19,11 +19,12 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import useCustomToast from "@/hooks/useCustomToast"
+import { N_, t } from "@/i18n"
 import { handleError } from "@/utils"
 
 export const Route = createFileRoute("/_layout/api-keys")({
   component: ApiKeys,
-  head: () => ({ meta: [{ title: "API keys" }] }),
+  head: () => ({ meta: [{ title: t("API keys") }] }),
 })
 
 const formatDate = (value?: string | null) =>
@@ -32,11 +33,11 @@ const formatDate = (value?: string | null) =>
 function status(key: ApiKeyRead) {
   const now = Date.now()
   if (key.revoked_at && new Date(key.revoked_at).getTime() <= now)
-    return "Revoked"
+    return N_("Revoked")
   if (key.expires_at && new Date(key.expires_at).getTime() <= now)
-    return "Expired"
-  if (key.revoked_at) return "Rotating"
-  return "Active"
+    return N_("Expired")
+  if (key.revoked_at) return N_("Rotating")
+  return N_("Active")
 }
 
 function ApiKeys() {
@@ -63,7 +64,7 @@ function ApiKeys() {
   const revoke = useMutation({
     mutationFn: (keyId: string) =>
       ApiKeysService.revokeApiKey({ path: { key_id: keyId } }),
-    onSuccess: () => showSuccessToast("API key revoked"),
+    onSuccess: () => showSuccessToast(t("API key revoked")),
     onError: handleError.bind(showErrorToast),
     onSettled: refresh,
   })
@@ -72,27 +73,29 @@ function ApiKeys() {
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">API keys</h1>
+          <h1 className="text-2xl font-bold tracking-tight">{t("API keys")}</h1>
           <p className="text-muted-foreground">
-            Keys let other systems act on the active organization.
+            {t("Keys let other systems act on the active organization.")}
           </p>
         </div>
         <CreateApiKey onCreated={setToken} />
       </div>
       {error ? (
         <p className="text-muted-foreground">
-          Only owners and administrators of the organization manage its keys.
+          {t(
+            "Only owners and administrators of the organization manage its keys.",
+          )}
         </p>
       ) : (
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Key</TableHead>
-              <TableHead>Scopes</TableHead>
-              <TableHead>Last used</TableHead>
-              <TableHead>Expires</TableHead>
-              <TableHead>Status</TableHead>
+              <TableHead>{t("Name")}</TableHead>
+              <TableHead>{t("Key")}</TableHead>
+              <TableHead>{t("Scopes")}</TableHead>
+              <TableHead>{t("Last used")}</TableHead>
+              <TableHead>{t("Expires")}</TableHead>
+              <TableHead>{t("Status")}</TableHead>
               <TableHead />
             </TableRow>
           </TableHeader>
@@ -110,7 +113,7 @@ function ApiKeys() {
                     <Badge
                       variant={state === "Active" ? "default" : "secondary"}
                     >
-                      {state}
+                      {t(state)}
                     </Badge>
                   </TableCell>
                   <TableCell className="flex gap-2">
@@ -121,14 +124,14 @@ function ApiKeys() {
                           variant="outline"
                           onClick={() => rotate.mutate(key.id)}
                         >
-                          Rotate
+                          {t("Rotate")}
                         </Button>
                         <Button
                           size="sm"
                           variant="destructive"
                           onClick={() => revoke.mutate(key.id)}
                         >
-                          Revoke
+                          {t("Revoke")}
                         </Button>
                       </>
                     )}

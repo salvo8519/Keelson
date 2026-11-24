@@ -1,0 +1,425 @@
+msgid ""
+"A custom command with this name already exists; edit it directly instead "
+"of overriding the built-in."
+msgstr ""
+"Esiste già un comando personalizzato con questo nome: modificalo "
+"direttamente invece di sovrascrivere quello predefinito."
+
+msgid "A pending invitation already exists for this email"
+msgstr "Esiste già un invito in sospeso per questa email"
+
+msgid "A revoked or expired key cannot be rotated"
+msgstr "Una chiave revocata o scaduta non può essere ruotata"
+
+msgid "API Key header missing"
+msgstr "Header della API key mancante"
+
+msgid "API key header missing"
+msgstr "Header della API key mancante"
+
+msgid "API key lacks the required scopes"
+msgstr "La API key non ha gli scope richiesti"
+
+msgid "API key not found"
+msgstr "API key non trovata"
+
+msgid "API key revoked or expired"
+msgstr "API key revocata o scaduta"
+
+msgid "Account is disabled"
+msgstr "L'account è disabilitato"
+
+msgid "Admin can only assign Member or Viewer roles"
+msgstr "Un Admin può assegnare solo i ruoli Member o Viewer"
+
+msgid "Admin can only invite as Member or Viewer"
+msgstr "Un Admin può invitare solo come Member o Viewer"
+
+msgid "Admin cannot remove another Admin"
+msgstr "Un Admin non può rimuovere un altro Admin"
+
+msgid "Admin privileges required"
+msgstr "Servono i privilegi di amministratore"
+
+msgid "Administrators cannot delete their own account"
+msgstr "Gli amministratori non possono eliminare il proprio account"
+
+msgid "An unexpected error occurred"
+msgstr "Si è verificato un errore imprevisto"
+
+msgid "App admin privileges required"
+msgstr "Servono i privilegi di amministratore dell'applicazione"
+
+msgid "App admin required to create app-scoped knowledge base"
+msgstr ""
+"Solo un amministratore dell'applicazione può creare una knowledge base a "
+"livello di applicazione"
+
+msgid "App admin required to modify app-scoped knowledge base"
+msgstr ""
+"Solo un amministratore dell'applicazione può modificare una knowledge "
+"base a livello di applicazione"
+
+msgid "Avatar file not found"
+msgstr "File dell'avatar non trovato"
+
+msgid "Avatar image too large. Maximum 2MB."
+msgstr "Immagine dell'avatar troppo grande. Massimo 2 MB."
+
+msgid "Bad Gateway"
+msgstr "Gateway non valido"
+
+msgid "Bad Request"
+msgstr "Richiesta non valida"
+
+msgid "Cannot add a prompt to a built-in override."
+msgstr ""
+"Non è possibile aggiungere un prompt a una sovrascrittura di un comando "
+"predefinito."
+
+msgid "Cannot delete the default knowledge base"
+msgstr "Non è possibile eliminare la knowledge base predefinita"
+
+msgid "Cannot remove the last Owner. Transfer ownership first."
+msgstr "Non è possibile rimuovere l'ultimo Owner. Trasferisci prima la proprietà."
+
+msgid "Cannot rename a built-in override; delete it instead."
+msgstr ""
+"Non è possibile rinominare la sovrascrittura di un comando predefinito: "
+"eliminala."
+
+msgid "Cannot share a conversation with yourself"
+msgstr "Non puoi condividere una conversazione con te stesso"
+
+msgid "Cannot sync a source without an assigned knowledge base collection."
+msgstr ""
+"Non è possibile sincronizzare una fonte senza una collezione di knowledge"
+" base assegnata."
+
+msgid "Cannot transfer ownership to yourself"
+msgstr "Non puoi trasferire la proprietà a te stesso"
+
+msgid "Conflict"
+msgstr "Conflitto"
+
+msgid "Conversation already shared with this user"
+msgstr "Conversazione già condivisa con questo utente"
+
+msgid "Conversation not found"
+msgstr "Conversazione non trovata"
+
+msgid "Demo not found"
+msgstr "Demo non trovata"
+
+msgid "Document not found"
+msgstr "Documento non trovato"
+
+msgid "Document not found in this knowledge base"
+msgstr "Documento non trovato in questa knowledge base"
+
+msgid "Email already registered"
+msgstr "Email già registrata"
+
+msgid "Error"
+msgstr "Errore"
+
+msgid "File not found"
+msgstr "File non trovato"
+
+msgid "File not found on disk"
+msgstr "File non trovato sul disco"
+
+msgid "Forbidden"
+msgstr "Accesso negato"
+
+msgid "Grace period too long"
+msgstr "Periodo di grazia troppo lungo"
+
+msgid "Incorrect password"
+msgstr "Password errata"
+
+msgid "Insufficient organization role"
+msgstr "Ruolo nell'organizzazione insufficiente"
+
+msgid "Internal Server Error"
+msgstr "Errore interno del server"
+
+msgid "Invalid API Key"
+msgstr "API key non valida"
+
+msgid "Invalid API key"
+msgstr "API key non valida"
+
+msgid "Invalid email or password"
+msgstr "Email o password non validi"
+
+msgid "Invalid export format. Must be 'json' or 'csv'."
+msgstr "Formato di esportazione non valido. Usa 'json' o 'csv'."
+
+msgid "Invalid file"
+msgstr "File non valido"
+
+msgid "Invalid or expired refresh token"
+msgstr "Refresh token non valido o scaduto"
+
+msgid "Invalid or expired token"
+msgstr "Token non valido o scaduto"
+
+msgid "Invalid refresh token"
+msgstr "Refresh token non valido"
+
+msgid "Invalid token payload"
+msgstr "Contenuto del token non valido"
+
+msgid "Invalid token type"
+msgstr "Tipo di token non valido"
+
+msgid "Invitation has expired"
+msgstr "L'invito è scaduto"
+
+msgid "Invitation is no longer valid"
+msgstr "L'invito non è più valido"
+
+msgid "Invitation not found"
+msgstr "Invito non trovato"
+
+msgid "Invitation not found or already used"
+msgstr "Invito non trovato o già usato"
+
+msgid "Knowledge base not found"
+msgstr "Knowledge base non trovata"
+
+msgid "Knowledge base search failed"
+msgstr "Ricerca nella knowledge base non riuscita"
+
+msgid "Magic link is invalid or has expired"
+msgstr "Il magic link non è valido o è scaduto"
+
+msgid "Member not found"
+msgstr "Membro non trovato"
+
+msgid "Message not found"
+msgstr "Messaggio non trovato"
+
+msgid "Message not found in this conversation"
+msgstr "Messaggio non trovato in questa conversazione"
+
+msgid "Method Not Allowed"
+msgstr "Metodo non consentito"
+
+msgid "Must provide shared_with user ID or generate_link=true"
+msgstr "Indica l'ID utente in shared_with oppure generate_link=true"
+
+msgid "New password cannot be the same as the current one"
+msgstr "La nuova password non può essere uguale a quella attuale"
+
+msgid "No avatar set"
+msgstr "Nessun avatar impostato"
+
+msgid "No file stored for this document"
+msgstr "Nessun file salvato per questo documento"
+
+msgid "Not Found"
+msgstr "Non trovato"
+
+msgid "Not a member of this knowledge base's organization"
+msgstr "Non sei membro dell'organizzazione di questa knowledge base"
+
+msgid "Not authenticated"
+msgstr "Non autenticato"
+
+msgid "Not authorized to revoke this share"
+msgstr "Non sei autorizzato a revocare questa condivisione"
+
+msgid "Only JPEG, PNG, WebP, and GIF images are allowed"
+msgstr "Sono ammesse solo immagini JPEG, PNG, WebP e GIF"
+
+msgid "Only Owner or Admin can change member roles"
+msgstr "Solo un Owner o un Admin può cambiare i ruoli dei membri"
+
+msgid "Only Owner or Admin can invite members"
+msgstr "Solo un Owner o un Admin può invitare membri"
+
+msgid "Only Owner or Admin can remove members"
+msgstr "Solo un Owner o un Admin può rimuovere membri"
+
+msgid "Only Owner or Admin can revoke invitations"
+msgstr "Solo un Owner o un Admin può revocare gli inviti"
+
+msgid "Only Owner or Admin can update the org"
+msgstr "Solo un Owner o un Admin può modificare l'organizzazione"
+
+msgid "Only Owner or Admin can update the organization"
+msgstr "Solo un Owner o un Admin può modificare l'organizzazione"
+
+msgid "Only Owner or Admin can view invitations"
+msgstr "Solo un Owner o un Admin può vedere gli inviti"
+
+msgid "Only an Owner can remove another Owner"
+msgstr "Solo un Owner può rimuovere un altro Owner"
+
+msgid "Only assistant messages can be rated"
+msgstr "Si possono valutare solo i messaggi dell'assistente"
+
+msgid "Only pending invitations can be revoked"
+msgstr "Si possono revocare solo gli inviti in sospeso"
+
+msgid "Only the Owner can delete the organization"
+msgstr "Solo l'Owner può eliminare l'organizzazione"
+
+msgid "Only the Owner can transfer ownership"
+msgstr "Solo l'Owner può trasferire la proprietà"
+
+msgid "Only the conversation owner can share it"
+msgstr "Solo il proprietario della conversazione può condividerla"
+
+msgid "Only the conversation owner can view shares"
+msgstr "Solo il proprietario della conversazione può vedere le condivisioni"
+
+msgid "Only the owner can modify this knowledge base"
+msgstr "Solo il proprietario può modificare questa knowledge base"
+
+msgid "Only the project owner can archive it"
+msgstr "Solo il proprietario del progetto può archiviarlo"
+
+msgid "Only the project owner can delete it"
+msgstr "Solo il proprietario del progetto può eliminarlo"
+
+msgid "Organization context required to create org-scoped knowledge base"
+msgstr ""
+"Serve un'organizzazione attiva per creare una knowledge base "
+"dell'organizzazione"
+
+msgid "Organization not found"
+msgstr "Organizzazione non trovata"
+
+msgid "Organization not found or access denied"
+msgstr "Organizzazione non trovata o accesso negato"
+
+msgid "Owner cannot leave the project"
+msgstr "Il proprietario non può lasciare il progetto"
+
+msgid "Payment Required"
+msgstr "Pagamento richiesto"
+
+msgid "Personal organization cannot be deleted"
+msgstr "L'organizzazione personale non può essere eliminata"
+
+msgid "Personal organization not found — please re-register"
+msgstr "Organizzazione personale non trovata: registrati di nuovo"
+
+msgid "Project not found"
+msgstr "Progetto non trovato"
+
+msgid "Project owner already has full access"
+msgstr "Il proprietario del progetto ha già accesso completo"
+
+msgid "Rate limit exceeded"
+msgstr "Limite di richieste superato"
+
+msgid "Rating not found"
+msgstr "Valutazione non trovata"
+
+msgid "Reset link is invalid or has expired"
+msgstr "Il link di reimpostazione non è valido o è scaduto"
+
+msgid "Seat limit reached — upgrade your plan to add more members"
+msgstr ""
+"Limite di posti raggiunto: passa a un piano superiore per aggiungere "
+"membri"
+
+msgid "Service Unavailable"
+msgstr "Servizio non disponibile"
+
+msgid "Share link not found or expired"
+msgstr "Link di condivisione non trovato o scaduto"
+
+msgid "Share not found"
+msgstr "Condivisione non trovata"
+
+msgid "Slash command not found"
+msgstr "Comando slash non trovato"
+
+msgid "Slash command with this name already exists"
+msgstr "Esiste già un comando slash con questo nome"
+
+msgid "Slug already taken"
+msgstr "Slug già in uso"
+
+msgid "Sync is not in running state"
+msgstr "La sincronizzazione non è in corso"
+
+msgid "Sync log not found"
+msgstr "Log di sincronizzazione non trovato"
+
+msgid "Sync source not found"
+msgstr "Fonte di sincronizzazione non trovata"
+
+msgid "Sync source not found in this knowledge base"
+msgstr "Fonte di sincronizzazione non trovata in questa knowledge base"
+
+msgid "Target user is not a member of this organization"
+msgstr "L'utente indicato non è membro di questa organizzazione"
+
+msgid "This invitation was sent to a different email address."
+msgstr "Questo invito è stato inviato a un altro indirizzo email."
+
+msgid "This key has already been rotated"
+msgstr "Questa chiave è già stata ruotata"
+
+msgid "Too Many Requests"
+msgstr "Troppe richieste"
+
+msgid "Tool call not found"
+msgstr "Chiamata al tool non trovata"
+
+msgid "Transfer ownership before leaving the organization"
+msgstr "Trasferisci la proprietà prima di lasciare l'organizzazione"
+
+msgid "Unauthorized"
+msgstr "Non autenticato"
+
+msgid "Unprocessable Content"
+msgstr "Contenuto non elaborabile"
+
+msgid "Use transfer-ownership to change the Owner role"
+msgstr "Usa transfer-ownership per cambiare il ruolo di Owner"
+
+msgid "User account is disabled"
+msgstr "L'account utente è disabilitato"
+
+msgid "User is already a member of this organization"
+msgstr "L'utente è già membro di questa organizzazione"
+
+msgid "User is already a project member"
+msgstr "L'utente è già membro del progetto"
+
+msgid "User not found"
+msgstr "Utente non trovato"
+
+msgid "You are already a member of this organization"
+msgstr "Sei già membro di questa organizzazione"
+
+msgid "You do not have edit permission for this conversation"
+msgstr "Non hai il permesso di modificare questa conversazione"
+
+msgid "expires_at must be in the future"
+msgstr "expires_at deve essere nel futuro"
+
+msgid "1 hour"
+msgstr "1 ora"
+
+msgid "{count} hours"
+msgstr "{count} ore"
+
+msgid "1 minute"
+msgstr "1 minuto"
+
+msgid "{count} minutes"
+msgstr "{count} minuti"
+
+msgid "A team member"
+msgstr "Un membro del team"
+
+msgid "the organization"
+msgstr "l'organizzazione"

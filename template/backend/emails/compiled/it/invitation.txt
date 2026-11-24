@@ -1,0 +1,12 @@
+Subject: [[inviter_name]] ti ha invitato in [[org_name]] su [[app_name]]
+
+Ciao,
+
+[[inviter_name]] ti ha invitato a entrare in [[org_name]] su [[app_name]].
+
+Accetta l'invito:
+[[accept_url]]
+
+L'invito è stato inviato da [[inviter_name]]. Se non sai chi sia, puoi ignorare questa email.
+
+Il team di [[app_name]]

@@ -5,7 +5,6 @@
 import contextlib
 
 import pytest
-from fastapi import HTTPException
 {%- endif %}
 
 from app.core.config import settings
@@ -15,6 +14,9 @@ from app.core.exceptions import (
     AuthenticationError,
     AuthorizationError,
     NotFoundError,
+{%- if enable_rate_limiting %}
+    RateLimitError,
+{%- endif %}
     ValidationError,
 )
 from app.core.middleware import RequestIDMiddleware
@@ -142,7 +144,7 @@ class TestRateLimit:
         for _ in range(limit):
             await check_rate_limit(category=RateLimitCategory.AUTH, client_ip="203.0.113.7")
 
-        with pytest.raises(HTTPException) as exc_info:
+        with pytest.raises(RateLimitError) as exc_info:
             await check_rate_limit(category=RateLimitCategory.AUTH, client_ip="203.0.113.7")
 
         assert exc_info.value.status_code == 429
@@ -156,7 +158,7 @@ class TestRateLimit:
         assert limit is not None
 
         for _ in range(limit + 1):
-            with contextlib.suppress(HTTPException):
+            with contextlib.suppress(RateLimitError):
                 await check_rate_limit(category=RateLimitCategory.AUTH, client_ip="203.0.113.7")
 
         # A different caller is unaffected.

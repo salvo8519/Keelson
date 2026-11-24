@@ -1,11 +1,9 @@
+// Keelson: white label. The brand mark (initial on the primary color) and the brand name,
+// instead of the FastAPI logo of the official template.
 import { Link } from "@tanstack/react-router"
 
-import { useTheme } from "@/components/theme-provider"
+import { BRAND_NAME } from "@/brand"
 import { cn } from "@/lib/utils"
-import icon from "/assets/images/fastapi-icon.svg"
-import iconLight from "/assets/images/fastapi-icon-light.svg"
-import logo from "/assets/images/fastapi-logo.svg"
-import logoLight from "/assets/images/fastapi-logo-light.svg"
 
 interface LogoProps {
   variant?: "full" | "icon" | "responsive"
@@ -13,48 +11,49 @@ interface LogoProps {
   asLink?: boolean
 }
 
+function Mark({ className }: { className?: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        "inline-flex size-6 items-center justify-center rounded-md bg-primary text-sm font-bold text-primary-foreground",
+        className,
+      )}
+    >
+      {BRAND_NAME.charAt(0).toUpperCase()}
+    </span>
+  )
+}
+
 export function Logo({
   variant = "full",
   className,
   asLink = true,
 }: LogoProps) {
-  const { resolvedTheme } = useTheme()
-  const isDark = resolvedTheme === "dark"
-
-  const fullLogo = isDark ? logoLight : logo
-  const iconLogo = isDark ? iconLight : icon
-
+  const name = <span className="font-semibold">{BRAND_NAME}</span>
   const content =
-    variant === "responsive" ? (
-      <>
-        <img
-          src={fullLogo}
-          alt="FastAPI"
-          className={cn(
-            "h-6 w-auto group-data-[collapsible=icon]:hidden",
-            className,
-          )}
-        />
-        <img
-          src={iconLogo}
-          alt="FastAPI"
-          className={cn(
-            "size-5 hidden group-data-[collapsible=icon]:block",
-            className,
-          )}
-        />
-      </>
+    variant === "icon" ? (
+      <Mark className={className} />
     ) : (
-      <img
-        src={variant === "full" ? fullLogo : iconLogo}
-        alt="FastAPI"
-        className={cn(variant === "full" ? "h-6 w-auto" : "size-5", className)}
-      />
+      <span className={cn("inline-flex items-center gap-2", className)}>
+        <Mark />
+        <span
+          className={cn(
+            variant === "responsive" && "group-data-[collapsible=icon]:hidden",
+          )}
+        >
+          {name}
+        </span>
+      </span>
     )
 
   if (!asLink) {
     return content
   }
 
-  return <Link to="/">{content}</Link>
+  return (
+    <Link to="/" aria-label={BRAND_NAME}>
+      {content}
+    </Link>
+  )
 }

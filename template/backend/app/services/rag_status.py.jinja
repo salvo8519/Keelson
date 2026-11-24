@@ -9,6 +9,8 @@ import redis.asyncio as aioredis
 import redis.exceptions
 from fastapi.sse import ServerSentEvent
 
+from app.services.rag.config import rag_status_channel
+
 logger = logging.getLogger(__name__)
 
 
@@ -20,10 +22,10 @@ class RAGStatusService:
     This avoids opening a new Redis connection for every SSE subscriber.
     """
 
-    CHANNEL = "rag_status"
-
-    def __init__(self, client: aioredis.Redis) -> None:
+    def __init__(self, client: aioredis.Redis, organization_id: object | None) -> None:
         self._client = client
+        # Keelson: only the events of the caller's organization.
+        self.channel = rag_status_channel(organization_id)
 
     async def stream_events(self) -> AsyncIterator[ServerSentEvent]:
         """Yield ``ServerSentEvent`` items as they arrive on the ``rag_status`` channel.
@@ -32,7 +34,7 @@ class RAGStatusService:
         mid-stream.
         """
         pubsub = self._client.pubsub()
-        await pubsub.subscribe(self.CHANNEL)
+        await pubsub.subscribe(self.channel)
         event_id = 0
 
         try:
@@ -55,7 +57,7 @@ class RAGStatusService:
             raise
         finally:
             try:
-                await pubsub.unsubscribe(self.CHANNEL)
+                await pubsub.unsubscribe(self.channel)
             except Exception as exc:
                 logger.debug("RAG SSE cleanup error: %s", exc)
 {%- else %}

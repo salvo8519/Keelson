@@ -1,4 +1,4 @@
-.PHONY: install format lint test run clean help db-init dev dev-down dev-logs dev-rebuild dev-frontend docker-clean stage stage-down prod prod-down upgrade upgrade-dry-run upgrade-new-features upgrade-finalize
+.PHONY: install format lint test run clean help db-init dev dev-down dev-logs dev-rebuild dev-frontend docker-clean stage stage-down prod prod-down upgrade upgrade-dry-run skills skills-check i18n-extract i18n-check
 
 # === Environments ===========================================================
 # `make dev`   — local development (docker-compose.dev.yml + bind-mounted source)
@@ -164,18 +164,26 @@ install:
 {%- endif %}
 
 # === Template upgrade ===
-# Pull latest template changes via 3-way merge. `make help` lists the targets.
+# Keelson: the project follows its template with Copier (.copier-answers.yml), as a three-way
+# merge with your own changes. The upstream fastapi-fullstack upgrade does not apply here.
 upgrade:
-	uvx fastapi-fullstack@latest upgrade $(ARGS)
+	uvx copier update --trust $(ARGS)
 
 upgrade-dry-run:
-	uvx fastapi-fullstack@latest upgrade --dry-run $(ARGS)
+	uvx copier update --trust --pretend $(ARGS)
 
-upgrade-new-features:
-	uvx fastapi-fullstack@latest upgrade --with-new-features $(ARGS)
+# === Agent skills and translations (Keelson) ===
+skills:
+	python3 scripts/agent_skills.py install
 
-upgrade-finalize:
-	uvx fastapi-fullstack@latest upgrade finalize $(ARGS)
+skills-check:
+	python3 scripts/agent_skills.py check
+
+i18n-extract:
+	uv run --directory backend python -m app.core.i18n_catalog extract
+
+i18n-check:
+	uv run --directory backend python -m app.core.i18n_catalog check
 
 # === Code Quality ===
 format:
@@ -499,11 +507,14 @@ help:
 	@echo "  make docker-prod-logs     View production logs"
 	@echo ""
 {%- endif %}
-	@echo "Template upgrade:"
+	@echo "Template upgrade (Copier):"
 	@echo "  make upgrade-dry-run       Preview template updates (no changes)"
 	@echo "  make upgrade               Pull latest template changes (3-way merge)"
-	@echo "  make upgrade-new-features  Upgrade + opt into newly added features"
-	@echo "  make upgrade-finalize      Bump manifest after resolving conflicts"
+	@echo ""
+	@echo "Agent skills and translations:"
+	@echo "  make skills                Install the official skills of the components"
+	@echo "  make i18n-extract          Update the message catalogs from the code"
+	@echo "  make i18n-check            Fail when a message is untranslated"
 	@echo ""
 	@echo "Other:"
 	@echo "  make routes        Show all API routes"

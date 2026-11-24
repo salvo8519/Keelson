@@ -30,6 +30,20 @@ class OrganizationCreate(BaseSchema):
 class OrganizationUpdate(BaseSchema):
     name: str | None = Field(default=None, min_length=2, max_length=128)
     avatar_url: str | None = Field(default=None, max_length=500)
+    # Keelson: language for members who have not chosen one (app/core/i18n.py).
+    default_locale: str | None = Field(default=None, max_length=8)
+
+    @field_validator("default_locale")
+    @classmethod
+    def supported_locale(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        from app.core.i18n import SUPPORTED_LANGUAGES, supported
+
+        code = supported(v)
+        if code is None:
+            raise ValueError(f"unsupported language; use one of: {', '.join(SUPPORTED_LANGUAGES)}")
+        return code
 
 
 class OrganizationRead(BaseSchema, TimestampSchema):
@@ -38,6 +52,7 @@ class OrganizationRead(BaseSchema, TimestampSchema):
     slug: str
     is_personal: bool
     avatar_url: str | None = None
+    default_locale: str | None = None
     member_count: int = 0
     role: str  # current user's role in this org
 {%- if enable_billing %}

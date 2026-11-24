@@ -1,6 +1,7 @@
 import { Building2, Home, KeyRound, Users } from "lucide-react"
 
 import { SidebarAppearance } from "@/components/Common/Appearance"
+import { LanguageSwitcher } from "@/components/Common/LanguageSwitcher"
 import { Logo } from "@/components/Common/Logo"
 import { OrganizationSwitcher } from "@/components/Organizations/OrganizationSwitcher"
 import {
@@ -10,21 +11,22 @@ import {
   SidebarHeader,
 } from "@/components/ui/sidebar"
 import useAuth from "@/hooks/useAuth"
+import { t } from "@/i18n"
 import { isAdmin } from "@/lib/session"
 import { type Item, Main } from "./Main"
 import { User } from "./User"
 
 const baseItems: Item[] = [
-  { icon: Home, title: "Dashboard", path: "/" },
-  { icon: Building2, title: "Organizations", path: "/organizations" },
-  { icon: KeyRound, title: "API keys", path: "/api-keys" },
+  { icon: Home, title: t("Dashboard"), path: "/" },
+  { icon: Building2, title: t("Organizations"), path: "/organizations" },
+  { icon: KeyRound, title: t("API keys"), path: "/api-keys" },
 ]
 
 export function AppSidebar() {
   const { user: currentUser } = useAuth()
 
   const items = isAdmin(currentUser)
-    ? [...baseItems, { icon: Users, title: "Admin", path: "/admin" }]
+    ? [...baseItems, { icon: Users, title: t("Admin"), path: "/admin" }]
     : baseItems
 
   return (
@@ -37,6 +39,7 @@ export function AppSidebar() {
         <Main items={items} />
       </SidebarContent>
       <SidebarFooter>
+        <LanguageSwitcher />
         <SidebarAppearance />
         <User user={currentUser} />
       </SidebarFooter>

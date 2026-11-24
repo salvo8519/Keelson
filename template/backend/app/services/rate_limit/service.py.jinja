@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, Request
+
+from app.core.exceptions import RateLimitError
 
 {%- if enable_teams %}
 from app.api.deps import ActiveOrg, CurrentUser
@@ -102,22 +104,17 @@ async def check_rate_limit(
 
 
 def _raise_429(result: RateLimitResult, category: str, scope: str) -> None:
+    # Keelson: an AppException, so the response is a Problem Details document like every other
+    # error; the details and the Retry-After header are those of the upstream response.
     retry_after = result.retry_after_seconds or 60
-    raise HTTPException(
-        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-        detail={
-            "error": {
-                "code": "RATE_LIMIT_EXCEEDED",
-                "message": f"Rate limit exceeded for category '{category}' (scope: {scope}). "
-                           f"Retry after {retry_after} seconds.",
-                "details": {
-                    "category": category,
-                    "scope": scope,
-                    "limit": result.limit,
-                    "current": result.current_count,
-                    "retry_after_seconds": retry_after,
-                },
-            }
+    raise RateLimitError(
+        message="Rate limit exceeded",
+        details={
+            "category": category,
+            "scope": scope,
+            "limit": result.limit,
+            "current": result.current_count,
+            "retry_after_seconds": retry_after,
         },
         headers={"Retry-After": str(retry_after)},
     )

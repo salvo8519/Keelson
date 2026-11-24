@@ -1,0 +1,11 @@
+Subject: Verifica il tuo indirizzo email su [[app_name]]
+
+Ciao [[name]],
+
+verifica il tuo indirizzo email per completare la registrazione.
+
+[[verify_url]]
+
+Il link scade tra [[expires_in]].
+
+Il team di [[app_name]]

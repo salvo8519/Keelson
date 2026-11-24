@@ -40,6 +40,8 @@ dependencies = [
     "psycopg2-binary>=2.9.0",
     "alembic>=1.18.0",
     "greenlet>=3.2.0",
+    # Keelson: gettext catalogs of API messages (app/core/i18n.py).
+    "babel>=2.16.0",
 {%- if use_jwt %}
 {%- if use_jwks_idp %}
     # PyJWT[crypto] pulls in `cryptography` for RSA/ECDSA verification — needed

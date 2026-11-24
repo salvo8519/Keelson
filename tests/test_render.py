@@ -6,7 +6,9 @@ must have, plus the files each answer adds or removes.
 
 from __future__ import annotations
 
+import json
 import py_compile
+import re
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -36,6 +38,7 @@ CASES: dict[str, dict[str, Any]] = {
         "llm_provider": "openai_compatible",
         "vector_database": "none",
         "logfire": True,
+        "languages": ["en"],
     },
 }
 
@@ -93,6 +96,41 @@ def test_frontend_follows_the_answer(render: Render, case: str) -> None:
     wanted = CASES[case].get("web_frontend", "react") == "react"
     assert (project / "frontend" / "package.json").is_file() is wanted
     assert (project / "scripts" / "generate-client.sh").is_file() is wanted
+
+
+@pytest.mark.parametrize("case", list(CASES))
+def test_translations_follow_the_languages(render: Render, case: str) -> None:
+    """Catalogs, emails and the frontend language list exist only for the chosen languages."""
+    project = render(answers(case))
+    italian = "it" in CASES[case].get("languages", ["en", "it"])
+    backend = project / "backend"
+    assert (backend / "app" / "locales" / "it").is_dir() is italian
+    assert (backend / "emails" / "compiled" / "it").is_dir() is italian
+    assert (backend / "emails" / "compiled" / "welcome.html").is_file()
+    if CASES[case].get("web_frontend", "react") == "react":
+        frontend = project / "frontend" / "src" / "locales"
+        assert (frontend / "it.json").is_file() is italian
+        assert ('code: "it"' in (frontend / "languages.ts").read_text(encoding="utf-8")) is italian
+
+
+@pytest.mark.parametrize("case", list(CASES))
+def test_ci_runs_only_existing_frontend_scripts(render: Render, case: str) -> None:
+    """Upstream CI called scripts of the vstorm Next.js frontend that the official one lacks."""
+    project = render(answers(case))
+    package = project / "frontend" / "package.json"
+    if not package.is_file():
+        return
+    scripts = set(json.loads(package.read_text(encoding="utf-8"))["scripts"])
+    assert (project / "frontend" / "bun.lock").is_file(), "frozen installs need the lockfile"
+    pipelines = [project / ".gitlab-ci.yml", *(project / ".github" / "workflows").glob("*.yml")]
+    called = {
+        match
+        for path in pipelines
+        if path.is_file()
+        for match in re.findall(r"bun run ([\w:-]+)", path.read_text(encoding="utf-8"))
+    }
+    assert called, "the pipeline checks the frontend"
+    assert called <= scripts, called - scripts
 
 
 @pytest.mark.parametrize("case", list(CASES))

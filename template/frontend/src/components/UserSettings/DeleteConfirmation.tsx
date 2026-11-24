@@ -16,6 +16,7 @@ import {
 import { LoadingButton } from "@/components/ui/loading-button"
 import useAuth from "@/hooks/useAuth"
 import useCustomToast from "@/hooks/useCustomToast"
+import { t } from "@/i18n"
 import { handleError } from "@/utils"
 
 const DeleteConfirmation = () => {
@@ -27,7 +28,7 @@ const DeleteConfirmation = () => {
   const mutation = useMutation({
     mutationFn: () => UsersService.deleteCurrentUser(),
     onSuccess: () => {
-      showSuccessToast("Your account has been successfully deleted")
+      showSuccessToast(t("Your account has been successfully deleted"))
       logout()
     },
     onError: handleError.bind(showErrorToast),
@@ -44,25 +45,24 @@ const DeleteConfirmation = () => {
     <Dialog>
       <DialogTrigger asChild>
         <Button variant="destructive" className="mt-3">
-          Delete Account
+          {t("Delete Account")}
         </Button>
       </DialogTrigger>
       <DialogContent>
         <form onSubmit={handleSubmit(onSubmit)}>
           <DialogHeader>
-            <DialogTitle>Confirmation Required</DialogTitle>
+            <DialogTitle>{t("Confirmation Required")}</DialogTitle>
             <DialogDescription>
-              All your account data will be{" "}
-              <strong>permanently deleted.</strong> If you are sure, please
-              click <strong>"Confirm"</strong> to proceed. This action cannot be
-              undone.
+              {t(
+                "All your account data will be permanently deleted. This action cannot be undone.",
+              )}
             </DialogDescription>
           </DialogHeader>
 
           <DialogFooter className="mt-4">
             <DialogClose asChild>
               <Button variant="outline" disabled={mutation.isPending}>
-                Cancel
+                {t("Cancel")}
               </Button>
             </DialogClose>
             <LoadingButton
@@ -70,7 +70,7 @@ const DeleteConfirmation = () => {
               type="submit"
               loading={mutation.isPending}
             >
-              Delete
+              {t("Delete")}
             </LoadingButton>
           </DialogFooter>
         </form>

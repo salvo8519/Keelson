@@ -105,11 +105,14 @@ async def update(
     *,
     name: str | None = None,
     avatar_url: str | None = None,
+    default_locale: str | None = None,
 ) -> Organization:
     if name is not None:
         org.name = name
     if avatar_url is not None:
         org.avatar_url = avatar_url
+    if default_locale is not None:  # Keelson
+        org.default_locale = default_locale
     await db.flush()
     await db.refresh(org)
     return org

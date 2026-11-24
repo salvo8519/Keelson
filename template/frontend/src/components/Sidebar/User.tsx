@@ -17,6 +17,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar"
 import useAuth from "@/hooks/useAuth"
+import { t } from "@/i18n"
 import { getInitials } from "@/utils"
 
 interface UserInfoProps {
@@ -82,12 +83,12 @@ export function User({ user }: { user: any }) {
             <RouterLink to="/settings" onClick={handleMenuClick}>
               <DropdownMenuItem>
                 <Settings />
-                User Settings
+                {t("User Settings")}
               </DropdownMenuItem>
             </RouterLink>
             <DropdownMenuItem onClick={handleLogout}>
               <LogOut />
-              Log Out
+              {t("Log Out")}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

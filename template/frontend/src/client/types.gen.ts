@@ -1703,6 +1703,10 @@ export type OrganizationRead = {
      */
     avatar_url?: string | null;
     /**
+     * Default Locale
+     */
+    default_locale?: string | null;
+    /**
      * Member Count
      */
     member_count?: number;
@@ -1724,6 +1728,10 @@ export type OrganizationUpdate = {
      * Avatar Url
      */
     avatar_url?: string | null;
+    /**
+     * Default Locale
+     */
+    default_locale?: string | null;
 };
 
 /**
@@ -2742,6 +2750,10 @@ export type UserRead = {
      * Onboarding Completed At
      */
     onboarding_completed_at?: string | null;
+    /**
+     * Locale
+     */
+    locale?: string | null;
 };
 
 /**
@@ -2890,6 +2902,12 @@ export type UserUpdateMe = {
      * Set to a timestamp to mark onboarding complete; null to reset.
      */
     onboarding_completed_at?: string | null;
+    /**
+     * Locale
+     *
+     * Preferred language, one of the supported languages.
+     */
+    locale?: string | null;
 };
 
 /**

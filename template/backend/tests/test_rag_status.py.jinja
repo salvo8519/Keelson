@@ -1,0 +1,31 @@
+{%- if enable_rag and enable_redis and enable_teams %}
+"""Ingestion status events stay inside their organization (Keelson)."""
+
+import uuid
+from unittest.mock import MagicMock
+
+import pytest
+from httpx import AsyncClient
+
+from app.core.config import settings
+from app.services.rag.config import rag_status_channel
+from app.services.rag_status import RAGStatusService
+
+
+def test_each_organization_has_its_own_channel() -> None:
+    first, second = uuid.uuid4(), uuid.uuid4()
+    assert rag_status_channel(first) != rag_status_channel(second)
+    assert rag_status_channel(None) == "rag_status:none"
+
+
+def test_the_service_listens_to_the_organization_channel() -> None:
+    organization_id = uuid.uuid4()
+    service = RAGStatusService(MagicMock(), organization_id)
+    assert service.channel == rag_status_channel(organization_id)
+
+
+@pytest.mark.anyio
+async def test_the_stream_requires_authentication(client: AsyncClient) -> None:
+    response = await client.get(f"{settings.API_V1_STR}/rag/status/stream")
+    assert response.status_code == 401
+{%- endif %}

@@ -130,6 +130,7 @@ class OrganizationService:
             org,
             name=data.name,
             avatar_url=data.avatar_url,
+            default_locale=data.default_locale,
         )
 
     async def delete(self, org_id: UUID, requester_id: UUID) -> None:

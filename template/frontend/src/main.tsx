@@ -11,8 +11,10 @@ import ReactDOM from "react-dom/client"
 import { client } from "./client/client.gen"
 import { ThemeProvider } from "./components/theme-provider"
 import { Toaster } from "./components/ui/sonner"
+import { currentLanguage } from "./i18n"
 import { ORGANIZATION_HEADER, session } from "./lib/session"
 import "./index.css"
+import "./brand.css"
 import { routeTree } from "./routeTree.gen"
 
 client.setConfig({
@@ -20,20 +22,21 @@ client.setConfig({
   auth: () => session.accessToken() || "",
 })
 
-// Keelson: every request carries the active organization; the backend checks the membership.
+// Keelson: every request carries the active organization (the backend checks the membership)
+// and the language of the interface (used when the user has no saved preference).
 client.instance.interceptors.request.use((config) => {
   const organizationId = session.activeOrganization()
   if (organizationId) {
     config.headers.set(ORGANIZATION_HEADER, organizationId)
   }
+  config.headers.set("Accept-Language", currentLanguage())
   return config
 })
 
+// Keelson: only 401 ends the session. A 403 is a missing role or scope in the active
+// organization (upstream signed the user out on 403 too).
 const handleApiError = (error: Error) => {
-  if (
-    error instanceof AxiosError &&
-    [401, 403].includes(error.response?.status ?? 0)
-  ) {
+  if (error instanceof AxiosError && error.response?.status === 401) {
     session.signOut()
     window.location.href = "/login"
   }
@@ -46,6 +49,8 @@ const queryClient = new QueryClient({
     onError: handleApiError,
   }),
 })
+
+document.documentElement.lang = currentLanguage()
 
 const router = createRouter({ routeTree })
 declare module "@tanstack/react-router" {

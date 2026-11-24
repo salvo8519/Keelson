@@ -30,6 +30,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { t } from "@/i18n"
 
 const dataTableFeatures = tableFeatures({
   rowPaginationFeature,
@@ -91,7 +92,7 @@ export function DataTable<TData extends RowData>({
                 colSpan={columns.length}
                 className="h-32 text-center text-muted-foreground"
               >
-                No results found.
+                {t("No results found.")}
               </TableCell>
             </TableRow>
           )}
@@ -117,7 +118,9 @@ export function DataTable<TData extends RowData>({
               entries
             </div>
             <div className="flex items-center gap-x-2">
-              <p className="text-sm text-muted-foreground">Rows per page</p>
+              <p className="text-sm text-muted-foreground">
+                {t("Rows per page")}
+              </p>
               <Select
                 value={`${table.state.pagination.pageSize}`}
                 onValueChange={(value) => {
@@ -140,14 +143,10 @@ export function DataTable<TData extends RowData>({
 
           <div className="flex items-center gap-x-6">
             <div className="flex items-center gap-x-1 text-sm text-muted-foreground">
-              <span>Page</span>
-              <span className="font-medium text-foreground">
-                {table.state.pagination.pageIndex + 1}
-              </span>
-              <span>of</span>
-              <span className="font-medium text-foreground">
-                {table.getPageCount()}
-              </span>
+              {t("Page {{page}} of {{pages}}", {
+                page: table.state.pagination.pageIndex + 1,
+                pages: table.getPageCount(),
+              })}
             </div>
 
             <div className="flex items-center gap-x-1">
@@ -158,7 +157,7 @@ export function DataTable<TData extends RowData>({
                 onClick={() => table.setPageIndex(0)}
                 disabled={!table.getCanPreviousPage()}
               >
-                <span className="sr-only">Go to first page</span>
+                <span className="sr-only">{t("Go to first page")}</span>
                 <ChevronsLeft className="h-4 w-4" />
               </Button>
               <Button
@@ -168,7 +167,7 @@ export function DataTable<TData extends RowData>({
                 onClick={() => table.previousPage()}
                 disabled={!table.getCanPreviousPage()}
               >
-                <span className="sr-only">Go to previous page</span>
+                <span className="sr-only">{t("Go to previous page")}</span>
                 <ChevronLeft className="h-4 w-4" />
               </Button>
               <Button
@@ -178,7 +177,7 @@ export function DataTable<TData extends RowData>({
                 onClick={() => table.nextPage()}
                 disabled={!table.getCanNextPage()}
               >
-                <span className="sr-only">Go to next page</span>
+                <span className="sr-only">{t("Go to next page")}</span>
                 <ChevronRight className="h-4 w-4" />
               </Button>
               <Button
@@ -188,7 +187,7 @@ export function DataTable<TData extends RowData>({
                 onClick={() => table.setPageIndex(table.getPageCount() - 1)}
                 disabled={!table.getCanNextPage()}
               >
-                <span className="sr-only">Go to last page</span>
+                <span className="sr-only">{t("Go to last page")}</span>
                 <ChevronsRight className="h-4 w-4" />
               </Button>
             </div>

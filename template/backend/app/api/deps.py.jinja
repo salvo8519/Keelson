@@ -9,6 +9,8 @@ Dependency injection factories for services, repositories, and authentication.
 
 from typing import Annotated
 
+from app.core.i18n import LanguageSource, set_language
+
 from fastapi import Depends
 {%- endif %}
 {%- if enable_teams %}
@@ -179,17 +181,6 @@ RAGSyncSvc = Annotated[RAGSyncService, Depends(get_rag_sync_service)]
 SyncSourceSvc = Annotated[SyncSourceService, Depends(get_sync_source_service)]
 {%- endif %}
 
-{%- if enable_rag and enable_redis %}
-from app.services.rag_status import RAGStatusService
-
-
-def get_rag_status_service() -> RAGStatusService:
-    """Create RAGStatusService instance (no DB)."""
-    return RAGStatusService()
-
-
-RAGStatusSvc = Annotated[RAGStatusService, Depends(get_rag_status_service)]
-{%- endif %}
 
 {%- if enable_teams and enable_rag and use_jwt %}
 from app.services.knowledge_base import KnowledgeBaseService
@@ -327,6 +318,8 @@ async def get_current_user(
     if not user.is_active:
         raise AuthenticationError(message="User account is disabled")
 
+    # Keelson: the user's language wins over the organization's and the header's.
+    set_language(getattr(user, "locale", None), LanguageSource.USER)
     return user
 {%- endif %}
 
@@ -422,6 +415,7 @@ async def get_active_organization(
 {%- if use_postgresql %}
         await bind_organization(db, org.id)
 {%- endif %}
+        set_language(getattr(org, "default_locale", None), LanguageSource.ORGANIZATION)
         return org
 
     membership = await member_repo.get(db, organization_id=x_organization_id, user_id=user.id)
@@ -436,10 +430,27 @@ async def get_active_organization(
 {%- if use_postgresql %}
     await bind_organization(db, org.id)
 {%- endif %}
+    set_language(getattr(org, "default_locale", None), LanguageSource.ORGANIZATION)
     return org
 
 
 ActiveOrg = Annotated[Organization, Depends(get_active_organization)]
+
+{%- if enable_rag and enable_redis %}
+from app.services.rag_status import RAGStatusService
+
+
+def get_rag_status_service(redis: Redis, org: ActiveOrg) -> RAGStatusService:
+    """Keelson: the ingestion events of the active organization, on the shared Redis client.
+
+    Upstream built the service without its client (TypeError on every call) and without
+    authentication, on a channel shared by all organizations.
+    """
+    return RAGStatusService(redis.raw, org.id)
+
+
+RAGStatusSvc = Annotated[RAGStatusService, Depends(get_rag_status_service)]
+{%- endif %}
 
 
 

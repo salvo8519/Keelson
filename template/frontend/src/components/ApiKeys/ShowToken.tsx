@@ -9,6 +9,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard"
+import { t } from "@/i18n"
 
 interface ShowTokenProps {
   token: string | null
@@ -21,10 +22,11 @@ export function ShowToken({ token, onClose }: ShowTokenProps) {
     <Dialog open={token !== null} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Store this key now</DialogTitle>
+          <DialogTitle>{t("Store this key now")}</DialogTitle>
           <DialogDescription>
-            This is the only time the key is shown. Send it in the X-API-Key
-            header.
+            {t(
+              "This is the only time the key is shown. Send it in the X-API-Key header.",
+            )}
           </DialogDescription>
         </DialogHeader>
         <code
@@ -35,9 +37,9 @@ export function ShowToken({ token, onClose }: ShowTokenProps) {
         </code>
         <DialogFooter>
           <Button variant="outline" onClick={() => token && copy(token)}>
-            {copied ? "Copied" : "Copy"}
+            {copied ? t("Copied") : t("Copy")}
           </Button>
-          <Button onClick={onClose}>Done</Button>
+          <Button onClick={onClose}>{t("Done")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

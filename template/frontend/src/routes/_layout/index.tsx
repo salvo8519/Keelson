@@ -1,13 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router"
-
+import { BRAND_NAME } from "@/brand"
 import useAuth from "@/hooks/useAuth"
+import { t } from "@/i18n"
 
 export const Route = createFileRoute("/_layout/")({
   component: Dashboard,
   head: () => ({
     meta: [
       {
-        title: "Dashboard - FastAPI Template",
+        title: `${t("Dashboard")} - ${BRAND_NAME}`,
       },
     ],
   }),
@@ -23,7 +24,7 @@ function Dashboard() {
           Hi, {currentUser?.full_name || currentUser?.email}
         </h1>
         <p className="text-muted-foreground">
-          Welcome back, nice to see you again!!!
+          {t("Welcome back, nice to see you again!!!")}
         </p>
       </div>
     </div>

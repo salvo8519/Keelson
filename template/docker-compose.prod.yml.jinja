@@ -140,11 +140,6 @@ services:
 {%- if use_chromadb %}
       - chroma_data:/app/chroma_data
 {%- endif %}
-{%- if enable_email %}
-      # email/templates.py reads pre-compiled HTML/text from /app/emails/compiled.
-      # Build context is ./backend so the dir isn't in the image — mount it.
-      - ./emails:/app/emails:ro
-{%- endif %}
     env_file:
       - ./backend/.env
     environment:
@@ -381,9 +376,6 @@ services:
 {%- if use_chromadb %}
       - chroma_data:/app/chroma_data
 {%- endif %}
-{%- if enable_email %}
-      - ./emails:/app/emails:ro
-{%- endif %}
     command: celery -A app.worker.celery_app worker --loglevel=warning --concurrency=4
     env_file:
       - ./backend/.env
@@ -516,9 +508,6 @@ services:
       - media_data:/app/media
 {%- if use_chromadb %}
       - chroma_data:/app/chroma_data
-{%- endif %}
-{%- if enable_email %}
-      - ./emails:/app/emails:ro
 {%- endif %}
     command: taskiq worker app.worker.taskiq_worker:broker --workers 4
     env_file:

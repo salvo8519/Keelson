@@ -9,6 +9,18 @@ from pydantic import EmailStr, Field, field_validator
 from app.schemas.base import BaseSchema, TimestampSchema
 
 
+def _supported_locale(value: str | None) -> str | None:
+    """Keelson: a language code accepted by the API (app/core/i18n.py), or ValueError."""
+    if value is None:
+        return None
+    from app.core.i18n import SUPPORTED_LANGUAGES, supported
+
+    code = supported(value)
+    if code is None:
+        raise ValueError(f"unsupported language; use one of: {', '.join(SUPPORTED_LANGUAGES)}")
+    return code
+
+
 class UserRole(StrEnum):
     """User role enumeration for API schemas."""
 
@@ -68,11 +80,19 @@ class UserUpdateMe(BaseSchema):
         default=None,
         description="Set to a timestamp to mark onboarding complete; null to reset.",
     )
+    locale: str | None = Field(
+        default=None, description="Preferred language, one of the supported languages."
+    )
 
     @field_validator("email")
     @classmethod
     def normalize_email(cls, v: str | None) -> str | None:
         return v.lower() if v is not None else None
+
+    @field_validator("locale")
+    @classmethod
+    def supported_locale(cls, v: str | None) -> str | None:
+        return _supported_locale(v)
 
 
 class UpdatePassword(BaseSchema):
@@ -89,6 +109,7 @@ class UserRead(UserBase, TimestampSchema):
     role: UserRole = UserRole.USER
     avatar_url: str | None = None
     onboarding_completed_at: datetime | None = None
+    locale: str | None = None
 
 
 class UserInDB(UserRead):

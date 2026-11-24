@@ -1,4 +1,4 @@
-<!-- i18n source: README.md source_hash: b71022c16d76 -->
+<!-- i18n source: README.md source_hash: 787bb395d46b -->
 <p align="center">
   <img src="docs/_shared/assets/brand/mark.svg" alt="Keelson" width="96">
 </p>
@@ -39,10 +39,15 @@ programmazione.
   un'organizzazione non è isolata.
 - **API key per gli altri sistemi.** Per organizzazione, con scope, scadenza, rotazione con
   periodo di grazia, revoca, limiti di frequenza e audit; conservate solo come hash con chiave.
-- **Difetti corretti all'import.** L'audit del codice importato ha trovato e corretto un import
-  circolare che bloccava all'avvio i progetti con Taskiq, uno scheduler mancante su Kubernetes
-  e un endpoint del profilo che cambiava la password senza quella attuale, ciascuno con un test
-  di regressione.
+- **Inglese e italiano, da un capo all'altro.** Gli errori delle API sono Problem Details
+  (RFC 9457) nella lingua dell'utente, dell'organizzazione o della richiesta; le email seguono
+  la lingua del destinatario; l'interfaccia ha un selettore di lingua. La CI fallisce su
+  qualsiasi testo non tradotto.
+- **Difetti corretti all'import.** L'audit del codice importato ha trovato e corretto, ciascuno
+  con un test di regressione: un import circolare che bloccava all'avvio i progetti con Taskiq,
+  uno scheduler mancante su Kubernetes, un endpoint del profilo che cambiava la password senza
+  quella attuale, uno stream senza autenticazione che esponeva i nomi dei file di tutte le
+  organizzazioni e le email che fuori da Docker Compose non partivano mai.
 - **Pensato per gli agenti.** Istruzioni, ruoli e skill di processo, più le skill ufficiali di
   FastAPI, Pydantic, LangChain, Qdrant e dello stack React, scelte in base alle risposte e
   fissate a una versione.

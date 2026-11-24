@@ -44,7 +44,7 @@ from app.core.logfire_setup import instrument_pydantic_ai
 {%- endif %}
 {%- endif %}
 from app.core.logging import setup_logging
-from app.core.middleware import RequestIDMiddleware
+from app.core.middleware import LanguageMiddleware, RequestIDMiddleware
 
 {%- if enable_deep_research %}
 from app.db.todo_pool import close_todo_pool, init_todo_pool
@@ -464,6 +464,7 @@ def create_app() -> FastAPI:
     instrument_app(app)
 {%- endif %}
 
+    app.add_middleware(LanguageMiddleware)
     app.add_middleware(RequestIDMiddleware)
 
     register_exception_handlers(app)

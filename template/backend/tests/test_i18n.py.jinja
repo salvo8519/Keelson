@@ -1,0 +1,155 @@
+"""Languages of API messages, Problem Details errors and emails (Keelson)."""
+{%- if enable_email %}
+
+import re
+from datetime import timedelta
+{%- endif %}
+
+import pytest
+from httpx import ASGITransport, AsyncClient
+
+from app.core import i18n
+from app.core.config import settings
+from app.core.i18n import LanguageSource, negotiate, set_language
+from app.core.i18n_catalog import extract, untranslated
+from app.main import app
+{%- if enable_email %}
+from app.services.email.providers.base import EmailMessage, SendResult
+from app.services.email.service import EmailKey, EmailService, duration_text
+from app.services.email.templates import _DIST_DIR, render_email, template_path
+{%- endif %}
+
+OTHER_LANGUAGES = [language for language in i18n.SUPPORTED_LANGUAGES if language != "en"]
+
+
+@pytest.mark.parametrize(
+    ("header", "expected"),
+    [
+        (None, None),
+        ("", None),
+        ("en-US,en;q=0.9", "en"),
+        ("de-DE", None),
+        ("de;q=1.0, en;q=0.5", "en"),
+        ("fr", None),
+    ],
+)
+def test_negotiate(header: str | None, expected: str | None) -> None:
+    assert negotiate(header) == expected
+
+
+@pytest.mark.skipif(not OTHER_LANGUAGES, reason="English only")
+def test_negotiate_prefers_the_highest_quality() -> None:
+    other = OTHER_LANGUAGES[0]
+    assert negotiate(f"en;q=0.4, {other};q=0.8") == other
+    assert negotiate(f"{other}-XX") == other
+
+
+def test_a_stronger_source_wins() -> None:
+    i18n.reset_language()
+    for language, source, expected in [
+        ("en", LanguageSource.HEADER, "en"),
+        (*(OTHER_LANGUAGES[:1] or ["en"]), LanguageSource.USER, (OTHER_LANGUAGES[:1] or ["en"])[0]),
+        ("en", LanguageSource.ORGANIZATION, (OTHER_LANGUAGES[:1] or ["en"])[0]),
+        ("xx", LanguageSource.USER, (OTHER_LANGUAGES[:1] or ["en"])[0]),
+    ]:
+        set_language(language, source)
+        assert i18n.current_language() == expected
+    i18n.reset_language()
+
+
+def test_every_message_is_translated() -> None:
+    """A new error message needs its translations: run `make i18n-extract` and translate."""
+    assert untranslated(extract()) == {}
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("language", ["en", *OTHER_LANGUAGES])
+async def test_errors_are_problem_details_in_the_requested_language(language: str) -> None:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(
+            f"{settings.API_V1_STR}/users/me", headers={"Accept-Language": language}
+        )
+    assert response.status_code == 401
+    assert response.headers["content-type"].startswith("application/problem+json")
+    assert response.headers["content-language"] == language
+    body = response.json()
+    assert body["status"] == 401
+    assert body["detail"] == i18n.gettext("Not authenticated", language)
+    assert body["title"] == i18n.gettext("Unauthorized", language)
+    if language != "en":
+        assert body["detail"] != "Not authenticated"
+{%- if enable_email %}
+
+
+# Emails ------------------------------------------------------------------------------------
+
+PLACEHOLDER = re.compile(r"\[\[\w+\]\]")
+# Templates of features outside the Keelson profile (billing, credits) are not translated.
+TRANSLATED_EMAILS = [
+    EmailKey.WELCOME,
+    EmailKey.EMAIL_VERIFICATION,
+    EmailKey.MAGIC_LINK,
+    EmailKey.PASSWORD_RESET,
+    EmailKey.INVITATION,
+    EmailKey.NEWSLETTER_WELCOME,
+]
+
+
+@pytest.mark.parametrize("language", OTHER_LANGUAGES)
+@pytest.mark.parametrize("key", TRANSLATED_EMAILS)
+@pytest.mark.parametrize("ext", ["html", "txt"])
+def test_emails_are_translated_with_the_same_placeholders(language: str, key: EmailKey, ext: str) -> None:
+    english = (_DIST_DIR / f"{key.value}.{ext}").read_text(encoding="utf-8")
+    translated_path = _DIST_DIR / language / f"{key.value}.{ext}"
+    assert translated_path.is_file(), f"missing translation {translated_path}"
+    translated = translated_path.read_text(encoding="utf-8")
+    assert set(PLACEHOLDER.findall(translated)) == set(PLACEHOLDER.findall(english))
+    if ext == "txt":
+        assert translated.startswith("Subject: ")
+
+
+def test_untranslated_emails_fall_back_to_english() -> None:
+    assert template_path("welcome", "txt", "xx") == _DIST_DIR / "welcome.txt"
+
+
+@pytest.mark.parametrize("language", ["en", *OTHER_LANGUAGES])
+def test_rendered_email_has_no_placeholder_left(language: str) -> None:
+    subject, html, text = render_email(
+        EmailKey.MAGIC_LINK.value,
+        {"name": "Ada", "magic_url": "https://example.com/m", "expires_in": "15", "app_name": "App"},
+        language,
+    )
+    for part in (subject, html, text):
+        assert "[[" not in part
+
+
+@pytest.mark.parametrize(
+    ("duration", "expected"),
+    [(timedelta(hours=1), "1 hour"), (timedelta(hours=2), "2 hours"), (timedelta(minutes=15), "15 minutes")],
+)
+def test_duration_text(duration: timedelta, expected: str) -> None:
+    assert duration_text(duration, "en") == expected
+    for language in OTHER_LANGUAGES:
+        assert duration_text(duration, language) != expected
+
+
+class _Recorder:
+    def __init__(self) -> None:
+        self.messages: list[EmailMessage] = []
+
+    async def send(self, message: EmailMessage) -> SendResult:
+        self.messages.append(message)
+        return SendResult(provider_message_id="test", accepted=True)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("language", ["en", *OTHER_LANGUAGES])
+async def test_magic_link_email_uses_its_template_and_the_recipient_language(language: str) -> None:
+    provider = _Recorder()
+    service = EmailService(provider=provider)
+    await service.send_magic_link(to="ada@example.com", name="Ada", magic_url="https://example.com/m", language=language)
+    (message,) = provider.messages
+    assert "https://example.com/m" in message.html
+    assert EmailKey.MAGIC_LINK.value in message.tags
+    assert template_path(EmailKey.MAGIC_LINK.value, "html", language).read_text(encoding="utf-8").split("[[")[0] in message.html
+{%- endif %}

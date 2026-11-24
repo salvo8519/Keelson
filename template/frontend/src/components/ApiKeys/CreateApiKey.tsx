@@ -30,11 +30,17 @@ import {
 import { Input } from "@/components/ui/input"
 import { LoadingButton } from "@/components/ui/loading-button"
 import useCustomToast from "@/hooks/useCustomToast"
+import { t } from "@/i18n"
 import { handleError } from "@/utils"
 
 const formSchema = z.object({
-  name: z.string().min(1, { message: "Name is required" }).max(100),
-  scopes: z.array(z.string()).min(1, { message: "Choose at least one scope" }),
+  name: z
+    .string()
+    .min(1, { message: t("Name is required") })
+    .max(100),
+  scopes: z
+    .array(z.string())
+    .min(1, { message: t("Choose at least one scope") }),
   expires_on: z.string().optional(),
 })
 
@@ -85,14 +91,14 @@ const CreateApiKey = ({
       <DialogTrigger asChild>
         <Button className="my-4">
           <Plus className="mr-2" />
-          New API key
+          {t("New API key")}
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>New API key</DialogTitle>
+          <DialogTitle>{t("New API key")}</DialogTitle>
           <DialogDescription>
-            The key acts on the active organization, within its scopes.
+            {t("The key acts on the active organization, within its scopes.")}
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -103,9 +109,9 @@ const CreateApiKey = ({
                 name="name"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Name</FormLabel>
+                    <FormLabel>{t("Name")}</FormLabel>
                     <FormControl>
-                      <Input placeholder="CI pipeline" {...field} />
+                      <Input placeholder={t("CI pipeline")} {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -116,7 +122,7 @@ const CreateApiKey = ({
                 name="scopes"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Scopes</FormLabel>
+                    <FormLabel>{t("Scopes")}</FormLabel>
                     {(scopes ?? []).map((scope) => (
                       <div
                         key={scope.name}
@@ -153,7 +159,7 @@ const CreateApiKey = ({
                 name="expires_on"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Expires on (optional)</FormLabel>
+                    <FormLabel>{t("Expires on (optional)")}</FormLabel>
                     <FormControl>
                       <Input type="date" {...field} />
                     </FormControl>
@@ -165,11 +171,11 @@ const CreateApiKey = ({
             <DialogFooter>
               <DialogClose asChild>
                 <Button variant="outline" disabled={mutation.isPending}>
-                  Cancel
+                  {t("Cancel")}
                 </Button>
               </DialogClose>
               <LoadingButton type="submit" loading={mutation.isPending}>
-                Create
+                {t("Create")}
               </LoadingButton>
             </DialogFooter>
           </form>
