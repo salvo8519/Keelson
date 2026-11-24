@@ -1,0 +1,123 @@
+{%- if enable_teams and use_api_key and use_postgresql %}
+"""API keys (Keelson): format, hashing, scopes and the management routes."""
+
+from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock
+from uuid import uuid4
+
+import pytest
+from httpx import ASGITransport, AsyncClient
+from pydantic import ValidationError
+
+from app.api import deps
+from app.core import api_keys
+from app.core.config import settings
+from app.main import app
+from app.schemas.api_key import ApiKeyCreate
+
+
+def test_token_round_trip() -> None:
+    prefix, secret, token = api_keys.generate()
+    assert token.startswith(api_keys.PREFIX_TAG)
+    assert api_keys.parse(token) == (prefix, secret)
+
+
+@pytest.mark.parametrize("token", ["", "key_short.secret", "nope_abcdefghijkl.secret", "key_abcdefghijkl."])
+def test_malformed_tokens_are_rejected(token: str) -> None:
+    assert api_keys.parse(token) is None
+
+
+def test_secret_is_stored_as_keyed_hash() -> None:
+    _, secret, _ = api_keys.generate()
+    stored = api_keys.hash_secret(secret, "server-key")
+    assert secret not in stored
+    assert api_keys.secret_matches(secret, stored, "server-key")
+    assert not api_keys.secret_matches(secret, stored, "another-server-key")
+    assert not api_keys.secret_matches(secret + "x", stored, "server-key")
+
+
+def test_unknown_scopes_are_refused() -> None:
+    with pytest.raises(ValidationError, match="unknown scopes"):
+        ApiKeyCreate(name="ci", scopes=["conversations:read", "everything"])
+    assert ApiKeyCreate(name="ci", scopes=["agent:run", "agent:run"]).scopes == ["agent:run"]
+
+
+def test_require_api_scopes_refuses_undeclared_scopes() -> None:
+    with pytest.raises(ValueError, match="unknown scopes"):
+        deps.require_api_scopes("not:declared")
+
+
+def _key(**fields):
+    now = datetime.now(UTC)
+    key = MagicMock()
+    key.id = uuid4()
+    key.name = "ci"
+    key.prefix = "key_abcdefghijkl"
+    key.scopes = ["agent:run"]
+    key.created_at = now
+    key.expires_at = None
+    key.last_used_at = None
+    key.revoked_at = None
+    key.replaced_by_id = None
+    for name, value in fields.items():
+        setattr(key, name, value)
+    return key
+
+
+@pytest.fixture
+async def admin_client():
+    org = MagicMock(id=uuid4())
+    user = MagicMock(id=uuid4())
+    service = MagicMock()
+    service.list_for_organization = AsyncMock(return_value=[_key()])
+    service.create = AsyncMock(return_value=(_key(), "key_abcdefghijkl.the-secret"))
+    service.revoke = AsyncMock(return_value=_key(revoked_at=datetime.now(UTC)))
+    require_admin = deps.RequireAdminPlus.__metadata__[0].dependency
+    app.dependency_overrides[require_admin] = lambda: org
+    app.dependency_overrides[deps.get_current_user] = lambda: user
+    app.dependency_overrides[deps.get_api_key_service] = lambda: service
+    app.dependency_overrides[deps.get_db_session] = lambda: MagicMock()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        yield client, service, org, user
+    app.dependency_overrides.clear()
+
+
+@pytest.mark.anyio
+async def test_token_is_returned_once_at_creation(admin_client) -> None:
+    client, service, org, user = admin_client
+    created = await client.post(
+        f"{settings.API_V1_STR}/api-keys", json={"name": "ci", "scopes": ["agent:run"]}
+    )
+    assert created.status_code == 201
+    assert created.json()["token"] == "key_abcdefghijkl.the-secret"
+    listed = await client.get(f"{settings.API_V1_STR}/api-keys")
+    assert listed.status_code == 200
+    body = listed.text
+    assert "token" not in body and "secret" not in body
+
+
+@pytest.mark.anyio
+async def test_revoke(admin_client) -> None:
+    client, service, org, user = admin_client
+    key_id = uuid4()
+    response = await client.delete(f"{settings.API_V1_STR}/api-keys/{key_id}")
+    assert response.status_code == 204
+    service.revoke.assert_awaited_once_with(organization_id=org.id, key_id=key_id, user_id=user.id)
+
+
+@pytest.mark.anyio
+async def test_rotation_grace_is_bounded(admin_client) -> None:
+    client, *_ = admin_client
+    too_long = int(api_keys.MAX_ROTATION_GRACE / timedelta(minutes=1)) + 1
+    response = await client.post(
+        f"{settings.API_V1_STR}/api-keys/{uuid4()}/rotate", json={"grace_minutes": too_long}
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_introspect_requires_a_key() -> None:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(f"{settings.API_V1_STR}/api-keys/introspect")
+    assert response.status_code == 401
+{%- endif %}

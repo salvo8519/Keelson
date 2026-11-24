@@ -50,6 +50,10 @@ from app.db.models.channel_session import ChannelSession
 from app.db.models.organization import Invitation, Organization, OrganizationMember
 from app.db.models.audit_log import AppAdminAuditLog
 {%- endif %}
+{%- if enable_teams and use_postgresql %}
+{%- set _ = models.append("ApiKey") %}
+from app.db.models.api_key import ApiKey
+{%- endif %}
 {%- if enable_teams and enable_rag and use_jwt %}
 {%- set _ = models.append("KnowledgeBase") %}
 from app.db.models.knowledge_base import KnowledgeBase

@@ -242,11 +242,14 @@ if not enable_web_fetch and use_frontend:
     remove_file(os.path.join(frontend_src, "components", "chat", "tool-results", "fetch-url.tsx"))
 
 # Self-contained HTML demo export (Vite single-file bundle + exporter script).
-# Only meaningful with a frontend to bundle; drop everything otherwise. The
-# scripts/ dir exists solely for this exporter, so remove it wholesale.
+# Only meaningful with a frontend to bundle; drop everything otherwise.
+# Keelson: scripts/ also holds Keelson tooling (agent_skills.py, generate-client.sh), so only
+# the exporter is removed, not the folder.
 if not (enable_demo_export and use_frontend):
     remove_dir(os.path.join(os.getcwd(), "frontend", "demo-export"))
-    remove_dir(os.path.join(os.getcwd(), "scripts"))
+    remove_file(os.path.join(os.getcwd(), "scripts", "export_demo_html.py"))
+if not use_frontend:
+    remove_file(os.path.join(os.getcwd(), "scripts", "generate-client.sh"))
 
 if not enable_subagents and use_frontend:
     frontend_src = os.path.join(os.getcwd(), "frontend", "src")
@@ -541,6 +544,9 @@ if not (enable_teams and use_postgresql):
     remove_file(os.path.join(os.getcwd(), "backend", "alembic", "versions",
                              "k0001_tenant_row_level_security.py"))
     remove_file(os.path.join(os.getcwd(), "backend", "tests", "test_tenant_rls.py"))
+    remove_file(os.path.join(os.getcwd(), "backend", "alembic", "versions", "k0002_api_keys.py"))
+    for name in ("test_api_keys.py", "test_api_keys_postgres.py"):
+        remove_file(os.path.join(os.getcwd(), "backend", "tests", name))
 
 # Scan all .py files under backend/app — catches any template that rendered to
 # a stub docstring because its feature gate was disabled.

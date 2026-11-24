@@ -40,6 +40,7 @@ class RateLimitCategory:
     AUTH = "auth"
     READ_API = "read_api"
     WEBHOOK = "webhook"
+    API_KEY = "api_key"  # Keelson: requests authenticated by an organization API key
 
 
 # Default fallback limits (used when plan features don't define limits)
@@ -48,6 +49,8 @@ DEFAULT_RATE_LIMITS: dict[str, RateLimitRule] = {
     RateLimitCategory.RAG_UPLOAD: RateLimitRule(per_user=5, period_seconds=86400),
     RateLimitCategory.AUTH: RateLimitRule(per_ip=5, ip_period_seconds=900),
     RateLimitCategory.READ_API: RateLimitRule(per_user=300, period_seconds=60),
+    # Keelson: per key (the "user" bucket holds the key id) and per organization.
+    RateLimitCategory.API_KEY: RateLimitRule(per_user=600, period_seconds=60, per_org=3000),
 }
 
 {%- else %}

@@ -1,0 +1,153 @@
+{%- if enable_teams and use_postgresql %}
+"""API keys of organizations: lifecycle and authentication (Keelson).
+
+Creation, rotation and revocation are recorded in the audit log, and so are refused uses of a
+known key (wrong secret, revoked, expired, missing scope).
+"""
+
+import logging
+from datetime import UTC, datetime, timedelta
+from uuid import UUID
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core import api_keys
+from app.core.audit import record_audit
+from app.core.config import settings
+from app.core.exceptions import AuthenticationError, BadRequestError, NotFoundError
+from app.db.models.api_key import ApiKey
+from app.repositories import api_key_repo
+from app.schemas.api_key import ApiKeyCreate
+
+logger = logging.getLogger(__name__)
+
+AUDIT_TARGET = "api_key"
+
+
+def _now() -> datetime:
+    return datetime.now(UTC)
+
+
+class ApiKeyService:
+    def __init__(self, db: AsyncSession) -> None:
+        self.db = db
+
+    async def _audit(
+        self, key: ApiKey, action: str, actor_user_id: UUID | None, **details: object
+    ) -> None:
+        actor = actor_user_id or key.created_by_user_id
+        if actor is None:
+            logger.warning("api_key_event_without_actor", extra={"action": action, "key": key.prefix})
+            return
+        await record_audit(
+            self.db,
+            actor_user_id=actor,
+            action=f"api_key.{action}",
+            organization_id=key.organization_id,
+            target_type=AUDIT_TARGET,
+            target_id=str(key.id),
+            details={"prefix": key.prefix, **details},
+        )
+
+    async def _issue(
+        self,
+        *,
+        organization_id: UUID,
+        user_id: UUID,
+        name: str,
+        scopes: list[str],
+        expires_at: datetime | None,
+    ) -> tuple[ApiKey, str]:
+        prefix, secret, token = api_keys.generate()
+        key = await api_key_repo.create(
+            self.db,
+            organization_id=organization_id,
+            name=name,
+            prefix=prefix,
+            secret_hash=api_keys.hash_secret(secret, settings.SECRET_KEY),
+            scopes=scopes,
+            created_by_user_id=user_id,
+            expires_at=expires_at,
+        )
+        return key, token
+
+    async def create(
+        self, *, organization_id: UUID, user_id: UUID, data: ApiKeyCreate
+    ) -> tuple[ApiKey, str]:
+        if data.expires_at is not None and data.expires_at <= _now():
+            raise BadRequestError(message="expires_at must be in the future")
+        key, token = await self._issue(
+            organization_id=organization_id,
+            user_id=user_id,
+            name=data.name,
+            scopes=data.scopes,
+            expires_at=data.expires_at,
+        )
+        await self._audit(key, "created", user_id, scopes=key.scopes)
+        return key, token
+
+    async def list_for_organization(self, organization_id: UUID) -> list[ApiKey]:
+        return await api_key_repo.list_for_org(self.db, organization_id)
+
+    async def _get(self, organization_id: UUID, key_id: UUID) -> ApiKey:
+        key = await api_key_repo.get_for_org(
+            self.db, organization_id=organization_id, key_id=key_id
+        )
+        if key is None:
+            raise NotFoundError(message="API key not found", details={"key_id": str(key_id)})
+        return key
+
+    async def revoke(self, *, organization_id: UUID, key_id: UUID, user_id: UUID) -> ApiKey:
+        key = await self._get(organization_id, key_id)
+        if key.revoked_at is not None and key.revoked_at <= _now():
+            return key
+        key = await api_key_repo.update(self.db, key, revoked_at=_now())
+        await self._audit(key, "revoked", user_id)
+        return key
+
+    async def rotate(
+        self, *, organization_id: UUID, key_id: UUID, user_id: UUID, grace: timedelta
+    ) -> tuple[ApiKey, str]:
+        """Issue a replacement with the same name and scopes; the old key ends after ``grace``."""
+        old = await self._get(organization_id, key_id)
+        now = _now()
+        if not old.usable_at(now):
+            raise BadRequestError(message="A revoked or expired key cannot be rotated")
+        if old.replaced_by_id is not None:
+            raise BadRequestError(message="This key has already been rotated")
+        if grace > api_keys.MAX_ROTATION_GRACE:
+            raise BadRequestError(message="Grace period too long")
+        new, token = await self._issue(
+            organization_id=organization_id,
+            user_id=user_id,
+            name=old.name,
+            scopes=list(old.scopes),
+            expires_at=old.expires_at,
+        )
+        await api_key_repo.update(self.db, old, revoked_at=now + grace, replaced_by_id=new.id)
+        await self._audit(new, "rotated", user_id, previous=old.prefix, grace_seconds=int(grace.total_seconds()))
+        return new, token
+
+    async def authenticate(self, token: str) -> ApiKey:
+        """The key a token stands for, if it may be used now; AuthenticationError otherwise."""
+        parsed = api_keys.parse(token)
+        if parsed is None:
+            raise AuthenticationError(message="Invalid API key")
+        prefix, secret = parsed
+        key = await api_key_repo.get_by_prefix(self.db, prefix)
+        if key is None:
+            raise AuthenticationError(message="Invalid API key")
+        if not api_keys.secret_matches(secret, key.secret_hash, settings.SECRET_KEY):
+            await self._audit(key, "denied", None, reason="wrong secret")
+            raise AuthenticationError(message="Invalid API key")
+        now = _now()
+        if not key.usable_at(now):
+            await self._audit(key, "denied", None, reason="revoked or expired")
+            raise AuthenticationError(message="API key revoked or expired")
+        if key.last_used_at is None or now - key.last_used_at >= api_keys.LAST_USED_RESOLUTION:
+            key = await api_key_repo.update(self.db, key, last_used_at=now)
+        return key
+
+    async def record_scope_denial(self, key: ApiKey, missing: list[str]) -> None:
+        await self._audit(key, "denied", None, reason="missing scope", missing=missing)
+{%- endif %}

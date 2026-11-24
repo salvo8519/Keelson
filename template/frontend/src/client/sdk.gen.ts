@@ -2,7 +2,7 @@
 
 import { type Client, formDataBodySerializer, type Options as Options2, type TDataShape, urlSearchParamsBodySerializer } from './client';
 import { client } from './client.gen';
-import type { adminConversationsAdminGetConversationData, adminConversationsAdminGetConversationErrors, adminConversationsAdminGetConversationResponses, adminConversationsAdminListConversationsData, adminConversationsAdminListConversationsErrors, adminConversationsAdminListConversationsResponses, adminConversationsAdminSetDemoFlagData, adminConversationsAdminSetDemoFlagErrors, adminConversationsAdminSetDemoFlagResponses, adminRatingsExportRatingsData, adminRatingsExportRatingsErrors, adminRatingsExportRatingsResponses, adminRatingsGetRatingSummaryData, adminRatingsGetRatingSummaryErrors, adminRatingsGetRatingSummaryResponses, adminRatingsListRatingsAdminData, adminRatingsListRatingsAdminErrors, adminRatingsListRatingsAdminResponses, adminStatsGetAdminStatsData, adminStatsGetAdminStatsResponses, adminStatsListStripeEventsData, adminStatsListStripeEventsErrors, adminStatsListStripeEventsResponses, adminUsersDeleteUserData, adminUsersDeleteUserErrors, adminUsersDeleteUserResponses, adminUsersGetUserData, adminUsersGetUserErrors, adminUsersGetUserResponses, adminUsersImpersonateUserData, adminUsersImpersonateUserErrors, adminUsersImpersonateUserResponses, adminUsersListUsersData, adminUsersListUsersErrors, adminUsersListUsersResponses, adminUsersUpdateUserData, adminUsersUpdateUserErrors, adminUsersUpdateUserResponses, agentListModelsData, agentListModelsResponses, authConfirmPasswordResetData, authConfirmPasswordResetErrors, authConfirmPasswordResetResponses, authGetCurrentUserInfoData, authGetCurrentUserInfoResponses, authLoginData, authLoginErrors, authLoginResponses, authLogoutData, authLogoutErrors, authLogoutResponses, authRefreshTokenData, authRefreshTokenErrors, authRefreshTokenResponses, authRegisterData, authRegisterErrors, authRegisterResponses, authRequestMagicLinkData, authRequestMagicLinkErrors, authRequestMagicLinkResponses, authRequestPasswordResetData, authRequestPasswordResetErrors, authRequestPasswordResetResponses, authVerifyMagicLinkData, authVerifyMagicLinkErrors, authVerifyMagicLinkResponses, conversationsAddMessageData, conversationsAddMessageErrors, conversationsAddMessageResponses, conversationsArchiveConversationData, conversationsArchiveConversationErrors, conversationsArchiveConversationResponses, conversationsCreateConversationData, conversationsCreateConversationErrors, conversationsCreateConversationResponses, conversationsDeleteConversationData, conversationsDeleteConversationErrors, conversationsDeleteConversationResponses, conversationsExportConversationsData, conversationsExportConversationsResponses, conversationsGetConversationData, conversationsGetConversationErrors, conversationsGetConversationResponses, conversationsGetSharedConversationData, conversationsGetSharedConversationErrors, conversationsGetSharedConversationResponses, conversationsGetToolStatsData, conversationsGetToolStatsErrors, conversationsGetToolStatsResponses, conversationsListConversationsAdminData, conversationsListConversationsAdminErrors, conversationsListConversationsAdminResponses, conversationsListConversationsData, conversationsListConversationsErrors, conversationsListConversationsResponses, conversationsListMessagesData, conversationsListMessagesErrors, conversationsListMessagesResponses, conversationsListSharedWithMeData, conversationsListSharedWithMeErrors, conversationsListSharedWithMeResponses, conversationsListSharesData, conversationsListSharesErrors, conversationsListSharesResponses, conversationsRateMessageData, conversationsRateMessageErrors, conversationsRateMessageResponses, conversationsRemoveRatingData, conversationsRemoveRatingErrors, conversationsRemoveRatingResponses, conversationsRevokeShareData, conversationsRevokeShareErrors, conversationsRevokeShareResponses, conversationsShareConversationData, conversationsShareConversationErrors, conversationsShareConversationResponses, conversationsUpdateConversationData, conversationsUpdateConversationErrors, conversationsUpdateConversationResponses, conversationsUpdateKbSettingsData, conversationsUpdateKbSettingsErrors, conversationsUpdateKbSettingsResponses, demosGetDemoConversationData, demosGetDemoConversationErrors, demosGetDemoConversationResponses, demosListDemoConversationsData, demosListDemoConversationsErrors, demosListDemoConversationsResponses, filesDownloadFileData, filesDownloadFileErrors, filesDownloadFileResponses, filesGetFileInfoData, filesGetFileInfoErrors, filesGetFileInfoResponses, filesUploadFileData, filesUploadFileErrors, filesUploadFileResponses, healthHealthCheckData, healthHealthCheckResponses, healthLivenessProbeData, healthLivenessProbeResponses, healthReadinessCheckData, healthReadinessCheckResponses, healthReadinessProbeData, healthReadinessProbeResponses, invitationsAcceptInvitationData, invitationsAcceptInvitationErrors, invitationsAcceptInvitationResponses, invitationsCreateInvitationData, invitationsCreateInvitationErrors, invitationsCreateInvitationResponses, invitationsListInvitationsData, invitationsListInvitationsErrors, invitationsListInvitationsResponses, invitationsRevokeInvitationData, invitationsRevokeInvitationErrors, invitationsRevokeInvitationResponses, knowledgeBasesCloneKbSyncSourceData, knowledgeBasesCloneKbSyncSourceErrors, knowledgeBasesCloneKbSyncSourceResponses, knowledgeBasesCreateKbSyncSourceData, knowledgeBasesCreateKbSyncSourceErrors, knowledgeBasesCreateKbSyncSourceResponses, knowledgeBasesCreateKnowledgeBaseData, knowledgeBasesCreateKnowledgeBaseErrors, knowledgeBasesCreateKnowledgeBaseResponses, knowledgeBasesDeleteKbDocumentData, knowledgeBasesDeleteKbDocumentErrors, knowledgeBasesDeleteKbDocumentResponses, knowledgeBasesDeleteKbSyncSourceData, knowledgeBasesDeleteKbSyncSourceErrors, knowledgeBasesDeleteKbSyncSourceResponses, knowledgeBasesDeleteKnowledgeBaseData, knowledgeBasesDeleteKnowledgeBaseErrors, knowledgeBasesDeleteKnowledgeBaseResponses, knowledgeBasesDownloadKbDocumentData, knowledgeBasesDownloadKbDocumentErrors, knowledgeBasesDownloadKbDocumentResponses, knowledgeBasesGetKnowledgeBaseData, knowledgeBasesGetKnowledgeBaseErrors, knowledgeBasesGetKnowledgeBaseResponses, knowledgeBasesListKbConnectorsData, knowledgeBasesListKbConnectorsErrors, knowledgeBasesListKbConnectorsResponses, knowledgeBasesListKbDocumentsData, knowledgeBasesListKbDocumentsErrors, knowledgeBasesListKbDocumentsResponses, knowledgeBasesListKbSyncSourceLogsData, knowledgeBasesListKbSyncSourceLogsErrors, knowledgeBasesListKbSyncSourceLogsResponses, knowledgeBasesListKbSyncSourcesData, knowledgeBasesListKbSyncSourcesErrors, knowledgeBasesListKbSyncSourcesResponses, knowledgeBasesListKnowledgeBasesData, knowledgeBasesListKnowledgeBasesErrors, knowledgeBasesListKnowledgeBasesResponses, knowledgeBasesListOrgIntegrationsForKbData, knowledgeBasesListOrgIntegrationsForKbErrors, knowledgeBasesListOrgIntegrationsForKbResponses, knowledgeBasesTriggerKbSyncSourceData, knowledgeBasesTriggerKbSyncSourceErrors, knowledgeBasesTriggerKbSyncSourceResponses, knowledgeBasesUpdateKnowledgeBaseData, knowledgeBasesUpdateKnowledgeBaseErrors, knowledgeBasesUpdateKnowledgeBaseResponses, knowledgeBasesUploadKbDocumentData, knowledgeBasesUploadKbDocumentErrors, knowledgeBasesUploadKbDocumentResponses, membersLeaveOrganizationData, membersLeaveOrganizationErrors, membersLeaveOrganizationResponses, membersListMembersData, membersListMembersErrors, membersListMembersResponses, membersRemoveMemberData, membersRemoveMemberErrors, membersRemoveMemberResponses, membersTransferOwnershipData, membersTransferOwnershipErrors, membersTransferOwnershipResponses, membersUpdateMemberRoleData, membersUpdateMemberRoleErrors, membersUpdateMemberRoleResponses, meSlashCommandsCreateCustomCommandData, meSlashCommandsCreateCustomCommandErrors, meSlashCommandsCreateCustomCommandResponses, meSlashCommandsDeleteSlashCommandData, meSlashCommandsDeleteSlashCommandErrors, meSlashCommandsDeleteSlashCommandResponses, meSlashCommandsListSlashCommandsData, meSlashCommandsListSlashCommandsResponses, meSlashCommandsUpdateSlashCommandData, meSlashCommandsUpdateSlashCommandErrors, meSlashCommandsUpdateSlashCommandResponses, meSlashCommandsUpsertBuiltinOverrideData, meSlashCommandsUpsertBuiltinOverrideErrors, meSlashCommandsUpsertBuiltinOverrideResponses, organizationsCreateOrganizationData, organizationsCreateOrganizationErrors, organizationsCreateOrganizationResponses, organizationsDeleteOrganizationData, organizationsDeleteOrganizationErrors, organizationsDeleteOrganizationResponses, organizationsGetOrganizationAvatarData, organizationsGetOrganizationAvatarErrors, organizationsGetOrganizationAvatarResponses, organizationsGetOrganizationData, organizationsGetOrganizationErrors, organizationsGetOrganizationResponses, organizationsListOrganizationsData, organizationsListOrganizationsResponses, organizationsUpdateOrganizationData, organizationsUpdateOrganizationErrors, organizationsUpdateOrganizationResponses, organizationsUploadOrganizationAvatarData, organizationsUploadOrganizationAvatarErrors, organizationsUploadOrganizationAvatarResponses, orgIntegrationsCreateOrgIntegrationData, orgIntegrationsCreateOrgIntegrationErrors, orgIntegrationsCreateOrgIntegrationResponses, orgIntegrationsDeleteOrgIntegrationData, orgIntegrationsDeleteOrgIntegrationErrors, orgIntegrationsDeleteOrgIntegrationResponses, orgIntegrationsListOrgConnectorsData, orgIntegrationsListOrgConnectorsErrors, orgIntegrationsListOrgConnectorsResponses, orgIntegrationsListOrgIntegrationLogsData, orgIntegrationsListOrgIntegrationLogsErrors, orgIntegrationsListOrgIntegrationLogsResponses, orgIntegrationsListOrgIntegrationsData, orgIntegrationsListOrgIntegrationsErrors, orgIntegrationsListOrgIntegrationsResponses, orgIntegrationsTriggerOrgIntegrationData, orgIntegrationsTriggerOrgIntegrationErrors, orgIntegrationsTriggerOrgIntegrationResponses, ragCancelSyncData, ragCancelSyncErrors, ragCancelSyncResponses, ragCloneSyncSourceData, ragCloneSyncSourceErrors, ragCloneSyncSourceResponses, ragCreateCollectionData, ragCreateCollectionErrors, ragCreateCollectionResponses, ragCreateSyncSourceData, ragCreateSyncSourceErrors, ragCreateSyncSourceResponses, ragDeleteDocumentData, ragDeleteDocumentErrors, ragDeleteDocumentResponses, ragDeleteRagDocumentData, ragDeleteRagDocumentErrors, ragDeleteRagDocumentResponses, ragDeleteSyncSourceData, ragDeleteSyncSourceErrors, ragDeleteSyncSourceResponses, ragDownloadRagDocumentData, ragDownloadRagDocumentErrors, ragDownloadRagDocumentResponses, ragDropCollectionData, ragDropCollectionErrors, ragDropCollectionResponses, ragGetCollectionInfoData, ragGetCollectionInfoErrors, ragGetCollectionInfoResponses, ragGetSupportedFormatsEndpointData, ragGetSupportedFormatsEndpointResponses, ragIngestFileData, ragIngestFileErrors, ragIngestFileResponses, ragListCollectionsData, ragListCollectionsErrors, ragListCollectionsResponses, ragListConnectorsData, ragListConnectorsResponses, ragListDocumentsData, ragListDocumentsErrors, ragListDocumentsResponses, ragListRagDocumentsData, ragListRagDocumentsErrors, ragListRagDocumentsResponses, ragListSyncLogsData, ragListSyncLogsErrors, ragListSyncLogsResponses, ragListSyncSourcesData, ragListSyncSourcesErrors, ragListSyncSourcesResponses, ragRagStatusStreamData, ragRagStatusStreamResponses, ragRetryIngestionData, ragRetryIngestionErrors, ragRetryIngestionResponses, ragSearchDocumentsData, ragSearchDocumentsErrors, ragSearchDocumentsResponses, ragTriggerLocalSyncData, ragTriggerLocalSyncErrors, ragTriggerLocalSyncResponses, ragTriggerSyncSourceData, ragTriggerSyncSourceErrors, ragTriggerSyncSourceResponses, ragUpdateSyncSourceData, ragUpdateSyncSourceErrors, ragUpdateSyncSourceResponses, usersCreateUserData, usersCreateUserErrors, usersCreateUserResponses, usersDeleteCurrentUserData, usersDeleteCurrentUserResponses, usersDeleteUserByIdData, usersDeleteUserByIdErrors, usersDeleteUserByIdResponses, usersGetAvatarData, usersGetAvatarErrors, usersGetAvatarResponses, usersReadCurrentUserData, usersReadCurrentUserResponses, usersReadUserData, usersReadUserErrors, usersReadUserResponses, usersReadUsersData, usersReadUsersErrors, usersReadUsersResponses, usersUpdateCurrentUserData, usersUpdateCurrentUserErrors, usersUpdateCurrentUserPasswordData, usersUpdateCurrentUserPasswordErrors, usersUpdateCurrentUserPasswordResponses, usersUpdateCurrentUserResponses, usersUpdateUserByIdData, usersUpdateUserByIdErrors, usersUpdateUserByIdResponses, usersUploadAvatarData, usersUploadAvatarErrors, usersUploadAvatarResponses } from './types.gen';
+import type { adminConversationsAdminGetConversationData, adminConversationsAdminGetConversationErrors, adminConversationsAdminGetConversationResponses, adminConversationsAdminListConversationsData, adminConversationsAdminListConversationsErrors, adminConversationsAdminListConversationsResponses, adminConversationsAdminSetDemoFlagData, adminConversationsAdminSetDemoFlagErrors, adminConversationsAdminSetDemoFlagResponses, adminRatingsExportRatingsData, adminRatingsExportRatingsErrors, adminRatingsExportRatingsResponses, adminRatingsGetRatingSummaryData, adminRatingsGetRatingSummaryErrors, adminRatingsGetRatingSummaryResponses, adminRatingsListRatingsAdminData, adminRatingsListRatingsAdminErrors, adminRatingsListRatingsAdminResponses, adminStatsGetAdminStatsData, adminStatsGetAdminStatsResponses, adminStatsListStripeEventsData, adminStatsListStripeEventsErrors, adminStatsListStripeEventsResponses, adminUsersDeleteUserData, adminUsersDeleteUserErrors, adminUsersDeleteUserResponses, adminUsersGetUserData, adminUsersGetUserErrors, adminUsersGetUserResponses, adminUsersImpersonateUserData, adminUsersImpersonateUserErrors, adminUsersImpersonateUserResponses, adminUsersListUsersData, adminUsersListUsersErrors, adminUsersListUsersResponses, adminUsersUpdateUserData, adminUsersUpdateUserErrors, adminUsersUpdateUserResponses, agentListModelsData, agentListModelsResponses, apiKeysCreateApiKeyData, apiKeysCreateApiKeyErrors, apiKeysCreateApiKeyResponses, apiKeysIntrospectApiKeyData, apiKeysIntrospectApiKeyResponses, apiKeysListApiKeysData, apiKeysListApiKeysErrors, apiKeysListApiKeysResponses, apiKeysListScopesData, apiKeysListScopesResponses, apiKeysRevokeApiKeyData, apiKeysRevokeApiKeyErrors, apiKeysRevokeApiKeyResponses, apiKeysRotateApiKeyData, apiKeysRotateApiKeyErrors, apiKeysRotateApiKeyResponses, authConfirmPasswordResetData, authConfirmPasswordResetErrors, authConfirmPasswordResetResponses, authGetCurrentUserInfoData, authGetCurrentUserInfoResponses, authLoginData, authLoginErrors, authLoginResponses, authLogoutData, authLogoutErrors, authLogoutResponses, authRefreshTokenData, authRefreshTokenErrors, authRefreshTokenResponses, authRegisterData, authRegisterErrors, authRegisterResponses, authRequestMagicLinkData, authRequestMagicLinkErrors, authRequestMagicLinkResponses, authRequestPasswordResetData, authRequestPasswordResetErrors, authRequestPasswordResetResponses, authVerifyMagicLinkData, authVerifyMagicLinkErrors, authVerifyMagicLinkResponses, conversationsAddMessageData, conversationsAddMessageErrors, conversationsAddMessageResponses, conversationsArchiveConversationData, conversationsArchiveConversationErrors, conversationsArchiveConversationResponses, conversationsCreateConversationData, conversationsCreateConversationErrors, conversationsCreateConversationResponses, conversationsDeleteConversationData, conversationsDeleteConversationErrors, conversationsDeleteConversationResponses, conversationsExportConversationsData, conversationsExportConversationsResponses, conversationsGetConversationData, conversationsGetConversationErrors, conversationsGetConversationResponses, conversationsGetSharedConversationData, conversationsGetSharedConversationErrors, conversationsGetSharedConversationResponses, conversationsGetToolStatsData, conversationsGetToolStatsErrors, conversationsGetToolStatsResponses, conversationsListConversationsAdminData, conversationsListConversationsAdminErrors, conversationsListConversationsAdminResponses, conversationsListConversationsData, conversationsListConversationsErrors, conversationsListConversationsResponses, conversationsListMessagesData, conversationsListMessagesErrors, conversationsListMessagesResponses, conversationsListSharedWithMeData, conversationsListSharedWithMeErrors, conversationsListSharedWithMeResponses, conversationsListSharesData, conversationsListSharesErrors, conversationsListSharesResponses, conversationsRateMessageData, conversationsRateMessageErrors, conversationsRateMessageResponses, conversationsRemoveRatingData, conversationsRemoveRatingErrors, conversationsRemoveRatingResponses, conversationsRevokeShareData, conversationsRevokeShareErrors, conversationsRevokeShareResponses, conversationsShareConversationData, conversationsShareConversationErrors, conversationsShareConversationResponses, conversationsUpdateConversationData, conversationsUpdateConversationErrors, conversationsUpdateConversationResponses, conversationsUpdateKbSettingsData, conversationsUpdateKbSettingsErrors, conversationsUpdateKbSettingsResponses, demosGetDemoConversationData, demosGetDemoConversationErrors, demosGetDemoConversationResponses, demosListDemoConversationsData, demosListDemoConversationsErrors, demosListDemoConversationsResponses, filesDownloadFileData, filesDownloadFileErrors, filesDownloadFileResponses, filesGetFileInfoData, filesGetFileInfoErrors, filesGetFileInfoResponses, filesUploadFileData, filesUploadFileErrors, filesUploadFileResponses, healthHealthCheckData, healthHealthCheckResponses, healthLivenessProbeData, healthLivenessProbeResponses, healthReadinessCheckData, healthReadinessCheckResponses, healthReadinessProbeData, healthReadinessProbeResponses, invitationsAcceptInvitationData, invitationsAcceptInvitationErrors, invitationsAcceptInvitationResponses, invitationsCreateInvitationData, invitationsCreateInvitationErrors, invitationsCreateInvitationResponses, invitationsListInvitationsData, invitationsListInvitationsErrors, invitationsListInvitationsResponses, invitationsRevokeInvitationData, invitationsRevokeInvitationErrors, invitationsRevokeInvitationResponses, knowledgeBasesCloneKbSyncSourceData, knowledgeBasesCloneKbSyncSourceErrors, knowledgeBasesCloneKbSyncSourceResponses, knowledgeBasesCreateKbSyncSourceData, knowledgeBasesCreateKbSyncSourceErrors, knowledgeBasesCreateKbSyncSourceResponses, knowledgeBasesCreateKnowledgeBaseData, knowledgeBasesCreateKnowledgeBaseErrors, knowledgeBasesCreateKnowledgeBaseResponses, knowledgeBasesDeleteKbDocumentData, knowledgeBasesDeleteKbDocumentErrors, knowledgeBasesDeleteKbDocumentResponses, knowledgeBasesDeleteKbSyncSourceData, knowledgeBasesDeleteKbSyncSourceErrors, knowledgeBasesDeleteKbSyncSourceResponses, knowledgeBasesDeleteKnowledgeBaseData, knowledgeBasesDeleteKnowledgeBaseErrors, knowledgeBasesDeleteKnowledgeBaseResponses, knowledgeBasesDownloadKbDocumentData, knowledgeBasesDownloadKbDocumentErrors, knowledgeBasesDownloadKbDocumentResponses, knowledgeBasesGetKnowledgeBaseData, knowledgeBasesGetKnowledgeBaseErrors, knowledgeBasesGetKnowledgeBaseResponses, knowledgeBasesListKbConnectorsData, knowledgeBasesListKbConnectorsErrors, knowledgeBasesListKbConnectorsResponses, knowledgeBasesListKbDocumentsData, knowledgeBasesListKbDocumentsErrors, knowledgeBasesListKbDocumentsResponses, knowledgeBasesListKbSyncSourceLogsData, knowledgeBasesListKbSyncSourceLogsErrors, knowledgeBasesListKbSyncSourceLogsResponses, knowledgeBasesListKbSyncSourcesData, knowledgeBasesListKbSyncSourcesErrors, knowledgeBasesListKbSyncSourcesResponses, knowledgeBasesListKnowledgeBasesData, knowledgeBasesListKnowledgeBasesErrors, knowledgeBasesListKnowledgeBasesResponses, knowledgeBasesListOrgIntegrationsForKbData, knowledgeBasesListOrgIntegrationsForKbErrors, knowledgeBasesListOrgIntegrationsForKbResponses, knowledgeBasesTriggerKbSyncSourceData, knowledgeBasesTriggerKbSyncSourceErrors, knowledgeBasesTriggerKbSyncSourceResponses, knowledgeBasesUpdateKnowledgeBaseData, knowledgeBasesUpdateKnowledgeBaseErrors, knowledgeBasesUpdateKnowledgeBaseResponses, knowledgeBasesUploadKbDocumentData, knowledgeBasesUploadKbDocumentErrors, knowledgeBasesUploadKbDocumentResponses, membersLeaveOrganizationData, membersLeaveOrganizationErrors, membersLeaveOrganizationResponses, membersListMembersData, membersListMembersErrors, membersListMembersResponses, membersRemoveMemberData, membersRemoveMemberErrors, membersRemoveMemberResponses, membersTransferOwnershipData, membersTransferOwnershipErrors, membersTransferOwnershipResponses, membersUpdateMemberRoleData, membersUpdateMemberRoleErrors, membersUpdateMemberRoleResponses, meSlashCommandsCreateCustomCommandData, meSlashCommandsCreateCustomCommandErrors, meSlashCommandsCreateCustomCommandResponses, meSlashCommandsDeleteSlashCommandData, meSlashCommandsDeleteSlashCommandErrors, meSlashCommandsDeleteSlashCommandResponses, meSlashCommandsListSlashCommandsData, meSlashCommandsListSlashCommandsResponses, meSlashCommandsUpdateSlashCommandData, meSlashCommandsUpdateSlashCommandErrors, meSlashCommandsUpdateSlashCommandResponses, meSlashCommandsUpsertBuiltinOverrideData, meSlashCommandsUpsertBuiltinOverrideErrors, meSlashCommandsUpsertBuiltinOverrideResponses, organizationsCreateOrganizationData, organizationsCreateOrganizationErrors, organizationsCreateOrganizationResponses, organizationsDeleteOrganizationData, organizationsDeleteOrganizationErrors, organizationsDeleteOrganizationResponses, organizationsGetOrganizationAvatarData, organizationsGetOrganizationAvatarErrors, organizationsGetOrganizationAvatarResponses, organizationsGetOrganizationData, organizationsGetOrganizationErrors, organizationsGetOrganizationResponses, organizationsListOrganizationsData, organizationsListOrganizationsResponses, organizationsUpdateOrganizationData, organizationsUpdateOrganizationErrors, organizationsUpdateOrganizationResponses, organizationsUploadOrganizationAvatarData, organizationsUploadOrganizationAvatarErrors, organizationsUploadOrganizationAvatarResponses, orgIntegrationsCreateOrgIntegrationData, orgIntegrationsCreateOrgIntegrationErrors, orgIntegrationsCreateOrgIntegrationResponses, orgIntegrationsDeleteOrgIntegrationData, orgIntegrationsDeleteOrgIntegrationErrors, orgIntegrationsDeleteOrgIntegrationResponses, orgIntegrationsListOrgConnectorsData, orgIntegrationsListOrgConnectorsErrors, orgIntegrationsListOrgConnectorsResponses, orgIntegrationsListOrgIntegrationLogsData, orgIntegrationsListOrgIntegrationLogsErrors, orgIntegrationsListOrgIntegrationLogsResponses, orgIntegrationsListOrgIntegrationsData, orgIntegrationsListOrgIntegrationsErrors, orgIntegrationsListOrgIntegrationsResponses, orgIntegrationsTriggerOrgIntegrationData, orgIntegrationsTriggerOrgIntegrationErrors, orgIntegrationsTriggerOrgIntegrationResponses, ragCancelSyncData, ragCancelSyncErrors, ragCancelSyncResponses, ragCloneSyncSourceData, ragCloneSyncSourceErrors, ragCloneSyncSourceResponses, ragCreateCollectionData, ragCreateCollectionErrors, ragCreateCollectionResponses, ragCreateSyncSourceData, ragCreateSyncSourceErrors, ragCreateSyncSourceResponses, ragDeleteDocumentData, ragDeleteDocumentErrors, ragDeleteDocumentResponses, ragDeleteRagDocumentData, ragDeleteRagDocumentErrors, ragDeleteRagDocumentResponses, ragDeleteSyncSourceData, ragDeleteSyncSourceErrors, ragDeleteSyncSourceResponses, ragDownloadRagDocumentData, ragDownloadRagDocumentErrors, ragDownloadRagDocumentResponses, ragDropCollectionData, ragDropCollectionErrors, ragDropCollectionResponses, ragGetCollectionInfoData, ragGetCollectionInfoErrors, ragGetCollectionInfoResponses, ragGetSupportedFormatsEndpointData, ragGetSupportedFormatsEndpointResponses, ragIngestFileData, ragIngestFileErrors, ragIngestFileResponses, ragListCollectionsData, ragListCollectionsErrors, ragListCollectionsResponses, ragListConnectorsData, ragListConnectorsResponses, ragListDocumentsData, ragListDocumentsErrors, ragListDocumentsResponses, ragListRagDocumentsData, ragListRagDocumentsErrors, ragListRagDocumentsResponses, ragListSyncLogsData, ragListSyncLogsErrors, ragListSyncLogsResponses, ragListSyncSourcesData, ragListSyncSourcesErrors, ragListSyncSourcesResponses, ragRagStatusStreamData, ragRagStatusStreamResponses, ragRetryIngestionData, ragRetryIngestionErrors, ragRetryIngestionResponses, ragSearchDocumentsData, ragSearchDocumentsErrors, ragSearchDocumentsResponses, ragTriggerLocalSyncData, ragTriggerLocalSyncErrors, ragTriggerLocalSyncResponses, ragTriggerSyncSourceData, ragTriggerSyncSourceErrors, ragTriggerSyncSourceResponses, ragUpdateSyncSourceData, ragUpdateSyncSourceErrors, ragUpdateSyncSourceResponses, usersCreateUserData, usersCreateUserErrors, usersCreateUserResponses, usersDeleteCurrentUserData, usersDeleteCurrentUserResponses, usersDeleteUserByIdData, usersDeleteUserByIdErrors, usersDeleteUserByIdResponses, usersGetAvatarData, usersGetAvatarErrors, usersGetAvatarResponses, usersReadCurrentUserData, usersReadCurrentUserResponses, usersReadUserData, usersReadUserErrors, usersReadUserResponses, usersReadUsersData, usersReadUsersErrors, usersReadUsersResponses, usersUpdateCurrentUserData, usersUpdateCurrentUserErrors, usersUpdateCurrentUserPasswordData, usersUpdateCurrentUserPasswordErrors, usersUpdateCurrentUserPasswordResponses, usersUpdateCurrentUserResponses, usersUpdateUserByIdData, usersUpdateUserByIdErrors, usersUpdateUserByIdResponses, usersUploadAvatarData, usersUploadAvatarErrors, usersUploadAvatarResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -1307,7 +1307,7 @@ export class AdminConversationsService {
      *
      * List all conversations across all users (admin only).
      */
-    public static conversationsAdminListConversations<ThrowOnError extends boolean = true>(options?: Options<adminConversationsAdminListConversationsData, ThrowOnError>) {
+    public static adminListConversations<ThrowOnError extends boolean = true>(options?: Options<adminConversationsAdminListConversationsData, ThrowOnError>) {
         return (options?.client ?? client).get<adminConversationsAdminListConversationsResponses, adminConversationsAdminListConversationsErrors, ThrowOnError>({
             responseType: 'json',
             security: [{ scheme: 'bearer', type: 'http' }],
@@ -1321,7 +1321,7 @@ export class AdminConversationsService {
      *
      * Get any conversation with messages (admin read-only access).
      */
-    public static conversationsAdminGetConversation<ThrowOnError extends boolean = true>(options: Options<adminConversationsAdminGetConversationData, ThrowOnError>) {
+    public static adminGetConversation<ThrowOnError extends boolean = true>(options: Options<adminConversationsAdminGetConversationData, ThrowOnError>) {
         return (options.client ?? client).get<adminConversationsAdminGetConversationResponses, adminConversationsAdminGetConversationErrors, ThrowOnError>({
             responseType: 'json',
             security: [{ scheme: 'bearer', type: 'http' }],
@@ -1337,7 +1337,7 @@ export class AdminConversationsService {
      *
      * Demo conversations are served without auth on the public demo gallery for replay.
      */
-    public static conversationsAdminSetDemoFlag<ThrowOnError extends boolean = true>(options: Options<adminConversationsAdminSetDemoFlagData, ThrowOnError>) {
+    public static adminSetDemoFlag<ThrowOnError extends boolean = true>(options: Options<adminConversationsAdminSetDemoFlagData, ThrowOnError>) {
         return (options.client ?? client).patch<adminConversationsAdminSetDemoFlagResponses, adminConversationsAdminSetDemoFlagErrors, ThrowOnError>({
             responseType: 'json',
             security: [{ scheme: 'bearer', type: 'http' }],
@@ -1663,13 +1663,106 @@ export class InvitationsService {
     }
 }
 
+export class ApiKeysService {
+    /**
+     * List Scopes
+     *
+     * The scopes a key can be granted.
+     */
+    public static listScopes<ThrowOnError extends boolean = true>(options?: Options<apiKeysListScopesData, ThrowOnError>) {
+        return (options?.client ?? client).get<apiKeysListScopesResponses, unknown, ThrowOnError>({
+            responseType: 'json',
+            security: [{ scheme: 'bearer', type: 'http' }],
+            url: '/api/v1/api-keys/scopes',
+            ...options
+        });
+    }
+    
+    /**
+     * List Api Keys
+     *
+     * Keys of the active organization, newest first. Secrets are never returned.
+     */
+    public static listApiKeys<ThrowOnError extends boolean = true>(options?: Options<apiKeysListApiKeysData, ThrowOnError>) {
+        return (options?.client ?? client).get<apiKeysListApiKeysResponses, apiKeysListApiKeysErrors, ThrowOnError>({
+            responseType: 'json',
+            security: [{ scheme: 'bearer', type: 'http' }],
+            url: '/api/v1/api-keys',
+            ...options
+        });
+    }
+    
+    /**
+     * Create Api Key
+     *
+     * Create a key. The token is in this response only: store it now.
+     */
+    public static createApiKey<ThrowOnError extends boolean = true>(options: Options<apiKeysCreateApiKeyData, ThrowOnError>) {
+        return (options.client ?? client).post<apiKeysCreateApiKeyResponses, apiKeysCreateApiKeyErrors, ThrowOnError>({
+            responseType: 'json',
+            security: [{ scheme: 'bearer', type: 'http' }],
+            url: '/api/v1/api-keys',
+            ...options,
+            headers: {
+                'Content-Type': 'application/json',
+                ...options.headers
+            }
+        });
+    }
+    
+    /**
+     * Rotate Api Key
+     *
+     * Replace a key; the old one keeps working for ``grace_minutes``.
+     */
+    public static rotateApiKey<ThrowOnError extends boolean = true>(options: Options<apiKeysRotateApiKeyData, ThrowOnError>) {
+        return (options.client ?? client).post<apiKeysRotateApiKeyResponses, apiKeysRotateApiKeyErrors, ThrowOnError>({
+            responseType: 'json',
+            security: [{ scheme: 'bearer', type: 'http' }],
+            url: '/api/v1/api-keys/{key_id}/rotate',
+            ...options,
+            headers: {
+                'Content-Type': 'application/json',
+                ...options.headers
+            }
+        });
+    }
+    
+    /**
+     * Revoke Api Key
+     *
+     * Revoke a key at once.
+     */
+    public static revokeApiKey<ThrowOnError extends boolean = true>(options: Options<apiKeysRevokeApiKeyData, ThrowOnError>) {
+        return (options.client ?? client).delete<apiKeysRevokeApiKeyResponses, apiKeysRevokeApiKeyErrors, ThrowOnError>({
+            security: [{ scheme: 'bearer', type: 'http' }],
+            url: '/api/v1/api-keys/{key_id}',
+            ...options
+        });
+    }
+    
+    /**
+     * Introspect Api Key
+     *
+     * Called with an API key (``X-API-Key``): its organization, scopes and expiry.
+     */
+    public static introspectApiKey<ThrowOnError extends boolean = true>(options?: Options<apiKeysIntrospectApiKeyData, ThrowOnError>) {
+        return (options?.client ?? client).get<apiKeysIntrospectApiKeyResponses, unknown, ThrowOnError>({
+            responseType: 'json',
+            security: [{ name: 'X-API-Key', type: 'apiKey' }],
+            url: '/api/v1/api-keys/introspect',
+            ...options
+        });
+    }
+}
+
 export class KnowledgeBasesService {
     /**
      * List Knowledge Bases
      *
      * List all Knowledge Bases accessible to the current user in this org context.
      */
-    public static basesListKnowledgeBases<ThrowOnError extends boolean = true>(options?: Options<knowledgeBasesListKnowledgeBasesData, ThrowOnError>) {
+    public static listKnowledgeBases<ThrowOnError extends boolean = true>(options?: Options<knowledgeBasesListKnowledgeBasesData, ThrowOnError>) {
         return (options?.client ?? client).get<knowledgeBasesListKnowledgeBasesResponses, knowledgeBasesListKnowledgeBasesErrors, ThrowOnError>({
             responseType: 'json',
             security: [{ scheme: 'bearer', type: 'http' }],
@@ -1687,7 +1780,7 @@ export class KnowledgeBasesService {
      * - ``org`` scope: visible to all members of the active org (admin/owner only)
      * - ``app`` scope: visible to all users (app admin only)
      */
-    public static basesCreateKnowledgeBase<ThrowOnError extends boolean = true>(options: Options<knowledgeBasesCreateKnowledgeBaseData, ThrowOnError>) {
+    public static createKnowledgeBase<ThrowOnError extends boolean = true>(options: Options<knowledgeBasesCreateKnowledgeBaseData, ThrowOnError>) {
         return (options.client ?? client).post<knowledgeBasesCreateKnowledgeBaseResponses, knowledgeBasesCreateKnowledgeBaseErrors, ThrowOnError>({
             responseType: 'json',
             security: [{ scheme: 'bearer', type: 'http' }],
@@ -1705,7 +1798,7 @@ export class KnowledgeBasesService {
      *
      * Delete a Knowledge Base. Default KBs cannot be deleted.
      */
-    public static basesDeleteKnowledgeBase<ThrowOnError extends boolean = true>(options: Options<knowledgeBasesDeleteKnowledgeBaseData, ThrowOnError>) {
+    public static deleteKnowledgeBase<ThrowOnError extends boolean = true>(options: Options<knowledgeBasesDeleteKnowledgeBaseData, ThrowOnError>) {
         return (options.client ?? client).delete<knowledgeBasesDeleteKnowledgeBaseResponses, knowledgeBasesDeleteKnowledgeBaseErrors, ThrowOnError>({
             security: [{ scheme: 'bearer', type: 'http' }],
             url: '/api/v1/kb/{kb_id}',
@@ -1718,7 +1811,7 @@ export class KnowledgeBasesService {
      *
      * Get a Knowledge Base by ID.
      */
-    public static basesGetKnowledgeBase<ThrowOnError extends boolean = true>(options: Options<knowledgeBasesGetKnowledgeBaseData, ThrowOnError>) {
+    public static getKnowledgeBase<ThrowOnError extends boolean = true>(options: Options<knowledgeBasesGetKnowledgeBaseData, ThrowOnError>) {
         return (options.client ?? client).get<knowledgeBasesGetKnowledgeBaseResponses, knowledgeBasesGetKnowledgeBaseErrors, ThrowOnError>({
             responseType: 'json',
             security: [{ scheme: 'bearer', type: 'http' }],
@@ -1732,7 +1825,7 @@ export class KnowledgeBasesService {
      *
      * Update name or description of a Knowledge Base.
      */
-    public static basesUpdateKnowledgeBase<ThrowOnError extends boolean = true>(options: Options<knowledgeBasesUpdateKnowledgeBaseData, ThrowOnError>) {
+    public static updateKnowledgeBase<ThrowOnError extends boolean = true>(options: Options<knowledgeBasesUpdateKnowledgeBaseData, ThrowOnError>) {
         return (options.client ?? client).patch<knowledgeBasesUpdateKnowledgeBaseResponses, knowledgeBasesUpdateKnowledgeBaseErrors, ThrowOnError>({
             responseType: 'json',
             security: [{ scheme: 'bearer', type: 'http' }],
@@ -1750,7 +1843,7 @@ export class KnowledgeBasesService {
      *
      * List documents ingested into a Knowledge Base.
      */
-    public static basesListKbDocuments<ThrowOnError extends boolean = true>(options: Options<knowledgeBasesListKbDocumentsData, ThrowOnError>) {
+    public static listKbDocuments<ThrowOnError extends boolean = true>(options: Options<knowledgeBasesListKbDocumentsData, ThrowOnError>) {
         return (options.client ?? client).get<knowledgeBasesListKbDocumentsResponses, knowledgeBasesListKbDocumentsErrors, ThrowOnError>({
             responseType: 'json',
             security: [{ scheme: 'bearer', type: 'http' }],
@@ -1768,7 +1861,7 @@ export class KnowledgeBasesService {
      * ``/rag/{collection}/documents`` endpoint which is admin-only — so a
      * workspace user can manage their own KB without elevation.
      */
-    public static basesUploadKbDocument<ThrowOnError extends boolean = true>(options: Options<knowledgeBasesUploadKbDocumentData, ThrowOnError>) {
+    public static uploadKbDocument<ThrowOnError extends boolean = true>(options: Options<knowledgeBasesUploadKbDocumentData, ThrowOnError>) {
         return (options.client ?? client).post<knowledgeBasesUploadKbDocumentResponses, knowledgeBasesUploadKbDocumentErrors, ThrowOnError>({
             ...formDataBodySerializer,
             responseType: 'json',
@@ -1787,7 +1880,7 @@ export class KnowledgeBasesService {
      *
      * Download (or open inline) the original file for a KB document.
      */
-    public static basesDownloadKbDocument<ThrowOnError extends boolean = true>(options: Options<knowledgeBasesDownloadKbDocumentData, ThrowOnError>) {
+    public static downloadKbDocument<ThrowOnError extends boolean = true>(options: Options<knowledgeBasesDownloadKbDocumentData, ThrowOnError>) {
         return (options.client ?? client).get<knowledgeBasesDownloadKbDocumentResponses, knowledgeBasesDownloadKbDocumentErrors, ThrowOnError>({
             responseType: 'json',
             security: [{ scheme: 'bearer', type: 'http' }],
@@ -1805,7 +1898,7 @@ export class KnowledgeBasesService {
      * check a KB owner could pass any doc_id and remove docs from KBs they
      * don't own.
      */
-    public static basesDeleteKbDocument<ThrowOnError extends boolean = true>(options: Options<knowledgeBasesDeleteKbDocumentData, ThrowOnError>) {
+    public static deleteKbDocument<ThrowOnError extends boolean = true>(options: Options<knowledgeBasesDeleteKbDocumentData, ThrowOnError>) {
         return (options.client ?? client).delete<knowledgeBasesDeleteKbDocumentResponses, knowledgeBasesDeleteKbDocumentErrors, ThrowOnError>({
             security: [{ scheme: 'bearer', type: 'http' }],
             url: '/api/v1/kb/{kb_id}/documents/{doc_id}',
@@ -1818,7 +1911,7 @@ export class KnowledgeBasesService {
      *
      * List sync sources feeding this KB's collection (org-scoped).
      */
-    public static basesListKbSyncSources<ThrowOnError extends boolean = true>(options: Options<knowledgeBasesListKbSyncSourcesData, ThrowOnError>) {
+    public static listKbSyncSources<ThrowOnError extends boolean = true>(options: Options<knowledgeBasesListKbSyncSourcesData, ThrowOnError>) {
         return (options.client ?? client).get<knowledgeBasesListKbSyncSourcesResponses, knowledgeBasesListKbSyncSourcesErrors, ThrowOnError>({
             responseType: 'json',
             security: [{ scheme: 'bearer', type: 'http' }],
@@ -1835,7 +1928,7 @@ export class KnowledgeBasesService {
      * The ``collection_name`` field on the request body is overridden with the
      * KB's own collection — clients should not need to know that detail.
      */
-    public static basesCreateKbSyncSource<ThrowOnError extends boolean = true>(options: Options<knowledgeBasesCreateKbSyncSourceData, ThrowOnError>) {
+    public static createKbSyncSource<ThrowOnError extends boolean = true>(options: Options<knowledgeBasesCreateKbSyncSourceData, ThrowOnError>) {
         return (options.client ?? client).post<knowledgeBasesCreateKbSyncSourceResponses, knowledgeBasesCreateKbSyncSourceErrors, ThrowOnError>({
             responseType: 'json',
             security: [{ scheme: 'bearer', type: 'http' }],
@@ -1856,7 +1949,7 @@ export class KnowledgeBasesService {
      * Used by the wizard's 'pick existing' step so the user can clone an
      * existing integration's credentials into this knowledge base.
      */
-    public static basesListOrgIntegrationsForKb<ThrowOnError extends boolean = true>(options: Options<knowledgeBasesListOrgIntegrationsForKbData, ThrowOnError>) {
+    public static listOrgIntegrationsForKb<ThrowOnError extends boolean = true>(options: Options<knowledgeBasesListOrgIntegrationsForKbData, ThrowOnError>) {
         return (options.client ?? client).get<knowledgeBasesListOrgIntegrationsForKbResponses, knowledgeBasesListOrgIntegrationsForKbErrors, ThrowOnError>({
             responseType: 'json',
             security: [{ scheme: 'bearer', type: 'http' }],
@@ -1870,7 +1963,7 @@ export class KnowledgeBasesService {
      *
      * List available connector types (Google Drive, S3, …) for this KB.
      */
-    public static basesListKbConnectors<ThrowOnError extends boolean = true>(options: Options<knowledgeBasesListKbConnectorsData, ThrowOnError>) {
+    public static listKbConnectors<ThrowOnError extends boolean = true>(options: Options<knowledgeBasesListKbConnectorsData, ThrowOnError>) {
         return (options.client ?? client).get<knowledgeBasesListKbConnectorsResponses, knowledgeBasesListKbConnectorsErrors, ThrowOnError>({
             responseType: 'json',
             security: [{ scheme: 'bearer', type: 'http' }],
@@ -1887,7 +1980,7 @@ export class KnowledgeBasesService {
      * Decrypts credentials from the source and re-encrypts them for the clone,
      * pinning it to this KB's collection_name. The clone is independent.
      */
-    public static basesCloneKbSyncSource<ThrowOnError extends boolean = true>(options: Options<knowledgeBasesCloneKbSyncSourceData, ThrowOnError>) {
+    public static cloneKbSyncSource<ThrowOnError extends boolean = true>(options: Options<knowledgeBasesCloneKbSyncSourceData, ThrowOnError>) {
         return (options.client ?? client).post<knowledgeBasesCloneKbSyncSourceResponses, knowledgeBasesCloneKbSyncSourceErrors, ThrowOnError>({
             responseType: 'json',
             security: [{ scheme: 'bearer', type: 'http' }],
@@ -1905,7 +1998,7 @@ export class KnowledgeBasesService {
      *
      * Manually trigger a sync run for one of this KB's sources.
      */
-    public static basesTriggerKbSyncSource<ThrowOnError extends boolean = true>(options: Options<knowledgeBasesTriggerKbSyncSourceData, ThrowOnError>) {
+    public static triggerKbSyncSource<ThrowOnError extends boolean = true>(options: Options<knowledgeBasesTriggerKbSyncSourceData, ThrowOnError>) {
         return (options.client ?? client).post<knowledgeBasesTriggerKbSyncSourceResponses, knowledgeBasesTriggerKbSyncSourceErrors, ThrowOnError>({
             responseType: 'json',
             security: [{ scheme: 'bearer', type: 'http' }],
@@ -1919,7 +2012,7 @@ export class KnowledgeBasesService {
      *
      * List sync run history for a specific KB sync source.
      */
-    public static basesListKbSyncSourceLogs<ThrowOnError extends boolean = true>(options: Options<knowledgeBasesListKbSyncSourceLogsData, ThrowOnError>) {
+    public static listKbSyncSourceLogs<ThrowOnError extends boolean = true>(options: Options<knowledgeBasesListKbSyncSourceLogsData, ThrowOnError>) {
         return (options.client ?? client).get<knowledgeBasesListKbSyncSourceLogsResponses, knowledgeBasesListKbSyncSourceLogsErrors, ThrowOnError>({
             responseType: 'json',
             security: [{ scheme: 'bearer', type: 'http' }],
@@ -1933,7 +2026,7 @@ export class KnowledgeBasesService {
      *
      * Remove a sync source from this KB.
      */
-    public static basesDeleteKbSyncSource<ThrowOnError extends boolean = true>(options: Options<knowledgeBasesDeleteKbSyncSourceData, ThrowOnError>) {
+    public static deleteKbSyncSource<ThrowOnError extends boolean = true>(options: Options<knowledgeBasesDeleteKbSyncSourceData, ThrowOnError>) {
         return (options.client ?? client).delete<knowledgeBasesDeleteKbSyncSourceResponses, knowledgeBasesDeleteKbSyncSourceErrors, ThrowOnError>({
             security: [{ scheme: 'bearer', type: 'http' }],
             url: '/api/v1/kb/{kb_id}/sync-sources/{source_id}',
@@ -1948,7 +2041,7 @@ export class MeSlashCommandsService {
      *
      * List the current user's custom commands and built-in overrides.
      */
-    public static commandsListSlashCommands<ThrowOnError extends boolean = true>(options?: Options<meSlashCommandsListSlashCommandsData, ThrowOnError>) {
+    public static listSlashCommands<ThrowOnError extends boolean = true>(options?: Options<meSlashCommandsListSlashCommandsData, ThrowOnError>) {
         return (options?.client ?? client).get<meSlashCommandsListSlashCommandsResponses, unknown, ThrowOnError>({
             responseType: 'json',
             security: [{ scheme: 'bearer', type: 'http' }],
@@ -1962,7 +2055,7 @@ export class MeSlashCommandsService {
      *
      * Create a user-defined command with a stored prompt body.
      */
-    public static commandsCreateCustomCommand<ThrowOnError extends boolean = true>(options: Options<meSlashCommandsCreateCustomCommandData, ThrowOnError>) {
+    public static createCustomCommand<ThrowOnError extends boolean = true>(options: Options<meSlashCommandsCreateCustomCommandData, ThrowOnError>) {
         return (options.client ?? client).post<meSlashCommandsCreateCustomCommandResponses, meSlashCommandsCreateCustomCommandErrors, ThrowOnError>({
             responseType: 'json',
             security: [{ scheme: 'bearer', type: 'http' }],
@@ -1980,7 +2073,7 @@ export class MeSlashCommandsService {
      *
      * Toggle a built-in command on or off for the current user.
      */
-    public static commandsUpsertBuiltinOverride<ThrowOnError extends boolean = true>(options: Options<meSlashCommandsUpsertBuiltinOverrideData, ThrowOnError>) {
+    public static upsertBuiltinOverride<ThrowOnError extends boolean = true>(options: Options<meSlashCommandsUpsertBuiltinOverrideData, ThrowOnError>) {
         return (options.client ?? client).put<meSlashCommandsUpsertBuiltinOverrideResponses, meSlashCommandsUpsertBuiltinOverrideErrors, ThrowOnError>({
             responseType: 'json',
             security: [{ scheme: 'bearer', type: 'http' }],
@@ -1998,7 +2091,7 @@ export class MeSlashCommandsService {
      *
      * Delete a custom command, or remove a built-in override (re-enables it).
      */
-    public static commandsDeleteSlashCommand<ThrowOnError extends boolean = true>(options: Options<meSlashCommandsDeleteSlashCommandData, ThrowOnError>) {
+    public static deleteSlashCommand<ThrowOnError extends boolean = true>(options: Options<meSlashCommandsDeleteSlashCommandData, ThrowOnError>) {
         return (options.client ?? client).delete<meSlashCommandsDeleteSlashCommandResponses, meSlashCommandsDeleteSlashCommandErrors, ThrowOnError>({
             security: [{ scheme: 'bearer', type: 'http' }],
             url: '/api/v1/me/slash-commands/{command_id}',
@@ -2011,7 +2104,7 @@ export class MeSlashCommandsService {
      *
      * Patch a custom command. Built-in overrides accept only ``is_enabled``.
      */
-    public static commandsUpdateSlashCommand<ThrowOnError extends boolean = true>(options: Options<meSlashCommandsUpdateSlashCommandData, ThrowOnError>) {
+    public static updateSlashCommand<ThrowOnError extends boolean = true>(options: Options<meSlashCommandsUpdateSlashCommandData, ThrowOnError>) {
         return (options.client ?? client).patch<meSlashCommandsUpdateSlashCommandResponses, meSlashCommandsUpdateSlashCommandErrors, ThrowOnError>({
             responseType: 'json',
             security: [{ scheme: 'bearer', type: 'http' }],

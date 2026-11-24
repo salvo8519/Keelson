@@ -637,6 +637,93 @@ async def verify_api_key(
 
 
 ValidAPIKey = Annotated[str, Depends(verify_api_key)]
+{%- if enable_teams and use_postgresql %}
+
+# Keelson: per-organization API keys with scopes (app/core/api_keys.py). The single static
+# key above stays for compatibility with the upstream template; prefer these.
+from dataclasses import dataclass
+from datetime import datetime
+
+from fastapi import Request
+
+from app.db.models.api_key import ApiKey
+from app.services.api_key import ApiKeyService
+{%- if enable_rate_limiting %}
+from app.services.rate_limit import RateLimitCategory, check_rate_limit, client_ip
+{%- endif %}
+
+
+@dataclass(frozen=True)
+class ApiKeyPrincipal:
+    """The organization and scopes a request authenticated by an API key acts with."""
+
+    key: ApiKey
+    organization_id: UUID
+    scopes: frozenset[str]
+    expires_at: datetime | None
+
+
+def get_api_key_service(db: DBSession) -> ApiKeyService:
+    return ApiKeyService(db)
+
+
+ApiKeySvc = Annotated[ApiKeyService, Depends(get_api_key_service)]
+
+
+async def get_api_key_principal(
+    request: Request,
+    db: DBSession,
+    service: ApiKeySvc,
+    api_key: Annotated[str | None, Depends(api_key_header)],
+) -> ApiKeyPrincipal:
+    """Authenticate the request by its API key and bind it to the key's organization."""
+    if api_key is None:
+        raise AuthenticationError(message="API key header missing")
+    key = await service.authenticate(api_key)
+    await bind_organization(db, key.organization_id)
+{%- if enable_rate_limiting %}
+    await check_rate_limit(
+        category=RateLimitCategory.API_KEY,
+        client_ip=client_ip(request),
+        user_id=f"api_key:{key.id}",
+        org_id=str(key.organization_id),
+    )
+{%- endif %}
+    return ApiKeyPrincipal(
+        key=key,
+        organization_id=key.organization_id,
+        scopes=frozenset(key.scopes),
+        expires_at=key.expires_at,
+    )
+
+
+CurrentApiKey = Annotated[ApiKeyPrincipal, Depends(get_api_key_principal)]
+
+
+def require_api_scopes(*scopes: str):
+    """Dependency factory: the calling API key must hold every scope in ``scopes``.
+
+    Usage::
+
+        @router.get("/things", dependencies=[Depends(require_api_scopes("things:read"))])
+    """
+    from app.core.api_keys import unknown_scopes
+
+    unknown = unknown_scopes(list(scopes))
+    if unknown:
+        raise ValueError(f"unknown scopes {unknown}: add them to app.core.api_keys.SCOPES")
+
+    async def _check(principal: CurrentApiKey, service: ApiKeySvc) -> ApiKeyPrincipal:
+        missing = sorted(set(scopes) - principal.scopes)
+        if missing:
+            await service.record_scope_denial(principal.key, missing)
+            raise AuthorizationError(
+                message="API key lacks the required scopes", details={"missing": missing}
+            )
+        return principal
+
+    return _check
+{%- endif %}
 {%- endif %}
 
 {%- if enable_rag %}

@@ -37,7 +37,7 @@ TENANT_ROLE = "{{ project_slug }}_tenant"
 TENANT_SETTING = "app.current_organization_id"
 
 # Tables isolated by organization. The migration skips the ones a project does not have.
-TENANT_TABLES = ("conversations", "knowledge_bases", "rag_documents", "sync_sources")
+TENANT_TABLES = ("conversations", "knowledge_bases", "rag_documents", "sync_sources", "api_keys")
 
 # Tables that carry organization_id but are not isolated, with the reason. A test fails when a
 # table with organization_id is in neither list, so a new table cannot be forgotten.

@@ -1,0 +1,84 @@
+{%- if enable_teams and use_api_key and use_postgresql %}
+"""API keys of the active organization (Keelson).
+
+Management (list, create, rotate, revoke) needs an owner or admin of the active organization.
+``/introspect`` is called with an API key and says what that key may do.
+"""
+
+from datetime import timedelta
+from typing import Any
+from uuid import UUID
+
+from fastapi import APIRouter, status
+
+from app.api.deps import ApiKeySvc, CurrentApiKey, CurrentUser, RequireAdminPlus
+from app.core.api_keys import SCOPES
+from app.schemas.api_key import (
+    ApiKeyCreate,
+    ApiKeyCreated,
+    ApiKeyIntrospection,
+    ApiKeyRead,
+    ApiKeyRotate,
+    ApiKeyScope,
+)
+
+router = APIRouter()
+
+
+@router.get("/scopes", response_model=list[ApiKeyScope])
+async def list_scopes(_: CurrentUser) -> Any:
+    """The scopes a key can be granted."""
+    return [ApiKeyScope(name=name, description=text) for name, text in SCOPES.items()]
+
+
+@router.get("", response_model=list[ApiKeyRead])
+async def list_api_keys(org: RequireAdminPlus, service: ApiKeySvc) -> Any:
+    """Keys of the active organization, newest first. Secrets are never returned."""
+    return await service.list_for_organization(org.id)
+
+
+@router.post("", response_model=ApiKeyCreated, status_code=status.HTTP_201_CREATED)
+async def create_api_key(
+    data: ApiKeyCreate, org: RequireAdminPlus, user: CurrentUser, service: ApiKeySvc
+) -> Any:
+    """Create a key. The token is in this response only: store it now."""
+    key, token = await service.create(organization_id=org.id, user_id=user.id, data=data)
+    return ApiKeyCreated(**ApiKeyRead.model_validate(key).model_dump(), token=token)
+
+
+@router.post("/{key_id}/rotate", response_model=ApiKeyCreated, status_code=status.HTTP_201_CREATED)
+async def rotate_api_key(
+    key_id: UUID,
+    data: ApiKeyRotate,
+    org: RequireAdminPlus,
+    user: CurrentUser,
+    service: ApiKeySvc,
+) -> Any:
+    """Replace a key; the old one keeps working for ``grace_minutes``."""
+    key, token = await service.rotate(
+        organization_id=org.id,
+        key_id=key_id,
+        user_id=user.id,
+        grace=timedelta(minutes=data.grace_minutes),
+    )
+    return ApiKeyCreated(**ApiKeyRead.model_validate(key).model_dump(), token=token)
+
+
+@router.delete("/{key_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
+async def revoke_api_key(
+    key_id: UUID, org: RequireAdminPlus, user: CurrentUser, service: ApiKeySvc
+) -> None:
+    """Revoke a key at once."""
+    await service.revoke(organization_id=org.id, key_id=key_id, user_id=user.id)
+
+
+@router.get("/introspect", response_model=ApiKeyIntrospection)
+async def introspect_api_key(principal: CurrentApiKey) -> Any:
+    """Called with an API key (``X-API-Key``): its organization, scopes and expiry."""
+    return ApiKeyIntrospection(
+        organization_id=principal.organization_id,
+        prefix=principal.key.prefix,
+        scopes=sorted(principal.scopes),
+        expires_at=principal.expires_at,
+    )
+{%- endif %}

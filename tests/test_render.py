@@ -92,6 +92,15 @@ def test_frontend_follows_the_answer(render: Render, case: str) -> None:
     project = render(answers(case))
     wanted = CASES[case].get("web_frontend", "react") == "react"
     assert (project / "frontend" / "package.json").is_file() is wanted
+    assert (project / "scripts" / "generate-client.sh").is_file() is wanted
+
+
+@pytest.mark.parametrize("case", list(CASES))
+def test_keelson_tooling_survives_the_upstream_hook(render: Render, case: str) -> None:
+    """The upstream hook removed scripts/ wholesale; Keelson tooling lives there."""
+    project = render(answers(case))
+    assert (project / "scripts" / "agent_skills.py").is_file()
+    assert not (project / "scripts" / "export_demo_html.py").exists()
 
 
 @pytest.mark.parametrize(

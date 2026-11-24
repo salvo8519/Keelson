@@ -1,0 +1,48 @@
+{%- if enable_teams and use_postgresql %}
+"""API key of an organization (Keelson). See app/core/api_keys.py for the format."""
+
+import uuid
+from datetime import datetime
+
+from sqlalchemy import DateTime, ForeignKey, String
+from sqlalchemy.dialects.postgresql import ARRAY, UUID
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.db.base import Base, TimestampMixin
+
+
+class ApiKey(Base, TimestampMixin):
+    """A key that lets a system act on one organization within its scopes."""
+
+    __tablename__ = "api_keys"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    prefix: Mapped[str] = mapped_column(String(32), nullable=False, unique=True, index=True)
+    secret_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    scopes: Mapped[list[str]] = mapped_column(ARRAY(String(64)), nullable=False, default=list)
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    replaced_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("api_keys.id", ondelete="SET NULL"), nullable=True
+    )
+
+    def usable_at(self, moment: datetime) -> bool:
+        """Whether the key authenticates at ``moment``: not revoked, not expired."""
+        if self.revoked_at is not None and self.revoked_at <= moment:
+            return False
+        return self.expires_at is None or self.expires_at > moment
+
+    def __repr__(self) -> str:
+        return f"<ApiKey(prefix={self.prefix}, org={self.organization_id})>"
+{%- endif %}

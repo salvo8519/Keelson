@@ -22,6 +22,7 @@ nav = [
   ] },
   { "Concepts" = [
     "concepts/architecture.md",
+    "concepts/tenancy-and-api-keys.md",
     "concepts/assembly.md",
     "concepts/agent-skills.md",
   ] },

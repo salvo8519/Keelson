@@ -1,0 +1,49 @@
+{%- if enable_teams and use_postgresql %}
+"""ApiKey repository (Keelson)."""
+
+from typing import Any
+from uuid import UUID
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.models.api_key import ApiKey
+
+
+async def create(db: AsyncSession, **fields: Any) -> ApiKey:
+    key = ApiKey(**fields)
+    db.add(key)
+    await db.flush()
+    await db.refresh(key)
+    return key
+
+
+async def get_by_prefix(db: AsyncSession, prefix: str) -> ApiKey | None:
+    result = await db.execute(select(ApiKey).where(ApiKey.prefix == prefix))
+    return result.scalar_one_or_none()
+
+
+async def get_for_org(db: AsyncSession, *, organization_id: UUID, key_id: UUID) -> ApiKey | None:
+    result = await db.execute(
+        select(ApiKey).where(ApiKey.id == key_id, ApiKey.organization_id == organization_id)
+    )
+    return result.scalar_one_or_none()
+
+
+async def list_for_org(db: AsyncSession, organization_id: UUID) -> list[ApiKey]:
+    result = await db.execute(
+        select(ApiKey)
+        .where(ApiKey.organization_id == organization_id)
+        .order_by(ApiKey.created_at.desc())
+    )
+    return list(result.scalars().all())
+
+
+async def update(db: AsyncSession, key: ApiKey, **fields: Any) -> ApiKey:
+    for name, value in fields.items():
+        setattr(key, name, value)
+    db.add(key)
+    await db.flush()
+    await db.refresh(key)
+    return key
+{%- endif %}

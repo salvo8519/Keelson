@@ -1,4 +1,4 @@
-<!-- i18n source: README.md source_hash: 23acece8e1d3 -->
+<!-- i18n source: README.md source_hash: b71022c16d76 -->
 <p align="center">
   <img src="docs/_shared/assets/brand/mark.svg" alt="Keelson" width="96">
 </p>
@@ -33,9 +33,16 @@ programmazione.
 - **Conversione verificata.** Il template cookiecutter upstream gira con Copier senza essere
   riscritto: il suo stesso generatore deriva le variabili di ogni combinazione valida di
   risposte, e il progetto generato viene confrontato file per file con quello upstream.
+- **Isolamento garantito dal database.** Le organizzazioni sono separate dalla row level
+  security di PostgreSQL, oltre ai filtri dei repository: una query che dimentica il filtro vede
+  comunque solo l'organizzazione attiva. Un test fallisce quando una nuova tabella con
+  un'organizzazione non è isolata.
+- **API key per gli altri sistemi.** Per organizzazione, con scope, scadenza, rotazione con
+  periodo di grazia, revoca, limiti di frequenza e audit; conservate solo come hash con chiave.
 - **Difetti corretti all'import.** L'audit del codice importato ha trovato e corretto un import
-  circolare che bloccava all'avvio i progetti con Taskiq e uno scheduler mancante su
-  Kubernetes, ciascuno con un test di regressione.
+  circolare che bloccava all'avvio i progetti con Taskiq, uno scheduler mancante su Kubernetes
+  e un endpoint del profilo che cambiava la password senza quella attuale, ciascuno con un test
+  di regressione.
 - **Pensato per gli agenti.** Istruzioni, ruoli e skill di processo, più le skill ufficiali di
   FastAPI, Pydantic, LangChain, Qdrant e dello stack React, scelte in base alle risposte e
   fissate a una versione.

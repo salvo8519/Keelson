@@ -171,6 +171,168 @@ export type AgentModelsResponse = {
 };
 
 /**
+ * ApiKeyCreate
+ */
+export type ApiKeyCreate = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Scopes
+     *
+     * Any of: conversations:read, conversations:write, knowledge:read, knowledge:write, agent:run
+     */
+    scopes: Array<string>;
+    /**
+     * Expires At
+     *
+     * When the key stops working; none for no expiry.
+     */
+    expires_at?: string | null;
+};
+
+/**
+ * ApiKeyCreated
+ *
+ * Returned once, at creation or rotation: store ``token`` now, it is not shown again.
+ */
+export type ApiKeyCreated = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Prefix
+     */
+    prefix: string;
+    /**
+     * Scopes
+     */
+    scopes: Array<string>;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Expires At
+     */
+    expires_at?: string | null;
+    /**
+     * Last Used At
+     */
+    last_used_at?: string | null;
+    /**
+     * Revoked At
+     */
+    revoked_at?: string | null;
+    /**
+     * Replaced By Id
+     */
+    replaced_by_id?: string | null;
+    /**
+     * Token
+     */
+    token: string;
+};
+
+/**
+ * ApiKeyIntrospection
+ *
+ * What the calling key may do.
+ */
+export type ApiKeyIntrospection = {
+    /**
+     * Organization Id
+     */
+    organization_id: string;
+    /**
+     * Prefix
+     */
+    prefix: string;
+    /**
+     * Scopes
+     */
+    scopes: Array<string>;
+    /**
+     * Expires At
+     */
+    expires_at?: string | null;
+};
+
+/**
+ * ApiKeyRead
+ */
+export type ApiKeyRead = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Prefix
+     */
+    prefix: string;
+    /**
+     * Scopes
+     */
+    scopes: Array<string>;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Expires At
+     */
+    expires_at?: string | null;
+    /**
+     * Last Used At
+     */
+    last_used_at?: string | null;
+    /**
+     * Revoked At
+     */
+    revoked_at?: string | null;
+    /**
+     * Replaced By Id
+     */
+    replaced_by_id?: string | null;
+};
+
+/**
+ * ApiKeyRotate
+ */
+export type ApiKeyRotate = {
+    /**
+     * Grace Minutes
+     *
+     * How long the old key keeps working after rotation.
+     */
+    grace_minutes?: number;
+};
+
+/**
+ * ApiKeyScope
+ */
+export type ApiKeyScope = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Description
+     */
+    description: string;
+};
+
+/**
  * Body_auth-login
  */
 export type Body_auth_login = {
@@ -211,7 +373,7 @@ export type Body_files_upload_file = {
 };
 
 /**
- * Body_knowledge-bases-upload_kb_document
+ * Body_knowledge_bases-upload_kb_document
  */
 export type Body_knowledge_bases_upload_kb_document = {
     /**
@@ -5764,6 +5926,176 @@ export type invitationsRevokeInvitationResponses = {
 };
 
 export type invitationsRevokeInvitationResponse = invitationsRevokeInvitationResponses[keyof invitationsRevokeInvitationResponses];
+
+export type apiKeysListScopesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/api-keys/scopes';
+};
+
+export type apiKeysListScopesResponses = {
+    /**
+     * Response Api Keys-List Scopes
+     *
+     * Successful Response
+     */
+    200: Array<ApiKeyScope>;
+};
+
+export type apiKeysListScopesResponse = apiKeysListScopesResponses[keyof apiKeysListScopesResponses];
+
+export type apiKeysListApiKeysData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Organization-Id
+         */
+        'x-organization-id'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/api-keys';
+};
+
+export type apiKeysListApiKeysErrors = {
+    /**
+     * Validation Error
+     */
+    422: HTTPValidationError;
+};
+
+export type apiKeysListApiKeysError = apiKeysListApiKeysErrors[keyof apiKeysListApiKeysErrors];
+
+export type apiKeysListApiKeysResponses = {
+    /**
+     * Response Api Keys-List Api Keys
+     *
+     * Successful Response
+     */
+    200: Array<ApiKeyRead>;
+};
+
+export type apiKeysListApiKeysResponse = apiKeysListApiKeysResponses[keyof apiKeysListApiKeysResponses];
+
+export type apiKeysCreateApiKeyData = {
+    body: ApiKeyCreate;
+    headers?: {
+        /**
+         * X-Organization-Id
+         */
+        'x-organization-id'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/api-keys';
+};
+
+export type apiKeysCreateApiKeyErrors = {
+    /**
+     * Validation Error
+     */
+    422: HTTPValidationError;
+};
+
+export type apiKeysCreateApiKeyError = apiKeysCreateApiKeyErrors[keyof apiKeysCreateApiKeyErrors];
+
+export type apiKeysCreateApiKeyResponses = {
+    /**
+     * Successful Response
+     */
+    201: ApiKeyCreated;
+};
+
+export type apiKeysCreateApiKeyResponse = apiKeysCreateApiKeyResponses[keyof apiKeysCreateApiKeyResponses];
+
+export type apiKeysRotateApiKeyData = {
+    body: ApiKeyRotate;
+    headers?: {
+        /**
+         * X-Organization-Id
+         */
+        'x-organization-id'?: string | null;
+    };
+    path: {
+        /**
+         * Key Id
+         */
+        key_id: string;
+    };
+    query?: never;
+    url: '/api/v1/api-keys/{key_id}/rotate';
+};
+
+export type apiKeysRotateApiKeyErrors = {
+    /**
+     * Validation Error
+     */
+    422: HTTPValidationError;
+};
+
+export type apiKeysRotateApiKeyError = apiKeysRotateApiKeyErrors[keyof apiKeysRotateApiKeyErrors];
+
+export type apiKeysRotateApiKeyResponses = {
+    /**
+     * Successful Response
+     */
+    201: ApiKeyCreated;
+};
+
+export type apiKeysRotateApiKeyResponse = apiKeysRotateApiKeyResponses[keyof apiKeysRotateApiKeyResponses];
+
+export type apiKeysRevokeApiKeyData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Organization-Id
+         */
+        'x-organization-id'?: string | null;
+    };
+    path: {
+        /**
+         * Key Id
+         */
+        key_id: string;
+    };
+    query?: never;
+    url: '/api/v1/api-keys/{key_id}';
+};
+
+export type apiKeysRevokeApiKeyErrors = {
+    /**
+     * Validation Error
+     */
+    422: HTTPValidationError;
+};
+
+export type apiKeysRevokeApiKeyError = apiKeysRevokeApiKeyErrors[keyof apiKeysRevokeApiKeyErrors];
+
+export type apiKeysRevokeApiKeyResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type apiKeysRevokeApiKeyResponse = apiKeysRevokeApiKeyResponses[keyof apiKeysRevokeApiKeyResponses];
+
+export type apiKeysIntrospectApiKeyData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/api-keys/introspect';
+};
+
+export type apiKeysIntrospectApiKeyResponses = {
+    /**
+     * Successful Response
+     */
+    200: ApiKeyIntrospection;
+};
+
+export type apiKeysIntrospectApiKeyResponse = apiKeysIntrospectApiKeyResponses[keyof apiKeysIntrospectApiKeyResponses];
 
 export type knowledgeBasesListKnowledgeBasesData = {
     body?: never;

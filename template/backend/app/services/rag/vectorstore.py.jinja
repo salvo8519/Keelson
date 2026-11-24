@@ -300,10 +300,10 @@ class QdrantVectorStore(BaseVectorStore):
         )
         return [
             SearchResult(
-                content=hit.payload.get("content", ""),
+                content=(hit.payload or {}).get("content", ""),
                 score=hit.score,
-                metadata=hit.payload.get("metadata", {}),
-                parent_doc_id=hit.payload.get("parent_doc_id"),
+                metadata=(hit.payload or {}).get("metadata", {}),
+                parent_doc_id=(hit.payload or {}).get("parent_doc_id"),
             )
             for hit in results
         ]
@@ -332,7 +332,11 @@ class QdrantVectorStore(BaseVectorStore):
         await self._ensure_collection(collection_name)
         records, _ = await self.client.scroll(collection_name=collection_name, limit=10000, with_payload=True)
         results = [
-            {"parent_doc_id": r.payload.get("parent_doc_id"), "metadata": r.payload.get("metadata", {})}
+            # Keelson: Qdrant returns payload None for points stored without one.
+            {
+                "parent_doc_id": (r.payload or {}).get("parent_doc_id"),
+                "metadata": (r.payload or {}).get("metadata", {}),
+            }
             for r in records
         ]
         return self._group_documents(results)

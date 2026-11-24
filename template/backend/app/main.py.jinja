@@ -321,7 +321,12 @@ def custom_generate_unique_id(route: APIRoute) -> str:
     The generated TypeScript client groups operations by tag and names each method after the
     function, so the frontend calls ``UsersService.readCurrentUser()``.
     """
-    return f"{route.tags[0]}-{route.name}" if route.tags else route.name
+    if not route.tags:
+        return route.name
+    # The client takes the method name from what follows the first hyphen, so the tag part
+    # must hold none: "api-keys" and "admin:users" become "api_keys" and "admin_users".
+    tag = str(route.tags[0]).replace("-", "_").replace(":", "_")
+    return f"{tag}-{route.name}"
 
 
 def create_app() -> FastAPI:

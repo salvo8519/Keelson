@@ -31,9 +31,14 @@ deployment on Docker and Kubernetes, and a development process for coding agents
 - **Verified conversion.** The upstream cookiecutter template runs under Copier without being
   rewritten: its own generator derives the variables of every valid combination of answers,
   and the rendered project is compared file by file with the upstream output.
+- **Isolation enforced by the database.** Organizations are separated by PostgreSQL row level
+  security, on top of the repository filters: a query that forgets the filter still sees only
+  the active organization. A test fails when a new table with an organization is not isolated.
+- **API keys for other systems.** Per organization, with scopes, expiry, rotation with a grace
+  period, revocation, rate limits and audit; stored only as a keyed hash.
 - **Defects fixed at import.** The audit of the imported code found and fixed a circular import
-  that stopped Taskiq projects at start-up and a missing scheduler on Kubernetes, each with a
-  regression test.
+  that stopped Taskiq projects at start-up, a missing scheduler on Kubernetes, and a profile
+  endpoint that changed passwords without the current one, each with a regression test.
 - **Built for coding agents.** Instructions, roles and process skills, plus the official skills
   of FastAPI, Pydantic, LangChain, Qdrant and the React stack, selected by your answers and
   pinned.

@@ -1,0 +1,174 @@
+{%- if enable_teams and use_api_key and use_postgresql %}
+"""API keys against a real PostgreSQL (Keelson): lifecycle, audit and isolation.
+
+Runs in a throwaway schema with the full metadata; skipped when no database is reachable.
+"""
+
+import uuid
+from datetime import UTC, datetime, timedelta
+
+import asyncpg
+import pytest
+from sqlalchemy import func, select, text
+from sqlalchemy.engine import make_url
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+import app.db.models  # noqa: F401  (registers every table on the metadata)
+from app.core.config import settings
+from app.core.exceptions import AuthenticationError, AuthorizationError
+from app.db.base import Base
+from app.db.models.audit_log import AppAdminAuditLog
+from app.db.models.organization import Organization
+from app.db.models.user import User
+from app.db.tenancy import TENANT_TABLES, bind_organization, grant_statements, policy_statements
+from app.schemas.api_key import ApiKeyCreate
+from app.services.api_key import ApiKeyService
+
+pytestmark = pytest.mark.anyio
+
+
+async def _reachable() -> bool:
+    dsn = make_url(settings.DATABASE_URL).set(drivername="postgresql")
+    try:
+        connection = await asyncpg.connect(dsn.render_as_string(hide_password=False), timeout=3)
+    except (OSError, asyncpg.PostgresError):
+        return False
+    await connection.close()
+    return True
+
+
+@pytest.fixture
+async def sessions():
+    if not await _reachable():
+        pytest.skip("No live PostgreSQL for the API key tests")
+    schema = f"keys_{uuid.uuid4().hex[:12]}"
+    admin = create_async_engine(settings.DATABASE_URL)
+    async with admin.begin() as connection:
+        await connection.execute(text(f'CREATE SCHEMA "{schema}"'))
+    engine = create_async_engine(
+        settings.DATABASE_URL, connect_args={"server_settings": {"search_path": schema}}
+    )
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+        for statement in grant_statements(schema):
+            await connection.execute(text(statement))
+        for table in TENANT_TABLES:
+            if table in Base.metadata.tables:
+                for statement in policy_statements(table):
+                    await connection.execute(text(statement))
+    try:
+        yield async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    finally:
+        await engine.dispose()
+        async with admin.begin() as connection:
+            await connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
+        await admin.dispose()
+
+
+async def _org_and_user(session: AsyncSession) -> tuple[Organization, User]:
+    user = User(email=f"{uuid.uuid4().hex}@example.com", hashed_password="x", full_name="Owner")
+    session.add(user)
+    await session.flush()
+    org = Organization(name="Acme", slug=uuid.uuid4().hex[:20], created_by_user_id=user.id)
+    session.add(org)
+    await session.flush()
+    return org, user
+
+
+async def _create(session, org, user, **fields):
+    data = ApiKeyCreate(name="ci", scopes=["agent:run"], **fields)
+    return await ApiKeyService(session).create(organization_id=org.id, user_id=user.id, data=data)
+
+
+async def test_create_authenticate_and_audit(sessions) -> None:
+    async with sessions() as session:
+        org, user = await _org_and_user(session)
+        key, token = await _create(session, org, user)
+        await session.commit()
+        assert token not in key.secret_hash
+
+    async with sessions() as session:
+        found = await ApiKeyService(session).authenticate(token)
+        assert found.id == key.id and found.last_used_at is not None
+        actions = (await session.execute(select(AppAdminAuditLog.action))).scalars().all()
+        assert "api_key.created" in actions
+
+
+async def test_wrong_secret_is_refused_and_audited(sessions) -> None:
+    async with sessions() as session:
+        org, user = await _org_and_user(session)
+        key, token = await _create(session, org, user)
+        with pytest.raises(AuthenticationError):
+            await ApiKeyService(session).authenticate(token[:-1] + ("A" if token[-1] != "A" else "B"))
+        denied = await session.scalar(
+            select(func.count()).where(AppAdminAuditLog.action == "api_key.denied")
+        )
+        assert denied == 1
+
+
+async def test_revoked_and_expired_keys_are_refused(sessions) -> None:
+    async with sessions() as session:
+        org, user = await _org_and_user(session)
+        service = ApiKeyService(session)
+        key, token = await _create(session, org, user)
+        await service.revoke(organization_id=org.id, key_id=key.id, user_id=user.id)
+        with pytest.raises(AuthenticationError):
+            await service.authenticate(token)
+
+        soon = datetime.now(UTC) + timedelta(seconds=1)
+        _, short_lived = await _create(session, org, user, expires_at=soon)
+        await service.authenticate(short_lived)
+        key_row = await service.authenticate(short_lived)
+        key_row.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+        await session.flush()
+        with pytest.raises(AuthenticationError):
+            await service.authenticate(short_lived)
+
+
+async def test_rotation_keeps_the_old_key_for_the_grace_period(sessions) -> None:
+    async with sessions() as session:
+        org, user = await _org_and_user(session)
+        service = ApiKeyService(session)
+        old, old_token = await _create(session, org, user)
+        new, new_token = await service.rotate(
+            organization_id=org.id, key_id=old.id, user_id=user.id, grace=timedelta(hours=1)
+        )
+        assert new.scopes == old.scopes and new.id != old.id
+        assert (await service.authenticate(old_token)).id == old.id
+        assert (await service.authenticate(new_token)).id == new.id
+
+        newer, _ = await service.rotate(
+            organization_id=org.id, key_id=new.id, user_id=user.id, grace=timedelta(0)
+        )
+        with pytest.raises(AuthenticationError):
+            await service.authenticate(new_token)
+
+
+async def test_keys_are_isolated_by_organization(sessions) -> None:
+    async with sessions() as session:
+        org_a, user_a = await _org_and_user(session)
+        org_b, user_b = await _org_and_user(session)
+        await _create(session, org_a, user_a)
+        await _create(session, org_b, user_b)
+        await session.commit()
+
+    async with sessions() as session:
+        await bind_organization(session, org_a.id)
+        visible = (await session.execute(text("SELECT organization_id FROM api_keys"))).scalars().all()
+        assert set(visible) == {org_a.id}
+
+
+async def test_missing_scope_is_refused(sessions) -> None:
+    from app.api.deps import ApiKeyPrincipal, require_api_scopes
+
+    async with sessions() as session:
+        org, user = await _org_and_user(session)
+        key, _ = await _create(session, org, user)
+        principal = ApiKeyPrincipal(
+            key=key, organization_id=org.id, scopes=frozenset(key.scopes), expires_at=None
+        )
+        check = require_api_scopes("knowledge:write")
+        with pytest.raises(AuthorizationError):
+            await check(principal, ApiKeyService(session))
+        assert await require_api_scopes("agent:run")(principal, ApiKeyService(session)) is principal
+{%- endif %}
