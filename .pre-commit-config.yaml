@@ -1,0 +1,44 @@
+# Installed by `uv run pre-commit install`. Fast checks on each commit; the full gate is
+# `uv run just check` (and CI).
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check --fix (tooling)
+        entry: uv run ruff check --fix
+        language: system
+        types: [python]
+        files: ^(scripts|tests)/
+      - id: ruff-format
+        name: ruff format (tooling)
+        entry: uv run ruff format
+        language: system
+        types: [python]
+        files: ^(scripts|tests)/
+      - id: typos
+        name: typos
+        entry: uv run typos
+        language: system
+        pass_filenames: false
+      - id: house-style
+        name: no icons or emoji
+        entry: uv run python scripts/check_style.py
+        language: system
+        pass_filenames: false
+      - id: skills-lock
+        name: skills lock generated from the template
+        entry: uv run python scripts/skills_lock.py --check
+        language: system
+        pass_filenames: false
+        files: ^(skills\.lock\.toml|template/skills\.lock\.toml\.jinja)$
+      - id: agent-mirrors
+        name: .claude mirrors generated from .agents
+        entry: uv run python scripts/sync_agents.py --check
+        language: system
+        pass_filenames: false
+        files: ^(\.agents/|\.claude/)
+      - id: i18n
+        name: Italian translations current
+        entry: uv run python scripts/i18n.py check
+        language: system
+        pass_filenames: false

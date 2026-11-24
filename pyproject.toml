@@ -1,0 +1,92 @@
+# Development tooling of the Keelson repository: template tests, documentation, process checks.
+# The template itself is rendered by Copier (copier.yml); this file ships nothing to users.
+[project]
+name = "keelson-dev"
+version = "0.0.0"
+description = "Development tooling of Keelson. Not published."
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.uv]
+package = false
+
+[dependency-groups]
+dev = [
+  "copier>=9.4,<10",
+  "pyyaml>=6",
+  "pytest>=8",
+  "tomli-w>=1.0",
+  "ruff>=0.15,<0.16",
+  "rust-just>=1.40",
+  "typos>=1.30",
+  "pre-commit>=4",
+  "git-cliff>=2.6",
+  "towncrier>=24.8",
+  "mypy>=1.13",
+  "types-pyyaml>=6",
+]
+docs = [
+  "zensical>=0.0.25",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+# The rendered backend has its own ruff configuration (template/backend/pyproject.toml.jinja);
+# template/scripts is shared tooling (agent_skills.py) and follows this configuration.
+extend-exclude = ["template/backend", "template/frontend"]
+
+[tool.ruff.lint]
+# Errors and style (E, W), mistakes (F, B), imports (I), modern syntax (UP), simpler code (SIM),
+# ruff's own checks (RUF), error handling (BLE, TRY, S110), explicit encoding (PLW1514).
+select = ["E", "W", "F", "I", "UP", "B", "SIM", "RUF", "BLE", "TRY", "S110", "PLW1514"]
+preview = true
+explicit-preview-rules = true
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+files = ["scripts", "tests", "template/scripts"]
+exclude = ["scripts/upstream/build_vstorm_context\\.py"]
+explicit_package_bases = true
+mypy_path = ["scripts", "tests", "template/scripts"]
+
+[tool.towncrier]
+name = "Keelson"
+directory = "changes"
+filename = "RELEASE_NOTES.md"
+start_string = "<!-- release notes start -->\n"
+title_format = "## Keelson {version} - {project_date}"
+issue_format = "#{issue}"
+underlines = ["", "", ""]
+wrap = false
+
+[[tool.towncrier.type]]
+directory = "breaking"
+name = "Action required"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "feature"
+name = "New"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "improvement"
+name = "Improved"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "fix"
+name = "Fixed"
+showcontent = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["scripts"]
+addopts = "-q"
+filterwarnings = ["ignore::copier.errors.DirtyLocalWarning"]
+markers = [
+  "render: renders the template with Copier (seconds)",
+  "generated: runs the test suite of a generated project (minutes)",
+]

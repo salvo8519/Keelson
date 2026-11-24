@@ -1,0 +1,62 @@
+"""House style gate: no emoji, pictographic icons or icon shortcodes in the repository.
+
+Keelson's files follow a professional, corporate identity. Typographic symbols (arrows,
+multiplication, minus) are fine; emoji, dingbats, check marks, geometric bullets and theme icon
+shortcodes (``:material-…:``) are not.
+
+    python scripts/check_style.py           # exit 1 and list offending lines
+"""
+
+from __future__ import annotations
+
+import re
+import sys
+from pathlib import Path
+
+import _git
+
+ROOT = Path(__file__).resolve().parents[1]
+SUFFIXES = {
+    ".md", ".py", ".toml", ".yml", ".yaml", ".json", ".html", ".css", ".js", ".ts", ".tsx",
+    ".jinja", ".txt", ".sh", ".cfg", ".ini",
+}  # fmt: skip
+EXCLUDE = ("uv.lock", "internal/")
+
+FORBIDDEN = re.compile(
+    "["
+    "\U0001f000-\U0001faff"  # emoji, pictographs, symbols & pictographs extended
+    "☀-➿"  # miscellaneous symbols and dingbats (check marks, stars, ...)
+    "■-◿"  # geometric shapes used as icons
+    "⬀-⯿"  # miscellaneous symbols and arrows (stars, heavy shapes)
+    "️"  # emoji presentation selector
+    "]"
+    r"|:(?:material|octicons|fontawesome|simple|lucide)-[a-z0-9-]+:"
+)
+
+
+def tracked_files() -> list[Path]:
+    return [
+        ROOT / f
+        for f in _git.ls_files(others=True, cwd=ROOT)
+        if Path(f).suffix in SUFFIXES and not f.startswith(EXCLUDE) and (ROOT / f).is_file()
+    ]
+
+
+def main() -> None:
+    problems = []
+    for path in tracked_files():
+        if path.resolve() == Path(__file__).resolve():
+            continue
+        for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            match = FORBIDDEN.search(line)
+            if match:
+                problems.append(f"{path.relative_to(ROOT)}:{n}: {match.group()!r}")
+    if problems:
+        print("Icons or emoji found (house style forbids them):")
+        print("\n".join(f"  {p}" for p in problems))
+        sys.exit(1)
+    print("Style check passed: no icons or emoji.")
+
+
+if __name__ == "__main__":
+    main()
