@@ -1,0 +1,11 @@
+"""Brand of the service (Keelson white label), from the Copier answers.
+
+The same mark is the favicon of the frontend: both are rendered from
+``template/_includes/brand_mark.svg.jinja`` in the template.
+"""
+
+BRAND_NAME = {{ brand_name | tojson }}
+BRAND_PRIMARY_COLOR = {{ brand_primary_color | lower | tojson }}
+BRAND_MARK_SVG = """
+{% include "template/_includes/brand_mark.svg.jinja" %}
+""".strip()

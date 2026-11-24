@@ -1,8 +1,26 @@
-"""Logging utilities — PII redaction filter for GDPR/compliance safety."""
+"""Logging: PII redaction (upstream) and structured JSON records (Keelson).
 
+Every record carries the request id and, when a trace is active, the OpenTelemetry trace and
+span ids, so a log line leads to its trace and to the ``request_id`` of a Problem Details
+error.
+"""
+
+import json
 import logging
 import re
-from typing import ClassVar
+import sys
+from contextvars import ContextVar
+from datetime import UTC, datetime
+from typing import Any, ClassVar
+
+from opentelemetry import trace
+
+request_id_var: ContextVar[str | None] = ContextVar("request_id", default=None)
+
+# Loggers that install their own handlers; their records go through the root handler instead.
+_SERVER_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access")
+# Attributes every LogRecord has; anything else was passed with ``extra=`` and is kept.
+_RECORD_FIELDS = frozenset(vars(logging.makeLogRecord({}))) | {"message", "asctime"}
 
 
 class PiiRedactionFilter(logging.Filter):
@@ -53,9 +71,60 @@ class PiiRedactionFilter(logging.Filter):
         return value
 
 
-def setup_logging() -> None:
-    """Configure root logger with PII redaction filter."""
+class ContextFilter(logging.Filter):
+    """Adds the request id and the current trace and span ids to every record."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.request_id = request_id_var.get()
+        context = trace.get_current_span().get_span_context()
+        record.trace_id = format(context.trace_id, "032x") if context.is_valid else None
+        record.span_id = format(context.span_id, "016x") if context.is_valid else None
+        return True
+
+
+class JsonFormatter(logging.Formatter):
+    """One JSON object per line, ready for Loki, Elasticsearch or CloudWatch."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        entry: dict[str, Any] = {
+            "timestamp": datetime.fromtimestamp(record.created, UTC).isoformat(),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+        for key, value in vars(record).items():
+            if key not in _RECORD_FIELDS and value is not None:
+                entry[key] = value
+        if record.exc_info:
+            entry["exception"] = self.formatException(record.exc_info)
+        return json.dumps(entry, default=str, ensure_ascii=False)
+
+
+class _AppHandler(logging.StreamHandler):  # type: ignore[type-arg]
+    """The application's handler, recognised when logging is configured again."""
+
+
+TEXT_FORMAT = "%(asctime)s %(levelname)s %(name)s [%(request_id)s] %(message)s"
+
+
+def setup_logging(level: str = "INFO", fmt: str = "json") -> None:
+    """Configure the root logger: one handler, PII redaction, request and trace context.
+
+    Idempotent, so tests and the lifespan can call it again.
+    """
+    handler = _AppHandler(sys.stdout)
+    handler.setFormatter(JsonFormatter() if fmt == "json" else logging.Formatter(TEXT_FORMAT))
+    # Filters on a handler run for records propagated from every logger. Upstream attached the
+    # redaction filter to the root logger, where it only saw records logged on the root itself.
+    handler.addFilter(PiiRedactionFilter())
+    handler.addFilter(ContextFilter())
+
     root_logger = logging.getLogger()
-    # Avoid adding duplicate filters
-    if not any(isinstance(f, PiiRedactionFilter) for f in root_logger.filters):
-        root_logger.addFilter(PiiRedactionFilter())
+    # Replace only a previous handler of ours: test runners and tools keep theirs.
+    root_logger.handlers = [h for h in root_logger.handlers if not isinstance(h, _AppHandler)]
+    root_logger.addHandler(handler)
+    root_logger.setLevel(level)
+    for name in _SERVER_LOGGERS:
+        server_logger = logging.getLogger(name)
+        server_logger.handlers = []
+        server_logger.propagate = True

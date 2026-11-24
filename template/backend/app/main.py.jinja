@@ -43,8 +43,13 @@ from app.core.logfire_setup import instrument_httpx
 from app.core.logfire_setup import instrument_pydantic_ai
 {%- endif %}
 {%- endif %}
+from app.core.api_docs import add_api_reference
+from app.core.brand import BRAND_NAME
 from app.core.logging import setup_logging
-from app.core.middleware import LanguageMiddleware, RequestIDMiddleware
+from app.core.middleware import LanguageMiddleware, RequestIDMiddleware, SecurityHeadersMiddleware
+{%- if not enable_logfire %}
+from app.core.telemetry import setup_tracing, shutdown_tracing
+{%- endif %}
 
 {%- if enable_deep_research %}
 from app.db.todo_pool import close_todo_pool, init_todo_pool
@@ -310,6 +315,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[{% if enable_redis or enable_
 {%- endif %}
 
     await close_db()
+{%- if not enable_logfire %}
+    shutdown_tracing()
+{%- endif %}
 
 
 SHOW_DOCS_ENVIRONMENTS = ("local", "staging", "development")
@@ -333,14 +341,30 @@ def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     show_docs = settings.ENVIRONMENT in SHOW_DOCS_ENVIRONMENTS
     openapi_url = f"{settings.API_V1_STR}/openapi.json" if show_docs else None
-    docs_url = "/docs" if show_docs else None
-    redoc_url = "/redoc" if show_docs else None
 
     openapi_tags = [
         {
             "name": "health",
             "description": "Health check endpoints for monitoring and Kubernetes probes",
         },
+{%- if enable_teams %}
+        {
+            "name": "organizations",
+            "description": "Organizations (tenants): create, switch, update; every request acts on the active one",
+        },
+        {
+            "name": "members",
+            "description": "Members of the active organization and their roles",
+        },
+        {
+            "name": "invitations",
+            "description": "Invitations to join an organization",
+        },
+        {
+            "name": "api-keys",
+            "description": "API keys of the active organization: scopes, rotation, revocation",
+        },
+{%- endif %}
 {%- if use_jwt %}
         {
             "name": "auth",
@@ -395,10 +419,10 @@ def create_app() -> FastAPI:
 {%- endif %}
     ]
 
-    setup_logging()
+    setup_logging(settings.LOG_LEVEL, settings.LOG_FORMAT)
 
     app = FastAPI(
-        title=settings.PROJECT_NAME,
+        title=f"{BRAND_NAME} API",
         summary="FastAPI application{% if enable_logfire %} with Logfire observability{% endif %}",
         description="""
 {{ project_description }}
@@ -430,26 +454,25 @@ def create_app() -> FastAPI:
 - **Observability**: Logfire integration for tracing and monitoring
 {%- endif %}
 {%- if enable_rag %}
-- **RAG**: Retrieval Augmented Generation with Milvus and LangChain
+- **RAG**: Retrieval Augmented Generation{% if use_qdrant %} with Qdrant{% elif use_pgvector %} with pgvector{% endif %}
 {%- endif %}
 
-## Documentation
+## Errors
 
-- [Swagger UI](/docs) - Interactive API documentation
-- [ReDoc](/redoc) - Alternative documentation view
+Every error is a Problem Details document (RFC 9457, `application/problem+json`) in the
+language of the user, the organization or the `Accept-Language` header. Branch on `code`,
+which does not change with the language.
         """.strip(),
         version="0.1.0",
         openapi_url=openapi_url,
-        docs_url=docs_url,
-        redoc_url=redoc_url,
+        # Keelson: the reference is Scalar at /docs (app/core/api_docs.py); Swagger UI and ReDoc
+        # load FastAPI's assets from a CDN and carry its branding.
+        docs_url=None,
+        redoc_url=None,
         openapi_tags=openapi_tags,
         contact={
             "name": "{{ author_name }}",
             "email": "{{ author_email }}",
-        },
-        license_info={
-            "name": "MIT",
-            "identifier": "MIT",
         },
         lifespan=lifespan,
         generate_unique_id_function=custom_generate_unique_id,
@@ -464,8 +487,16 @@ def create_app() -> FastAPI:
     instrument_app(app)
 {%- endif %}
 
+    # Keelson: upstream defined SecurityHeadersMiddleware without adding it. Responses that set
+    # their own policy (the API reference) keep it.
+    app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(LanguageMiddleware)
     app.add_middleware(RequestIDMiddleware)
+{%- if not enable_logfire %}
+    setup_tracing(app)
+{%- endif %}
+    if openapi_url is not None:
+        add_api_reference(app, openapi_url)
 
     register_exception_handlers(app)
 
@@ -489,15 +520,22 @@ def create_app() -> FastAPI:
 
 {%- if enable_prometheus %}
 
+    from prometheus_client import CollectorRegistry, GCCollector, PlatformCollector, ProcessCollector
     from prometheus_fastapi_instrumentator import Instrumentator
 
+    # Keelson: one registry per application (upstream used the process-wide one, so a second
+    # create_app() failed with duplicated metrics), with the standard process collectors.
+    registry = CollectorRegistry()
+    for collector in (ProcessCollector, PlatformCollector, GCCollector):
+        collector(registry=registry)
     instrumentator = Instrumentator(
+        registry=registry,
         should_group_status_codes=True,
         should_ignore_untemplated=True,
-        should_instrument_requests_inprogress=True,
+        # The in-progress gauge of prometheus-fastapi-instrumentator ignores `registry` and
+        # always registers in the process-wide one, so it is off.
+        should_instrument_requests_inprogress=False,
         excluded_handlers=["/health", "/health/ready", "/health/live", settings.PROMETHEUS_METRICS_PATH],
-        inprogress_name="http_requests_inprogress",
-        inprogress_labels=True,
     )
     instrumentator.instrument(app)
     # Optional Bearer-token guard so the metrics endpoint can be exposed on a

@@ -68,6 +68,21 @@ class Settings(BaseSettings):
     # Soft per-org storage cap surfaced on /billing — not enforced yet (5 GB).
     STORAGE_SOFT_LIMIT_BYTES: int = 5 * 1024 * 1024 * 1024
 
+    # Keelson: observability. Logs are JSON lines (one object per record) unless LOG_FORMAT=text.
+    LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+    LOG_FORMAT: Literal["json", "text"] = "json"
+    # OpenTelemetry traces are exported over OTLP/HTTP when an endpoint is set (for example
+    # http://otel-collector:4318); with Logfire enabled, Logfire owns the tracing instead.
+    OTEL_EXPORTER_OTLP_ENDPOINT: str = ""
+    OTEL_SERVICE_NAME: str = "{{ project_name }}"
+    OTEL_TRACES_SAMPLE_RATIO: float = 1.0
+
+    # Keelson: the API reference (Scalar) loads this bundle. The default is pinned to an exact
+    # version; point it at a copy served by your infrastructure for air-gapped installations.
+    API_DOCS_SCALAR_JS_URL: str = (
+        "https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.83.0/dist/browser/standalone.js"
+    )
+
 {%- if enable_logfire %}
 
     LOGFIRE_TOKEN: str | None = None

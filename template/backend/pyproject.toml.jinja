@@ -88,6 +88,16 @@ dependencies = [
 {%- if enable_prometheus %}
     "prometheus-fastapi-instrumentator>=7.0.0",
 {%- endif %}
+    # Keelson: API reference and tracing.
+    "scalar-fastapi>=1.11.0",
+    "opentelemetry-sdk>=1.30.0",
+{%- if not enable_logfire %}
+    "opentelemetry-exporter-otlp-proto-http>=1.30.0",
+    "opentelemetry-instrumentation-fastapi>=0.51b0",
+    "opentelemetry-instrumentation-sqlalchemy>=0.51b0",
+    "opentelemetry-instrumentation-httpx>=0.51b0",
+    "opentelemetry-instrumentation-redis>=0.51b0",
+{%- endif %}
 {%- if enable_admin_panel %}
     "sqladmin>=0.24.0",
 {%- endif %}

@@ -1,5 +1,6 @@
 """Application middleware."""
 
+import re
 from typing import ClassVar
 from uuid import uuid4
 
@@ -7,6 +8,12 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.requests import Request
 from starlette.responses import Response
 from starlette.types import ASGIApp
+
+from app.core.logging import request_id_var
+
+# Keelson: a client-supplied X-Request-ID is kept only when it is a plain identifier; anything
+# else (too long, spaces, control characters) would end up verbatim in the logs.
+_REQUEST_ID = re.compile(r"[A-Za-z0-9._:-]{1,128}")
 
 
 class RequestIDMiddleware(BaseHTTPMiddleware):
@@ -19,10 +26,14 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         """Add request ID to request state and response headers."""
-        request_id = request.headers.get("X-Request-ID", str(uuid4()))
+        supplied = request.headers.get("X-Request-ID", "")
+        request_id = supplied if _REQUEST_ID.fullmatch(supplied) else str(uuid4())
         request.state.request_id = request_id
-
-        response = await call_next(request)
+        token = request_id_var.set(request_id)
+        try:
+            response = await call_next(request)
+        finally:
+            request_id_var.reset(token)
         response.headers["X-Request-ID"] = request_id
         return response
 
@@ -85,7 +96,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     ) -> None:
         super().__init__(app)
         self.csp_directives = csp_directives or self.DEFAULT_CSP_DIRECTIVES
-        self.exclude_paths = exclude_paths or {"/docs", "/redoc", "/openapi.json"}
+        # Keelson: nothing is excluded by default; the API reference sets its own policy, which
+        # is kept (upstream skipped /docs, /redoc and a non-existent /openapi.json).
+        self.exclude_paths = exclude_paths or set()
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         """Add security headers to the response."""

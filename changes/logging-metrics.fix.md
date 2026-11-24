@@ -1,0 +1,1 @@
+Personal data is now redacted in the logs of every module (it was redacted only for the root logger), a client-supplied X-Request-ID is accepted only when it is a plain identifier, and the application factory can be called more than once in a process.

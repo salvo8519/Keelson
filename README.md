@@ -36,6 +36,9 @@ deployment on Docker and Kubernetes, and a development process for coding agents
   the active organization. A test fails when a new table with an organization is not isolated.
 - **API keys for other systems.** Per organization, with scopes, expiry, rotation with a grace
   period, revocation, rate limits and audit; stored only as a keyed hash.
+- **White-label API reference, observable from day one.** Scalar at `/docs` with your brand
+  and a Content Security Policy that blocks calls to third parties; JSON logs with request and
+  trace ids; OpenTelemetry traces and Prometheus metrics.
 - **English and Italian, end to end.** API errors are Problem Details (RFC 9457) in the
   language of the user, the organization or the request; emails follow the recipient's
   language; the interface has a language switcher. CI fails on any untranslated text.

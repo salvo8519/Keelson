@@ -1,0 +1,1 @@
+The API reference at /docs is Scalar with the project's brand and no calls to third parties; logs are JSON lines with request and trace ids; traces go to any OpenTelemetry backend; every response carries security headers.

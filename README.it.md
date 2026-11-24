@@ -1,4 +1,4 @@
-<!-- i18n source: README.md source_hash: 787bb395d46b -->
+<!-- i18n source: README.md source_hash: c75390c94cf1 -->
 <p align="center">
   <img src="docs/_shared/assets/brand/mark.svg" alt="Keelson" width="96">
 </p>
@@ -39,6 +39,9 @@ programmazione.
   un'organizzazione non è isolata.
 - **API key per gli altri sistemi.** Per organizzazione, con scope, scadenza, rotazione con
   periodo di grazia, revoca, limiti di frequenza e audit; conservate solo come hash con chiave.
+- **Riferimento API white label, osservabile da subito.** Scalar su `/docs` con il tuo brand e
+  una Content Security Policy che blocca le chiamate a terzi; log JSON con request id e trace
+  id; tracce OpenTelemetry e metriche Prometheus.
 - **Inglese e italiano, da un capo all'altro.** Gli errori delle API sono Problem Details
   (RFC 9457) nella lingua dell'utente, dell'organizzazione o della richiesta; le email seguono
   la lingua del destinatario; l'interfaccia ha un selettore di lingua. La CI fallisce su

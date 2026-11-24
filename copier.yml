@@ -8,10 +8,12 @@ _templates_suffix: .jinja
 _answers_file: .copier-answers.yml
 
 _exclude:
+  - "_includes"
   - "{% if web_frontend == 'none' %}frontend{% endif %}"
   - "{% if 'it' not in languages %}backend/app/locales/it{% endif %}"
   - "{% if 'it' not in languages %}frontend/src/locales/it.json{% endif %}"
   - "{% if 'it' not in languages %}backend/emails/compiled/it{% endif %}"
+  - "{% if logfire %}backend/app/core/telemetry.py{% endif %}"
 
 _tasks:
   - command: [python3, _post_gen.py]
