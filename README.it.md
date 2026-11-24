@@ -1,4 +1,4 @@
-<!-- i18n source: README.md source_hash: da9123ea94c0 -->
+<!-- i18n source: README.md source_hash: 2cc8bb23c937 -->
 <p align="center">
   <img src="docs/_shared/assets/brand/mark.svg" alt="Keelson" width="96">
 </p>
@@ -26,60 +26,78 @@ rompono i client e superare una revisione di sicurezza. Keelson genera un proget
 cui tutto questo è già fatto, verificato da test che girano nella sua pipeline, e lascia al
 vostro team la parte che è solo vostra.
 
-Un solo comando produce un backend, un frontend React, worker per il lavoro asincrono e
-schedulato, un livello agentico con retrieval, il deploy su Docker e Kubernetes, e la
-documentazione in inglese e italiano.
-
 ## Cosa è già fatto
 
-**I dati di ogni azienda restano suoi, e lo impone il database.**
-La row level security di PostgreSQL copre ogni tabella, per un login applicativo che non può
-aggirarla. Ogni transazione dichiara chi agisce (un utente, un'organizzazione, una API key);
-senza, nessuna riga è visibile. Le conversazioni dei membri restano private anche per gli
-amministratori della loro organizzazione, e i ruoli sono verificati nel database oltre che nel
-codice. Test di attacco su un PostgreSQL reale provano a superare ogni confine. Il database
-vettoriale ha un proprio filtro per tenant, così il retrieval non restituisce mai documenti di
-un altro tenant.
+- **I dati di ogni azienda restano suoi, e lo impone il database.** Row level security su ogni
+  tabella, per un login applicativo che non può aggirarla; anche il database vettoriale filtra
+  per tenant.
+- **Persone e sistemi accedono come le aziende si aspettano.** Single sign-on con qualsiasi
+  provider OpenID Connect, API key per organizzazione, e job di CI che si autenticano senza
+  segreti salvati.
+- **Un contratto API che non rompe i client.** Il documento OpenAPI è versionato, e la pipeline
+  blocca disallineamenti e modifiche incompatibili.
+- **Pronto per una revisione di sicurezza.** Segreti tenuti fuori dai log e cifrati a riposo,
+  una traccia di audit, scansioni di dipendenze, immagini e storia, e una mappa dei controlli
+  ISO 27001 e SOC 2.
+- **Osservabile e pronto al deploy.** Log, trace e metriche dal primo avvio; Docker Compose con
+  Traefik, Kubernetes, e una prova generale della produzione sulla propria macchina.
+- **Pensato per essere mantenuto con gli agenti di programmazione.** Istruzioni, ruoli e le
+  skill ufficiali dei componenti, vincolate e scansionate.
 
-**Persone e sistemi accedono come le aziende si aspettano.**
-Single sign-on con qualsiasi provider OpenID Connect (Microsoft Entra ID, Google, Keycloak,
-Okta), configurato a runtime, senza un secondo login. Password salvate come hash Argon2id. API
-key per organizzazione, con scope, scadenza, rotazione e audit. I job di CI su GitHub Actions
-o GitLab CI chiamano le API con la propria identità, senza segreti salvati nella CI.
+## Avvio rapido
 
-**Un contratto API che non rompe i client.**
-Il documento OpenAPI è versionato con il codice. La pipeline fallisce quando si discosta dal
-codice, quando una pull request contiene una modifica incompatibile, o quando il client del
-frontend non è rigenerato da esso. Su `/docs` c'è un riferimento white label (Scalar), e gli
-errori seguono la RFC 9457 nella lingua dell'utente.
+```bash
+uvx copier copy --trust https://github.com/salvo8519/keelson my_service
+cd my_service
+make quickstart      # configurazione, stack di sviluppo, migrazioni, un admin di sviluppo
+make help            # ogni comando, per area
+make prod-local      # lo stack di produzione su questa macchina: impostazioni di produzione, segreti locali
+```
 
-**Pronto per una revisione di sicurezza.**
-I segreti non arrivano mai nei log, e un test fa passare segreti noti in ogni percorso di
-logging per dimostrarlo. I segreti salvati nel database usano chiavi proprie e ruotabili. La
-pipeline cerca segreti nella storia del repository, verifica le dipendenze di backend e
-frontend, scansiona l'immagine del container, esegue regole di lint di sicurezza e produce una
-distinta dei componenti software (SBOM). Le skill date agli agenti di programmazione sono
-vincolate al digest del loro contenuto e scansionate prima dell'installazione.
+Keelson usa [Copier](https://copier.readthedocs.io): pone alcune domande, genera il progetto e
+registra le risposte. Quando Keelson migliora, `uvx copier update --trust` porta le modifiche
+nel vostro progetto e le unisce alle vostre, così un progetto non resta fermo alla versione da
+cui è stato generato. Le domande e i loro valori predefiniti sono nel
+[riferimento](docs/it/reference/questions.md).
 
-**Osservabile e pronto al deploy.**
-Log JSON con request id e trace id, trace OpenTelemetry, metriche Prometheus, sonde di salute,
-lavoro in background con Taskiq, Celery o ARQ e uno scheduler, Docker Compose e manifest
-Kubernetes.
+| Domanda | Opzioni |
+| --- | --- |
+| Frontend | React (Vite, TanStack, shadcn/ui), nessuno |
+| Coda dei task | Taskiq, Celery, ARQ |
+| Framework agentico | Pydantic AI, LangGraph, LangChain, Deep Agents, Pydantic Deep |
+| Provider LLM | OpenAI, Anthropic, Google, OpenRouter, compatibile OpenAI (on-premise), tutti |
+| Database vettoriale | Qdrant, pgvector, nessuno |
+| CI | GitHub Actions, GitLab CI |
+| Kubernetes | sì, no |
 
-**Pensato per essere mantenuto con gli agenti di programmazione.**
-Istruzioni, ruoli e skill di processo per Claude Code, Codex, Copilot e Cursor, più le skill
-ufficiali di FastAPI, Pydantic, LangChain, Qdrant e dello stack React, scelte in base alle
-vostre risposte.
+## Come viene isolata una richiesta
+
+```mermaid
+flowchart LR
+    U[Utente] -->|password o OpenID Connect| API
+    S[Sistema o job di CI] -->|API key o identità del workload| API
+    API[FastAPI] -->|"principal: utente, organizzazione o servizio"| APP[(PostgreSQL<br/>login applicativo<br/>row level security)]
+    API -->|"lettore: utente, organizzazione, applicazione"| V[(Database vettoriale<br/>filtro per tenant)]
+    API -->|task| W[Worker e scheduler]
+    W --> SYS[(PostgreSQL<br/>login proprietario<br/>sessioni di sistema registrate)]
+    API -. accesso, ricerche per token, amministrazione .-> SYS
+```
+
+Ogni transazione del login applicativo dichiara il proprio principal; senza, nessuna riga è
+visibile. Il lavoro che non ha ancora un utente o attraversa più tenant (accesso, job in
+background, riga di comando) usa il login proprietario tramite sessioni di sistema, ognuna
+registrata con la sua motivazione.
 
 ## In sintesi
 
 | Area | Cosa ha un progetto generato | Verificato da |
 | --- | --- | --- |
-| Tenancy | Row level security su ogni tabella; login applicativo separato; tenancy dei vettori | test di copertura delle tabelle e di attacco su PostgreSQL, test di tenancy del retrieval |
-| Identità | Single sign-on OpenID Connect, Argon2id, API key con scope, identità dei workload di CI | test di accesso, API key e identità dei workload |
-| API | Contratto OpenAPI versionato, controllo delle modifiche incompatibili, client generato, riferimento Scalar, errori RFC 9457 | controlli di disallineamento del contratto e del client nella pipeline |
-| Sicurezza | Oscuramento dei log, chiavi dei dati ruotabili, traccia di audit, gitleaks, scansioni di dipendenze e immagini, SBOM | test-trappola sui log, test delle impostazioni di produzione, controlli della pipeline |
-| Operatività | Log JSON, OpenTelemetry, Prometheus, sonde di salute, `make prod-local`, Compose con Traefik, Kubernetes | stack Compose risolti nei test |
+| Tenancy | Row level security su ogni tabella, per comando; login applicativo separato che non possiede nulla; conversazioni dei membri private anche per i loro amministratori; ruoli verificati nel database | test di copertura delle tabelle e di attacco su un PostgreSQL reale |
+| Identità | Single sign-on OpenID Connect (Entra ID, Google, Keycloak o qualsiasi issuer) con PKCE e nessun token negli URL; password Argon2id; API key con scope, scadenza, rotazione e audit; identità dei workload di CI per GitHub Actions e GitLab CI | test di accesso, password, API key e identità dei workload |
+| Dati e retrieval | Ingestione dei documenti nei worker in background (PDF, Word, testo), embedding e reranking facoltativo, sorgenti sincronizzate, un tenant su ogni vettore, migrazioni Alembic | test di tenancy del retrieval e di ambito della ricerca, migrazioni in avanti e indietro |
+| API | Contratto OpenAPI versionato, controllo delle modifiche incompatibili rispetto al branch di destinazione, client del frontend generato, riferimento Scalar white label, errori RFC 9457 nella lingua dell'utente | controlli di disallineamento del contratto e del client nella pipeline |
+| Sicurezza | Oscuramento di messaggi, campi ed eccezioni nei log; chiavi ruotabili per i segreti a riposo; traccia di audit in sola aggiunta; la produzione rifiuta i segreti di sviluppo; gitleaks, scansioni di dipendenze e immagini, lint di sicurezza, SBOM | test-trappola sui log e test delle impostazioni di produzione, controlli della pipeline |
+| Operatività | Log JSON con request id e trace id, OpenTelemetry, Prometheus, sonde di salute; `make prod-local`; Compose con Traefik e Let's Encrypt; manifest Kubernetes | ogni stack Compose risolto nei test |
 | Lingue | Inglese e italiano in errori delle API, e-mail, interfaccia e documentazione | controlli dei cataloghi nella pipeline |
 
 | Livello | Stack |
@@ -96,7 +114,8 @@ vostre risposte.
 Un progetto generato implementa controlli richiesti da ISO/IEC 27001:2022 e SOC 2, ognuno
 supportato da un file o da un test. Supporta un audit; non sostituisce i controlli
 dell'organizzazione. La [mappa completa](docs/it/concepts/security-controls.md) elenca ogni
-controllo, la sua evidenza e ciò che resta all'organizzazione.
+controllo, la sua evidenza e ciò che resta all'organizzazione. I percorsi indicati sono quelli
+di un progetto generato (in questo repository, sotto `template/backend/`).
 
 | Controllo | ISO 27001 | SOC 2 | Evidenza |
 | --- | --- | --- | --- |
@@ -111,50 +130,41 @@ controllo, la sua evidenza e ciò che resta all'organizzazione.
 | Gestione delle vulnerabilità | A.8.8 | CC7.1 | scansioni di dipendenze e immagini |
 | Catena di fornitura | A.5.21 | CC6.8, CC9.2 | SBOM, skill degli agenti vincolate e scansionate |
 
-## Avvio rapido
-
-```bash
-uvx copier copy --trust https://github.com/salvo8519/keelson my_service
-cd my_service
-cp backend/.env.example backend/.env
-make dev
-```
-
-Keelson usa [Copier](https://copier.readthedocs.io): pone alcune domande, genera il progetto e
-registra le risposte. Quando Keelson migliora, `uvx copier update --trust` porta le modifiche
-nel vostro progetto e le unisce alle vostre, così un progetto non resta fermo alla versione da
-cui è stato generato. Le domande e i loro valori predefiniti sono nel
-[riferimento](docs/it/reference/questions.md).
-
-## Cosa si sceglie
-
-| Domanda | Opzioni |
-| --- | --- |
-| Frontend | React (Vite, TanStack, shadcn/ui), nessuno |
-| Coda dei task | Taskiq, Celery, ARQ |
-| Framework agentico | Pydantic AI, LangGraph, LangChain, Deep Agents, Pydantic Deep |
-| Provider LLM | OpenAI, Anthropic, Google, OpenRouter, compatibile OpenAI (on-premise), tutti |
-| Database vettoriale | Qdrant, pgvector, nessuno |
-| CI | GitHub Actions, GitLab CI |
-| Kubernetes | sì, no |
-
 ## Come è verificato
 
 Ogni modifica al template genera progetti ed esegue i loro controlli: la suite del backend su
 un PostgreSQL reale (segregazione del database e migrazioni incluse, dove un test saltato conta
 come un fallimento), la build e le traduzioni del frontend, la build della documentazione, il
-contratto API e il client generato. La revisione del codice su cui Keelson si basa ha trovato
-difetti, tutti corretti con un test di regressione. Tra questi: commit falliti che arrivavano
-al client come successi, token di accesso negli URL di reindirizzamento, un filtro dei log che
-poteva stampare password, account collegati tramite indirizzi e-mail non verificati, e una
-ricerca che restituiva documenti di un'altra organizzazione. [PROVENANCE.md](PROVENANCE.md)
-elenca ogni modifica.
+contratto API e il client generato, e ogni stack Compose. La revisione del codice su cui
+Keelson si basa ha trovato difetti, tutti corretti con un test di regressione. Tra questi:
+commit falliti che arrivavano al client come successi, token di accesso negli URL di
+reindirizzamento, un filtro dei log che poteva stampare password, account collegati tramite
+indirizzi e-mail non verificati, una ricerca che restituiva documenti di un'altra
+organizzazione, e worker di produzione che giravano sull'immagine di sviluppo.
+[PROVENANCE.md](PROVENANCE.md) elenca ogni modifica.
+
+## Stato e limiti
+
+Keelson è in pre-release. Cosa non è ancora verificato, o non ancora costruito:
+
+- Le immagini Docker e gli stack Compose non sono ancora stati avviati nella pipeline di
+  Keelson; la loro configurazione è risolta e controllata dai test.
+- Il single sign-on è testato con un provider simulato, non ancora con un tenant reale di
+  Entra ID o Keycloak.
+- I test end-to-end nel browser (Playwright) del frontend non girano nella pipeline.
+- La row level security si fida del principal che l'applicazione dichiara sulla propria
+  connessione: un'SQL injection nel login applicativo potrebbe cambiarlo. Il codice usa solo
+  parametri vincolati; un contesto firmato dall'applicazione e verificato nel database è un
+  possibile passo successivo.
+- Pianificati: storage a oggetti compatibile S3 per i documenti (Garage come predefinito),
+  mutation testing dei moduli di sicurezza, chart Helm.
 
 ## Documentazione
 
 Il sito della documentazione è costruito con Zensical in inglese e italiano: primi passi,
-concetti (tenancy, accesso, API key, lingue, osservabilità), il riferimento di API e
-impostazioni generato dal codice, e come Keelson è assemblato.
+concetti (tenancy, accesso e identità dei workload, controlli di sicurezza, lingue,
+osservabilità), il riferimento di API e impostazioni generato dal codice, e come Keelson è
+assemblato.
 
 ## Sviluppo del template
 
