@@ -6,9 +6,15 @@ import { defineConfig } from "vite"
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  // Keelson: the backend does not serve the frontend; it is built to dist/ and served by its
+  // own container (frontend/Dockerfile). Port 3000 is the origin the backend allows by default
+  // (CORS_ORIGINS, FRONTEND_URL).
   build: {
-    outDir: "../backend/app/frontend",
+    outDir: "dist",
     emptyOutDir: true,
+  },
+  server: {
+    port: 3000,
   },
   resolve: {
     alias: {

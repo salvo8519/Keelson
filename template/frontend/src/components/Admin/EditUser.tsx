@@ -5,7 +5,7 @@ import { useState } from "react"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 
-import { type UserPublic, UsersService } from "@/client"
+import { type UserRead, UsersService } from "@/client"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -29,6 +29,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { LoadingButton } from "@/components/ui/loading-button"
 import useCustomToast from "@/hooks/useCustomToast"
+import { isAdmin } from "@/lib/session"
 import { handleError } from "@/utils"
 
 const formSchema = z
@@ -41,7 +42,7 @@ const formSchema = z
       .optional()
       .or(z.literal("")),
     confirm_password: z.string().optional(),
-    is_superuser: z.boolean().optional(),
+    is_admin: z.boolean().optional(),
     is_active: z.boolean().optional(),
   })
   .refine((data) => !data.password || data.password === data.confirm_password, {
@@ -52,7 +53,7 @@ const formSchema = z
 type FormData = z.infer<typeof formSchema>
 
 interface EditUserProps {
-  user: UserPublic
+  user: UserRead
   onSuccess: () => void
 }
 
@@ -68,14 +69,17 @@ const EditUser = ({ user, onSuccess }: EditUserProps) => {
     defaultValues: {
       email: user.email,
       full_name: user.full_name ?? undefined,
-      is_superuser: user.is_superuser,
+      is_admin: isAdmin(user),
       is_active: user.is_active,
     },
   })
 
   const mutation = useMutation({
-    mutationFn: (data: FormData) =>
-      UsersService.updateUser({ path: { user_id: user.id }, body: data }),
+    mutationFn: ({ is_admin, ...data }: Omit<FormData, "confirm_password">) =>
+      UsersService.updateUserById({
+        path: { user_id: user.id },
+        body: { ...data, role: is_admin ? "admin" : "user" },
+      }),
     onSuccess: () => {
       showSuccessToast("User updated successfully")
       setIsOpen(false)
@@ -188,7 +192,7 @@ const EditUser = ({ user, onSuccess }: EditUserProps) => {
 
               <FormField
                 control={form.control}
-                name="is_superuser"
+                name="is_admin"
                 render={({ field }) => (
                   <FormItem className="flex items-center gap-3 space-y-0">
                     <FormControl>
@@ -197,7 +201,7 @@ const EditUser = ({ user, onSuccess }: EditUserProps) => {
                         onCheckedChange={field.onChange}
                       />
                     </FormControl>
-                    <FormLabel className="font-normal">Is superuser?</FormLabel>
+                    <FormLabel className="font-normal">Administrator</FormLabel>
                   </FormItem>
                 )}
               />

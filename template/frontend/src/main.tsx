@@ -11,12 +11,22 @@ import ReactDOM from "react-dom/client"
 import { client } from "./client/client.gen"
 import { ThemeProvider } from "./components/theme-provider"
 import { Toaster } from "./components/ui/sonner"
+import { ORGANIZATION_HEADER, session } from "./lib/session"
 import "./index.css"
 import { routeTree } from "./routeTree.gen"
 
 client.setConfig({
   baseURL: import.meta.env.VITE_API_URL ?? "",
-  auth: () => localStorage.getItem("access_token") || "",
+  auth: () => session.accessToken() || "",
+})
+
+// Keelson: every request carries the active organization; the backend checks the membership.
+client.instance.interceptors.request.use((config) => {
+  const organizationId = session.activeOrganization()
+  if (organizationId) {
+    config.headers.set(ORGANIZATION_HEADER, organizationId)
+  }
+  return config
 })
 
 const handleApiError = (error: Error) => {
@@ -24,7 +34,7 @@ const handleApiError = (error: Error) => {
     error instanceof AxiosError &&
     [401, 403].includes(error.response?.status ?? 0)
   ) {
-    localStorage.removeItem("access_token")
+    session.signOut()
     window.location.href = "/login"
   }
 }

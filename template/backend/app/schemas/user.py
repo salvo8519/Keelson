@@ -55,6 +55,33 @@ class UserUpdate(BaseSchema):
         return v.lower() if v is not None else None
 
 
+class UserUpdateMe(BaseSchema):
+    """Fields a user may change on their own profile (Keelson, from the official template).
+
+    Password, role and account status are excluded: the password changes through
+    ``UpdatePassword``, which requires the current one; role and status are for administrators.
+    """
+
+    email: EmailStr | None = Field(default=None, max_length=255)
+    full_name: str | None = Field(default=None, max_length=255)
+    onboarding_completed_at: datetime | None = Field(
+        default=None,
+        description="Set to a timestamp to mark onboarding complete; null to reset.",
+    )
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, v: str | None) -> str | None:
+        return v.lower() if v is not None else None
+
+
+class UpdatePassword(BaseSchema):
+    """Own password change: the current password is required (from the official template)."""
+
+    current_password: str = Field(min_length=8, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
+
+
 class UserRead(UserBase, TimestampSchema):
     """Schema for reading a user."""
 

@@ -72,6 +72,9 @@ def mock_user_service(mock_user: MockUser) -> MagicMock:
     service.get_by_id = ServiceMock(return_value=mock_user)
     service.get_multi = ServiceMock(return_value=[mock_user])
     service.update = ServiceMock(return_value=mock_user)
+    service.update_me = ServiceMock(return_value=mock_user)
+    service.change_password = ServiceMock(return_value=None)
+    service.register = ServiceMock(return_value=mock_user)
     service.delete = ServiceMock(return_value=mock_user)
     return service
 
@@ -154,7 +157,78 @@ async def test_update_current_user(auth_client: AsyncClient, mock_user_service: 
         json={"full_name": "Updated Name"},
     )
     assert response.status_code == 200
-    mock_user_service.update.assert_called_once()
+    mock_user_service.update_me.assert_called_once()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "field",
+    [{"password": "new-password-123"}, {"is_active": False}, {"role": "admin"}],
+)
+async def test_update_current_user_ignores_protected_fields(
+    auth_client: AsyncClient, mock_user_service: MagicMock, field: dict
+):
+    """Keelson: password, status and role cannot change through PATCH /users/me."""
+    response = await auth_client.patch(f"{settings.API_V1_STR}/users/me", json=field)
+    assert response.status_code == 200
+    mock_user_service.update.assert_not_called()
+    (_, sent), _ = mock_user_service.update_me.call_args
+    assert sent.model_dump(exclude_unset=True) == {}
+
+
+@pytest.mark.anyio
+async def test_change_password_requires_the_current_one(
+    auth_client: AsyncClient, mock_user_service: MagicMock, mock_user: MockUser
+):
+    response = await auth_client.patch(
+        f"{settings.API_V1_STR}/users/me/password",
+        json={"current_password": "old-password-1", "new_password": "new-password-1"},
+    )
+    assert response.status_code == 204
+    mock_user_service.change_password.assert_awaited_once_with(
+        mock_user, "old-password-1", "new-password-1"
+    )
+    missing = await auth_client.patch(
+        f"{settings.API_V1_STR}/users/me/password", json={"new_password": "new-password-1"}
+    )
+    assert missing.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_delete_own_account(auth_client: AsyncClient, mock_user_service: MagicMock):
+    response = await auth_client.delete(f"{settings.API_V1_STR}/users/me")
+    assert response.status_code == 204
+    mock_user_service.delete.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_administrator_cannot_delete_own_account(
+    superuser_client: AsyncClient, mock_user_service: MagicMock
+):
+    response = await superuser_client.delete(f"{settings.API_V1_STR}/users/me")
+    assert response.status_code == 400
+    mock_user_service.delete.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_administrator_creates_a_user(
+    superuser_client: AsyncClient, mock_user_service: MagicMock
+):
+    response = await superuser_client.post(
+        f"{settings.API_V1_STR}/users",
+        json={"email": "new@example.com", "password": "password-123", "full_name": "New"},
+    )
+    assert response.status_code == 201
+    mock_user_service.register.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_regular_user_cannot_create_users(auth_client: AsyncClient):
+    response = await auth_client.post(
+        f"{settings.API_V1_STR}/users",
+        json={"email": "new@example.com", "password": "password-123"},
+    )
+    assert response.status_code == 403
 
 
 {%- if not enable_pagination %}

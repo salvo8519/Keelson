@@ -36,7 +36,17 @@ render:
 
 generated:
   stage: test
-  # The default project, rendered and tested end to end (backend suite).
+  # The default project, rendered and tested end to end (backend suite), with a real
+  # PostgreSQL so that the row level security tests run instead of being skipped.
+  services:
+    - name: postgres:16-alpine
+      alias: postgres
+      variables:
+        POSTGRES_PASSWORD: postgres
+        POSTGRES_DB: acme_service
+  variables:
+    POSTGRES_HOST: postgres
+    POSTGRES_PASSWORD: postgres
   script:
     - uv run just test-generated
   rules:

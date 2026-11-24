@@ -42,7 +42,7 @@ const formSchema = z
     confirm_password: z
       .string()
       .min(1, { message: "Please confirm your password" }),
-    is_superuser: z.boolean(),
+    is_admin: z.boolean(),
     is_active: z.boolean(),
   })
   .refine((data) => data.password === data.confirm_password, {
@@ -66,7 +66,7 @@ const AddUser = () => {
       full_name: "",
       password: "",
       confirm_password: "",
-      is_superuser: false,
+      is_admin: false,
       is_active: false,
     },
   })
@@ -84,8 +84,8 @@ const AddUser = () => {
     },
   })
 
-  const onSubmit = (data: FormData) => {
-    mutation.mutate(data)
+  const onSubmit = ({ is_admin, confirm_password: _, ...data }: FormData) => {
+    mutation.mutate({ ...data, role: is_admin ? "admin" : "user" })
   }
 
   return (
@@ -186,7 +186,7 @@ const AddUser = () => {
 
               <FormField
                 control={form.control}
-                name="is_superuser"
+                name="is_admin"
                 render={({ field }) => (
                   <FormItem className="flex items-center gap-3 space-y-0">
                     <FormControl>
@@ -195,7 +195,7 @@ const AddUser = () => {
                         onCheckedChange={field.onChange}
                       />
                     </FormControl>
-                    <FormLabel className="font-normal">Is superuser?</FormLabel>
+                    <FormLabel className="font-normal">Administrator</FormLabel>
                   </FormItem>
                 )}
               />

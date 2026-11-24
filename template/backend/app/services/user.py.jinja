@@ -11,7 +11,12 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.exceptions import AlreadyExistsError, AuthenticationError, NotFoundError
+from app.core.exceptions import (
+    AlreadyExistsError,
+    AuthenticationError,
+    BadRequestError,
+    NotFoundError,
+)
 from app.core.security import (
 {%- if enable_email %}
     create_magic_link_token,
@@ -32,7 +37,7 @@ from app.repositories import session_repo, user_repo
 {%- else %}
 from app.repositories import user_repo
 {%- endif %}
-from app.schemas.user import UserCreate, UserRead, UserUpdate
+from app.schemas.user import UserCreate, UserRead, UserUpdate, UserUpdateMe
 from app.services.file_storage import get_file_storage
 {%- if enable_memory %}
 from app.services.user_memory import forget_user_memory
@@ -304,6 +309,28 @@ class UserService:
             update_data["hashed_password"] = get_password_hash(update_data.pop("password"))
 
         return await user_repo.update(self.db, db_user=user, update_data=update_data)
+
+    async def update_me(self, user: User, user_in: UserUpdateMe) -> User:
+        """Update the caller's own profile; an email already in use is refused."""
+        update_data = user_in.model_dump(exclude_unset=True)
+        new_email = update_data.get("email")
+        if new_email and new_email != user.email:
+            existing = await user_repo.get_by_email(self.db, new_email)
+            if existing:
+                raise AlreadyExistsError(
+                    message="Email already registered", details={"email": new_email}
+                )
+        return await user_repo.update(self.db, db_user=user, update_data=update_data)
+
+    async def change_password(self, user: User, current_password: str, new_password: str) -> None:
+        """Change the caller's own password after checking the current one."""
+        if not user.hashed_password or not verify_password(current_password, user.hashed_password):
+            raise BadRequestError(message="Incorrect password")
+        if current_password == new_password:
+            raise BadRequestError(message="New password cannot be the same as the current one")
+        await user_repo.update(
+            self.db, db_user=user, update_data={"hashed_password": get_password_hash(new_password)}
+        )
 
     async def update_avatar(
         self, user_id: UUID, file_data: bytes, filename: str, content_type: str

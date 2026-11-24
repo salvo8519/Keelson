@@ -10,6 +10,7 @@ from typing import {% if use_telegram or use_slack %}Any, {% endif %}TypedDict
 {%- endif %}
 
 from fastapi import FastAPI
+from fastapi.routing import APIRoute
 {%- if enable_prometheus %}
 from fastapi import Depends, Header, HTTPException, status as http_status
 {%- endif %}
@@ -314,6 +315,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[{% if enable_redis or enable_
 SHOW_DOCS_ENVIRONMENTS = ("local", "staging", "development")
 
 
+def custom_generate_unique_id(route: APIRoute) -> str:
+    """Operation ids as ``<tag>-<function>`` (Keelson, from the official FastAPI template).
+
+    The generated TypeScript client groups operations by tag and names each method after the
+    function, so the frontend calls ``UsersService.readCurrentUser()``.
+    """
+    return f"{route.tags[0]}-{route.name}" if route.tags else route.name
+
+
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     show_docs = settings.ENVIRONMENT in SHOW_DOCS_ENVIRONMENTS
@@ -437,6 +447,7 @@ def create_app() -> FastAPI:
             "identifier": "MIT",
         },
         lifespan=lifespan,
+        generate_unique_id_function=custom_generate_unique_id,
     )
 
 {%- if enable_logfire %}

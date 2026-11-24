@@ -1,12 +1,13 @@
 import type { ColumnDef } from "@tanstack/react-table"
 
-import type { UserPublic } from "@/client"
+import type { UserRead } from "@/client"
 import type { DataTableFeatures } from "@/components/Common/DataTable"
 import { Badge } from "@/components/ui/badge"
+import { isAdmin } from "@/lib/session"
 import { cn } from "@/lib/utils"
 import { UserActionsMenu } from "./UserActionsMenu"
 
-export type UserTableData = UserPublic & {
+export type UserTableData = UserRead & {
   isCurrentUser: boolean
 }
 
@@ -40,11 +41,11 @@ export const columns: ColumnDef<DataTableFeatures, UserTableData>[] = [
     ),
   },
   {
-    accessorKey: "is_superuser",
+    accessorKey: "role",
     header: "Role",
     cell: ({ row }) => (
-      <Badge variant={row.original.is_superuser ? "default" : "secondary"}>
-        {row.original.is_superuser ? "Superuser" : "User"}
+      <Badge variant={isAdmin(row.original) ? "default" : "secondary"}>
+        {isAdmin(row.original) ? "Administrator" : "User"}
       </Badge>
     ),
   },

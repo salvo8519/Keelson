@@ -2,17 +2,18 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
 
 import {
-  type Body_login_login_access_token as AccessToken,
-  LoginService,
-  type UserPublic,
-  type UserRegister,
+  type Body_auth_login as AccessToken,
+  AuthService,
+  type UserCreate,
+  type UserRead,
   UsersService,
 } from "@/client"
+import { session } from "@/lib/session"
 import { handleError } from "@/utils"
 import useCustomToast from "./useCustomToast"
 
 const isLoggedIn = () => {
-  return localStorage.getItem("access_token") !== null
+  return session.accessToken() !== null
 }
 
 const useAuth = () => {
@@ -20,15 +21,14 @@ const useAuth = () => {
   const queryClient = useQueryClient()
   const { showErrorToast } = useCustomToast()
 
-  const { data: user } = useQuery<UserPublic | null, Error>({
+  const { data: user } = useQuery<UserRead | null, Error>({
     queryKey: ["currentUser"],
-    queryFn: async () => (await UsersService.readUserMe()).data,
+    queryFn: async () => (await UsersService.readCurrentUser()).data,
     enabled: isLoggedIn(),
   })
 
   const signUpMutation = useMutation({
-    mutationFn: (data: UserRegister) =>
-      UsersService.registerUser({ body: data }),
+    mutationFn: (data: UserCreate) => AuthService.register({ body: data }),
     onSuccess: () => {
       navigate({ to: "/login" })
     },
@@ -39,10 +39,10 @@ const useAuth = () => {
   })
 
   const login = async (data: AccessToken) => {
-    const response = await LoginService.loginAccessToken({
+    const response = await AuthService.login({
       body: data,
     })
-    localStorage.setItem("access_token", response.data.access_token)
+    session.signIn(response.data.access_token, response.data.refresh_token)
   }
 
   const loginMutation = useMutation({
@@ -54,7 +54,8 @@ const useAuth = () => {
   })
 
   const logout = () => {
-    localStorage.removeItem("access_token")
+    session.signOut()
+    queryClient.clear()
     navigate({ to: "/login" })
   }
 

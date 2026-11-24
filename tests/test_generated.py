@@ -21,3 +21,13 @@ def test_default_project_backend_suite_passes(render: Render) -> None:
         check=False,
     )
     assert result.returncode == 0, result.stdout[-4000:] + result.stderr[-2000:]
+
+
+def test_default_project_frontend_builds(render: Render) -> None:
+    """The official React frontend compiles against the Keelson API (tsc and Vite)."""
+    frontend = render({"project_name": "acme_service"}) / "frontend"
+    subprocess.run(["bun", "install"], cwd=frontend, check=True, capture_output=True)
+    result = subprocess.run(
+        ["bun", "run", "build"], cwd=frontend, capture_output=True, text=True, check=False
+    )
+    assert result.returncode == 0, result.stdout[-4000:] + result.stderr[-2000:]

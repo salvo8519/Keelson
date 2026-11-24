@@ -1,7 +1,8 @@
-import { Briefcase, Home, Users } from "lucide-react"
+import { Building2, Home, Users } from "lucide-react"
 
 import { SidebarAppearance } from "@/components/Common/Appearance"
 import { Logo } from "@/components/Common/Logo"
+import { OrganizationSwitcher } from "@/components/Organizations/OrganizationSwitcher"
 import {
   Sidebar,
   SidebarContent,
@@ -9,18 +10,19 @@ import {
   SidebarHeader,
 } from "@/components/ui/sidebar"
 import useAuth from "@/hooks/useAuth"
+import { isAdmin } from "@/lib/session"
 import { type Item, Main } from "./Main"
 import { User } from "./User"
 
 const baseItems: Item[] = [
   { icon: Home, title: "Dashboard", path: "/" },
-  { icon: Briefcase, title: "Items", path: "/items" },
+  { icon: Building2, title: "Organizations", path: "/organizations" },
 ]
 
 export function AppSidebar() {
   const { user: currentUser } = useAuth()
 
-  const items = currentUser?.is_superuser
+  const items = isAdmin(currentUser)
     ? [...baseItems, { icon: Users, title: "Admin", path: "/admin" }]
     : baseItems
 
@@ -30,6 +32,7 @@ export function AppSidebar() {
         <Logo variant="responsive" />
       </SidebarHeader>
       <SidebarContent>
+        <OrganizationSwitcher />
         <Main items={items} />
       </SidebarContent>
       <SidebarFooter>

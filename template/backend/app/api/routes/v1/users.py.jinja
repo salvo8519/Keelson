@@ -19,7 +19,7 @@ from app.api.deps import (
 )
 from app.core.exceptions import BadRequestError, NotFoundError
 from app.db.models.user import UserRole
-from app.schemas.user import UserRead, UserUpdate
+from app.schemas.user import UpdatePassword, UserCreate, UserRead, UserUpdate, UserUpdateMe
 
 router = APIRouter()
 
@@ -34,15 +34,47 @@ async def read_current_user(
 
 @router.patch("/me", response_model=UserRead)
 async def update_current_user(
-    user_in: UserUpdate,
+    user_in: UserUpdateMe,
     current_user: CurrentUser,
     user_service: UserSvc,
 ) -> Any:
-    """Update current user profile."""
-    if user_in.role is not None and not current_user.has_role(UserRole.ADMIN):
-        user_in.role = None
-    user = await user_service.update(current_user.id, user_in)
-    return user
+    """Update current user profile.
+
+    Keelson: only profile fields. Upstream accepted ``UserUpdate`` here, so a user could set a
+    new password without the current one and change their own account status.
+    """
+    return await user_service.update_me(current_user, user_in)
+
+
+@router.patch("/me/password", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
+async def update_current_user_password(
+    body: UpdatePassword,
+    current_user: CurrentUser,
+    user_service: UserSvc,
+) -> None:
+    """Change the current user's password; the current password is required."""
+    await user_service.change_password(current_user, body.current_password, body.new_password)
+
+
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
+async def delete_current_user(
+    current_user: CurrentUser,
+    user_service: UserSvc,
+) -> None:
+    """Delete the current user's account. Administrators cannot delete themselves."""
+    if current_user.has_role(UserRole.ADMIN):
+        raise BadRequestError(message="Administrators cannot delete their own account")
+    await user_service.delete(current_user.id)
+
+
+@router.post("", response_model=UserRead, status_code=status.HTTP_201_CREATED)
+async def create_user(
+    user_in: UserCreate,
+    user_service: UserSvc,
+    _: CurrentAdmin,
+) -> Any:
+    """Create a user (administrators). The user gets a personal organization."""
+    return await user_service.register(user_in)
 
 
 @router.post("/me/avatar", response_model=UserRead)

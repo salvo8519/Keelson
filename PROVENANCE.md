@@ -48,6 +48,9 @@ small and marked in the file with a `Keelson:` comment where the reason is not o
 | M0 | House style | Emoji and icons replaced in imported files. |
 | M0 | Workers (fix) | Taskiq: task modules are loaded by the new entry point `app/worker/taskiq_worker.py`, no longer by `taskiq_app.py`; this removes the circular import found in the audit. Compose, CLI and Kubernetes point to the new entry point; regression test runs the imports in a fresh interpreter. |
 | M1 | Tenancy | New `app/db/tenancy.py`: PostgreSQL row level security on `TENANT_TABLES`, a restricted role per project, and a session listener that restricts every transaction of a session bound to an organization. `get_active_organization` binds the request session (`app/api/deps.py`). Migration `k0001_tenant_row_level_security`. Tests against a real PostgreSQL in a throwaway schema, and a guard that every table with `organization_id` is isolated or exempted with a reason. |
+| M1 | Users (security fix) | `PATCH /users/me` takes `UserUpdateMe` (profile fields only) instead of `UserUpdate`: upstream let a user set a new password without the current one and change their own account status. New `PATCH /users/me/password` (current password required), `DELETE /users/me`, and `POST /users` for administrators, from the official template. Tests in `tests/api/test_users.py` and `tests/test_user_password.py`. |
+| M1 | API | Operation ids `<tag>-<function>` (`custom_generate_unique_id`, from the official template), so the generated TypeScript client has readable service and method names. |
+| M1 | Frontend | Official React frontend connected to the Keelson API: client regenerated, vstorm authentication endpoints, roles instead of `is_superuser`, `src/lib/session.ts` (storage keys, `X-Organization-Id` on every request), Items replaced by Organizations (list, create, active organization switcher, members). Built to `dist/` and served by its own nginx container (`frontend/Dockerfile`), because the Keelson backend does not serve static files. `scripts/generate-client.sh` adapted from the official template. |
 | M0 | Kubernetes (fix) | Taskiq scheduler deployment added (one replica): upstream deployed only the worker, so scheduled jobs never ran on Kubernetes. |
 
 ## Audit of the imported code (M0)
@@ -71,6 +74,15 @@ Official template frontend: React, TypeScript, Vite, TanStack Router and Query, 
 shadcn/ui, generated API client, Playwright. It targets the official backend API, so its client
 is regenerated from the Keelson OpenAPI document and its screens are aligned to the
 organization model (M1).
+
+## Not yet verified
+
+- The Playwright end-to-end suite of the official frontend needs a running stack and a known
+  administrator account; its specs were updated for the Keelson API (`items.spec.ts` removed,
+  user creation through registration) but have not been run.
+- The Docker images (`frontend/Dockerfile`, compose files) were not built in the environment
+  where Keelson is developed, which has no Docker daemon; the generated project's pipeline
+  builds them.
 
 ## Re-sync procedure
 

@@ -5,7 +5,7 @@ import { useState } from "react"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 
-import { type ItemCreate, ItemsService } from "@/client"
+import { type OrganizationCreate, OrganizationsService } from "@/client"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -31,13 +31,13 @@ import useCustomToast from "@/hooks/useCustomToast"
 import { handleError } from "@/utils"
 
 const formSchema = z.object({
-  title: z.string().min(1, { message: "Title is required" }),
-  description: z.string().optional(),
+  name: z.string().min(1, { message: "Name is required" }).max(128),
+  slug: z.string().max(64).optional(),
 })
 
 type FormData = z.infer<typeof formSchema>
 
-const AddItem = () => {
+const AddOrganization = () => {
   const [isOpen, setIsOpen] = useState(false)
   const queryClient = useQueryClient()
   const { showSuccessToast, showErrorToast } = useCustomToast()
@@ -47,26 +47,27 @@ const AddItem = () => {
     mode: "onBlur",
     criteriaMode: "all",
     defaultValues: {
-      title: "",
-      description: "",
+      name: "",
+      slug: "",
     },
   })
 
   const mutation = useMutation({
-    mutationFn: (data: ItemCreate) => ItemsService.createItem({ body: data }),
+    mutationFn: (data: OrganizationCreate) =>
+      OrganizationsService.createOrganization({ body: data }),
     onSuccess: () => {
-      showSuccessToast("Item created successfully")
+      showSuccessToast("Organization created")
       form.reset()
       setIsOpen(false)
     },
     onError: handleError.bind(showErrorToast),
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["items"] })
+      queryClient.invalidateQueries({ queryKey: ["organizations"] })
     },
   })
 
   const onSubmit = (data: FormData) => {
-    mutation.mutate(data)
+    mutation.mutate({ name: data.name, slug: data.slug || null })
   }
 
   return (
@@ -74,14 +75,14 @@ const AddItem = () => {
       <DialogTrigger asChild>
         <Button className="my-4">
           <Plus className="mr-2" />
-          Add Item
+          New organization
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Add Item</DialogTitle>
+          <DialogTitle>New organization</DialogTitle>
           <DialogDescription>
-            Fill in the details to add a new item.
+            Create an organization and become its owner.
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -89,15 +90,15 @@ const AddItem = () => {
             <div className="grid gap-4 py-4">
               <FormField
                 control={form.control}
-                name="title"
+                name="name"
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>
-                      Title <span className="text-destructive">*</span>
+                      Name <span className="text-destructive">*</span>
                     </FormLabel>
                     <FormControl>
                       <Input
-                        placeholder="Title"
+                        placeholder="Acme Ltd"
                         type="text"
                         {...field}
                         required
@@ -110,12 +111,12 @@ const AddItem = () => {
 
               <FormField
                 control={form.control}
-                name="description"
+                name="slug"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Description</FormLabel>
+                    <FormLabel>Slug</FormLabel>
                     <FormControl>
-                      <Input placeholder="Description" type="text" {...field} />
+                      <Input placeholder="acme" type="text" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -140,4 +141,4 @@ const AddItem = () => {
   )
 }
 
-export default AddItem
+export default AddOrganization
