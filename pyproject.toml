@@ -47,7 +47,8 @@ explicit-preview-rules = true
 strict = true
 python_version = "3.12"
 files = ["scripts", "tests", "template/scripts"]
-exclude = ["scripts/upstream/build_vstorm_context\\.py"]
+# The wrappers scripts/docs.py and scripts/i18n.py share names with the tools they run.
+exclude = ["scripts/upstream/build_vstorm_context\\.py", "^scripts/(docs|i18n)\\.py$"]
 explicit_package_bases = true
 mypy_path = ["scripts", "tests", "template/scripts"]
 

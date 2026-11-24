@@ -185,7 +185,7 @@ These are used to sign JWTs and authenticate service-to-service calls. Rotate at
 
 ## Kubernetes deploy
 
-- [ ] Build + push images: see `docs/deploy.md` → Kubernetes section.
+- [ ] Build + push images: see `docs/en/guides/deploy.md` → Kubernetes section.
 - [ ] Create cluster secret from `.env`: `kubectl create secret generic app-secrets --from-env-file=backend/.env`.
 - [ ] Update image tags in `k8s/deployment.yaml`.
 - [ ] Apply: `kubectl apply -f k8s/`.
@@ -206,7 +206,7 @@ These are used to sign JWTs and authenticate service-to-service calls. Rotate at
 ## Where to find more
 
 - `ENV_VARS.md` — exhaustive env var reference
-- `docs/deploy.md` — platform-specific deployment recipes
+- `docs/en/guides/deploy.md` — platform-specific deployment recipes
 - `SECURITY.md` — security model + production hardening checklist
 - `CONTRIBUTING.md` — dev environment setup
-- `docs/architecture.md` — codebase layered architecture rules
+- `docs/en/guides/architecture.md` — codebase layered architecture rules

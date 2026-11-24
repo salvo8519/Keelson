@@ -302,7 +302,7 @@ Using **{{ vector_store }}** as the vector store with **{{ embedding_provider }}
 {{ project_slug }} rag-search "your query" --collection documents
 ```
 
-PDF parsing uses **{{ pdf_parser }}**. See `docs/howto/add-rag-source.md` to add a new source connector.
+PDF parsing uses **{{ pdf_parser }}**. See `docs/en/guides/howto/add-rag-source.md` to add a new source connector.
 {%- endif %}
 {%- if use_frontend %}
 
@@ -369,15 +369,15 @@ Migrations run automatically on `make prod`. For a fresh deploy on a new host, t
 
 | Guide | What |
 |-------|-------|
-| `docs/howto/add-api-endpoint.md` | Add a new REST endpoint |
-| `docs/howto/add-agent-tool.md` | Create an agent tool |
-| `docs/howto/customize-agent-prompt.md` | Tune system prompts |
+| `docs/en/guides/howto/add-api-endpoint.md` | Add a new REST endpoint |
+| `docs/en/guides/howto/add-agent-tool.md` | Create an agent tool |
+| `docs/en/guides/howto/customize-agent-prompt.md` | Tune system prompts |
 {%- if background_tasks != "none" %}
-| `docs/howto/add-background-task.md` | Add a background task |
+| `docs/en/guides/howto/add-background-task.md` | Add a background task |
 {%- endif %}
 {%- if enable_rag %}
-| `docs/howto/add-rag-source.md` | Add a RAG document source |
-| `docs/howto/add-sync-connector.md` | Build a custom sync connector |
+| `docs/en/guides/howto/add-rag-source.md` | Add a RAG document source |
+| `docs/en/guides/howto/add-sync-connector.md` | Build a custom sync connector |
 {%- endif %}
 
 ---

@@ -20,3 +20,7 @@ required:
 english_only:
   - project/*.md
 generated: []
+# Root documents translated as <NAME>.it.md
+root_documents:
+  - README.md
+english_only_suffix: "(in inglese)"

@@ -1,0 +1,24 @@
+# Italian edition of the documentation. English (docs/en) is the source of truth;
+# docs/it holds tracked translations: python scripts/i18n.py status | check | stamp <file>.
+language: it
+name: Italiano
+site_description: "Documentazione del progetto: architettura, configurazione, API."
+sections:
+  Home: Home
+  Getting started: Per iniziare
+  Concepts: Concetti
+  Reference: Riferimento
+  Guides: Guide
+  How-to: Procedure
+english_only_suffix: "(in inglese)"
+# Pages that must exist in Italian (glob patterns relative to docs/en)
+required:
+  - index.md
+  - getting-started.md
+  - concepts/*.md
+  - reference/*.md
+# Pages kept in English only: the Italian site links to the English version
+english_only:
+  - guides/*.md
+  - guides/howto/*.md
+generated: []

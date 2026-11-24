@@ -37,6 +37,7 @@ agents:
 # Italian translations current against their English source.
 i18n:
     python scripts/i18n.py check
+    DOCS_ROOT=template python template/scripts/i18n.py check
 
 # Translation status of every page.
 i18n-status:

@@ -78,4 +78,4 @@ Tasks live in `backend/app/worker/tasks/` (e.g. `email_tasks.py`, `rag_tasks.py`
 - Tasks take **serializable args** (ids, primitives) — not ORM objects or sessions. Re-fetch inside the task with a fresh session.
 - Make tasks **idempotent** where possible (safe to retry).
 - Keep heavy imports inside the task function to keep the API import-light.
-- See `docs/howto/add-background-task.md` for the full walkthrough.
+- See `docs/en/guides/howto/add-background-task.md` for the full walkthrough.

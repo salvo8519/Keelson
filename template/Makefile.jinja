@@ -1,4 +1,4 @@
-.PHONY: install format lint test run clean help db-init dev dev-down dev-logs dev-rebuild dev-frontend docker-clean stage stage-down prod prod-down upgrade upgrade-dry-run skills skills-check i18n-extract i18n-check
+.PHONY: install format lint test run clean help db-init dev dev-down dev-logs dev-rebuild dev-frontend docker-clean stage stage-down prod prod-down upgrade upgrade-dry-run skills skills-check i18n-extract i18n-check docs docs-serve docs-check
 
 # === Environments ===========================================================
 # `make dev`   — local development (docker-compose.dev.yml + bind-mounted source)
@@ -184,6 +184,23 @@ i18n-extract:
 
 i18n-check:
 	uv run --directory backend python -m app.core.i18n_catalog check
+
+# === Documentation (Zensical, docs/) ===
+DOCS_RUN = uv run --no-project --with-requirements docs/requirements.txt python
+DOCS_LANG ?= en
+
+# Reference pages generated from the code (API, settings), then every edition, strict.
+docs:
+	cd backend && uv run python ../scripts/docs_reference.py
+	$(DOCS_RUN) scripts/docs.py build
+
+docs-serve:
+	cd backend && uv run python ../scripts/docs_reference.py
+	$(DOCS_RUN) scripts/docs.py serve --lang $(DOCS_LANG)
+
+# Translations missing or older than their English page.
+docs-check:
+	$(DOCS_RUN) scripts/i18n.py check
 
 # === Code Quality ===
 format:
@@ -515,6 +532,11 @@ help:
 	@echo "  make skills                Install the official skills of the components"
 	@echo "  make i18n-extract          Update the message catalogs from the code"
 	@echo "  make i18n-check            Fail when a message is untranslated"
+	@echo ""
+	@echo "Documentation:"
+	@echo "  make docs                  Build every edition (strict), reference from the code"
+	@echo "  make docs-serve            Live preview (DOCS_LANG=it for the Italian edition)"
+	@echo "  make docs-check            Fail when a translation is missing or out of date"
 	@echo ""
 	@echo "Other:"
 	@echo "  make routes        Show all API routes"

@@ -8,6 +8,7 @@ The questions Copier asks, with their default. Answers are recorded in `.copier-
 | `project_description` | `An enterprise FastAPI service` | One line |
 | `author_name`, `author_email` | `Your Name`, `you@example.com` | |
 | `timezone` | `UTC` | IANA timezone for schedulers and logs |
+| `repository_url` | `https://github.com/your-org/<project>` | HTTPS URL of the repository: documentation site and edit links |
 | `brand_name` | from `project_name` | Product name in the UI and the API reference |
 | `brand_primary_color` | `#1F3A5F` | Six-digit hex color |
 | `languages` | `en`, `it` | Languages of the API, emails and interface; `en` is required |

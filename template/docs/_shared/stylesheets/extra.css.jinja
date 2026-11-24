@@ -1,0 +1,11 @@
+/* Brand of the documentation site, from the Copier answer brand_primary_color. */
+[data-md-color-scheme="default"],
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: {{ brand_primary_color | lower }};
+  --md-primary-fg-color--light: {{ brand_primary_color | lower }};
+  --md-primary-fg-color--dark: {{ brand_primary_color | lower }};
+}
+[data-md-color-scheme="default"] {
+  --md-accent-fg-color: {{ brand_primary_color | lower }};
+  --md-typeset-a-color: {{ brand_primary_color | lower }};
+}

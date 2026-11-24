@@ -1,6 +1,6 @@
 ---
 source: reference/questions.md
-source_hash: 602733be729a
+source_hash: 4566f9bb74cd
 ---
 # Domande
 
@@ -13,6 +13,7 @@ Le domande poste da Copier, con il valore predefinito. Le risposte sono registra
 | `project_description` | `An enterprise FastAPI service` | Una riga |
 | `author_name`, `author_email` | `Your Name`, `you@example.com` | |
 | `timezone` | `UTC` | Fuso orario IANA per scheduler e log |
+| `repository_url` | `https://github.com/your-org/<progetto>` | URL HTTPS del repository: sito della documentazione e link di modifica |
 | `brand_name` | da `project_name` | Nome del prodotto nell'interfaccia e nella documentazione delle API |
 | `brand_primary_color` | `#1F3A5F` | Colore esadecimale a sei cifre |
 | `languages` | `en`, `it` | Lingue di API, email e interfaccia; `en` è obbligatoria |

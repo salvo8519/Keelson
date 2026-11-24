@@ -11,7 +11,7 @@ docs_dir = "docs/en"
 site_dir = "site"
 repo_url = "https://github.com/salvo8519/keelson"
 repo_name = "salvo8519/keelson"
-edit_uri = "-/edit/main/docs/en/"
+edit_uri = "edit/main/docs/en/"
 copyright = "Copyright &copy; 2026 Salvatore Miseo and the Keelson contributors &middot; Apache License 2.0"
 extra_css = ["stylesheets/extra.css"]
 

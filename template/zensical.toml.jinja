@@ -1,0 +1,131 @@
+{%- set repo_parts = repository_url.split('/') -%}
+{%- if repo_parts[2] == 'github.com' -%}
+{%- set site_url = 'https://' ~ repo_parts[3] ~ '.github.io/' ~ repo_parts[4] ~ '/' -%}
+{%- elif repo_parts[2] == 'gitlab.com' -%}
+{%- set site_url = 'https://' ~ repo_parts[3] ~ '.gitlab.io/' ~ repo_parts[4] ~ '/' -%}
+{%- else -%}
+{%- set site_url = repository_url ~ '/' -%}
+{%- endif -%}
+# Documentation site, built with Zensical (https://zensical.org).
+# English edition (source); the other editions are generated from i18n/<lang>.yaml.
+#   make docs         every site, strict, with the API and settings reference generated
+#   make docs-serve   live preview (DOCS_LANG=it for the Italian edition)
+
+[project]
+site_name = {{ brand_name | tojson }}
+site_description = {{ project_description | tojson }}
+site_url = "{{ site_url }}"
+docs_dir = "docs/en"
+site_dir = "site"
+repo_url = "{{ repository_url }}"
+repo_name = "{{ repo_parts[3] }}/{{ repo_parts[4] }}"
+edit_uri = "{% if repo_parts[2] == 'gitlab.com' %}-/{% endif %}edit/main/docs/en/"
+extra_css = ["stylesheets/extra.css"]
+
+nav = [
+  { "Home" = "index.md" },
+  { "Getting started" = [
+    "getting-started.md",
+  ] },
+  { "Concepts" = [
+    "concepts/tenancy-and-api-keys.md",
+    "concepts/languages.md",
+    "concepts/api-reference-and-observability.md",
+  ] },
+  { "Reference" = [
+    "reference/api.md",
+    "reference/settings.md",
+  ] },
+  { "Guides" = [
+    "guides/architecture.md",
+    "guides/patterns.md",
+    "guides/adding_features.md",
+    "guides/permissions.md",
+    "guides/configuration.md",
+    "guides/commands.md",
+    "guides/file-processing.md",
+    "guides/testing.md",
+    "guides/deploy.md",
+    { "How-to" = [
+      "guides/howto/add-api-endpoint.md",
+      "guides/howto/add-agent-tool.md",
+      "guides/howto/customize-agent-prompt.md",
+      "guides/howto/add-background-task.md",
+{%- if enable_rag %}
+      "guides/howto/add-rag-source.md",
+      "guides/howto/add-sync-connector.md",
+      "guides/howto/configure-sync-sources.md",
+{%- endif %}
+      "guides/howto/use-ratings.md",
+    ] },
+  ] },
+]
+
+[project.theme]
+language = "en"
+icon.repo = "fontawesome/brands/{% if repo_parts[2] == 'gitlab.com' %}gitlab{% else %}github{% endif %}"
+logo = "assets/brand/mark.svg"
+favicon = "assets/brand/mark.svg"
+features = [
+  "content.action.edit",
+  "content.code.copy",
+  "navigation.footer",
+  "navigation.indexes",
+  "navigation.instant",
+  "navigation.path",
+  "navigation.sections",
+  "navigation.tabs",
+  "navigation.top",
+  "search.highlight",
+  "toc.follow",
+]
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+primary = "custom"
+accent = "custom"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+primary = "custom"
+accent = "custom"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to light mode"
+{%- if languages | length > 1 %}
+
+[project.extra]
+alternate = [
+{%- if 'en' in languages %}
+  { name = "English", link = "{{ site_url }}", lang = "en" },
+{%- endif %}
+{%- if 'it' in languages %}
+  { name = "Italiano", link = "{{ site_url }}it/", lang = "it" },
+{%- endif %}
+]
+{%- endif %}
+
+[project.plugins.search]
+
+[project.markdown_extensions]
+abbr = {}
+admonition = {}
+attr_list = {}
+def_list = {}
+footnotes = {}
+md_in_html = {}
+toc.permalink = true
+pymdownx.betterem = {}
+pymdownx.details = {}
+pymdownx.highlight.anchor_linenums = true
+pymdownx.highlight.pygments_lang_class = true
+pymdownx.inlinehilite = {}
+pymdownx.snippets.base_path = ["."]
+pymdownx.snippets.check_paths = true
+pymdownx.superfences.custom_fences = [
+  { name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" },
+]
+pymdownx.tabbed.alternate_style = true

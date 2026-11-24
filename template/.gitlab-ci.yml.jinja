@@ -4,6 +4,7 @@
 stages:
   - lint
   - test
+  - docs
   - security
 {%- if enable_docker %}
   - build
@@ -201,3 +202,36 @@ docker-build:
 {%- else %}
 # GitLab CI is disabled for this project
 {%- endif %}
+
+# =============================================================================
+# Documentation (Keelson): Zensical site, reference generated from the code,
+# strict build and current translations; published on GitLab Pages.
+# =============================================================================
+
+docs:
+  stage: docs
+  image: python:${PYTHON_VERSION}-slim
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq make >/dev/null
+    - pip install uv
+    - uv sync --directory backend
+  script:
+    - make docs-check
+    - make docs
+  artifacts:
+    paths: [site]
+    expire_in: 1 week
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+pages:
+  stage: docs
+  needs: [docs]
+  image: alpine:3.22
+  script:
+    - mv site public
+  artifacts:
+    paths: [public]
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

@@ -9,6 +9,8 @@ from __future__ import annotations
 import json
 import py_compile
 import re
+import subprocess
+import sys
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -111,6 +113,39 @@ def test_translations_follow_the_languages(render: Render, case: str) -> None:
         frontend = project / "frontend" / "src" / "locales"
         assert (frontend / "it.json").is_file() is italian
         assert ('code: "it"' in (frontend / "languages.ts").read_text(encoding="utf-8")) is italian
+
+
+def _nav_pages(nav: list[Any]) -> list[str]:
+    pages: list[str] = []
+    for entry in nav:
+        if isinstance(entry, str):
+            pages.append(entry)
+        else:
+            for value in entry.values():
+                pages += _nav_pages(value) if isinstance(value, list) else [value]
+    return pages
+
+
+@pytest.mark.parametrize("case", list(CASES))
+def test_documentation_site_is_complete(render: Render, case: str) -> None:
+    """Every page of the navigation exists, translations are current, CI builds the site."""
+    project = render(answers(case))
+    config = tomllib.loads((project / "zensical.toml").read_text(encoding="utf-8"))["project"]
+    missing = [p for p in _nav_pages(config["nav"]) if not (project / "docs" / "en" / p).is_file()]
+    assert not missing, missing
+    italian = "it" in CASES[case].get("languages", ["en", "it"])
+    assert (project / "docs" / "it").is_dir() is italian
+    assert (project / "i18n" / "it.yaml").is_file() is italian
+    check = subprocess.run(
+        [sys.executable, "scripts/i18n.py", "check"],
+        cwd=project,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert check.returncode == 0, check.stdout + check.stderr
+    pipelines = [project / ".gitlab-ci.yml", *(project / ".github" / "workflows").glob("*.yml")]
+    assert any("make docs" in p.read_text(encoding="utf-8") for p in pipelines if p.is_file())
 
 
 @pytest.mark.parametrize("case", list(CASES))

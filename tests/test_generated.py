@@ -38,3 +38,17 @@ def test_default_project_frontend_passes_its_checks(render: Render) -> None:
     _run(["bunx", "biome", "check", "./"], frontend)
     _run(["bun", "run", "i18n:check"], frontend)
     _run(["bun", "run", "build"], frontend)
+
+
+def test_default_project_documentation_builds(render: Render) -> None:
+    """Zensical site of the generated project: reference from the code, strict build."""
+    project = render({"project_name": "acme_service"})
+    _run(["uv", "sync", "--quiet"], project / "backend")
+    _run(["make", "docs-check"], project)
+    _run(["make", "docs"], project)
+    for lang in ("en", "it"):
+        site = project / "site" / ("" if lang == "en" else lang)
+        api = (site / "reference" / "api" / "index.html").read_text(encoding="utf-8")
+        assert "/api/v1/api-keys" in api
+        settings = (site / "reference" / "settings" / "index.html").read_text(encoding="utf-8")
+        assert "SECRET_KEY" in settings

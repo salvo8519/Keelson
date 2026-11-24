@@ -190,7 +190,7 @@ Conversation and file endpoints enforce ownership at the service layer:
 - File downloads verify `chat_file.user_id == current_user.id` before returning the file.
 - This prevents users from accessing resources belonging to other users.
 
-For full endpoint-level permissions, see `docs/permissions.md`.
+For full endpoint-level permissions, see `docs/en/guides/permissions.md`.
 {%- endif %}
 
 ## File Processing in Chat
@@ -311,5 +311,5 @@ Each ingested document gets:
 
 Remote document sources use pluggable connectors in `rag/connectors/`. Each
 connector implements `BaseSyncConnector` with `list_files()` and `download_file()`
-methods. See `docs/patterns.md` for how to add a new connector.
+methods. See `docs/en/guides/patterns.md` for how to add a new connector.
 {%- endif %}

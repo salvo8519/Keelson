@@ -1,0 +1,1 @@
+Generated projects have a bilingual documentation site (Zensical) with the API and settings reference generated from the code at every build, a translation check, and a CI job that builds it strictly and publishes it on GitHub or GitLab Pages.

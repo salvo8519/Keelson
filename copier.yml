@@ -13,6 +13,8 @@ _exclude:
   - "{% if 'it' not in languages %}backend/app/locales/it{% endif %}"
   - "{% if 'it' not in languages %}frontend/src/locales/it.json{% endif %}"
   - "{% if 'it' not in languages %}backend/emails/compiled/it{% endif %}"
+  - "{% if 'it' not in languages %}docs/it{% endif %}"
+  - "{% if 'it' not in languages %}i18n/it.yaml{% endif %}"
   - "{% if logfire %}backend/app/core/telemetry.py{% endif %}"
 
 _tasks:
@@ -59,6 +61,15 @@ timezone:
   default: UTC
 
 # --- Brand (white label) ---------------------------------------------------
+repository_url:
+  type: str
+  help: URL of the project's repository (documentation site and its edit links)
+  default: "https://github.com/your-org/{{ project_name | replace('_', '-') }}"
+  validator: >-
+    {% if not (repository_url | regex_search('^https://[^/]+/[^/]+/[^/]+$')) %}
+    Use the repository's HTTPS URL, such as https://github.com/acme/acme-service.
+    {% endif %}
+
 brand_name:
   type: str
   help: Product name shown in the UI and in the API reference

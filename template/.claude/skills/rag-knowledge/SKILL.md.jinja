@@ -33,11 +33,11 @@ Connector credentials are encrypted at rest with `CHANNEL_ENCRYPTION_KEY` (Ferne
 
 ## Adding a new connector type
 
-Implement a connector in `backend/app/services/rag/connectors/` following the existing Google Drive / S3 connectors, register it in the connector registry, and expose its config fields. See `docs/howto/add-sync-connector.md` and `docs/howto/configure-sync-sources.md`.
+Implement a connector in `backend/app/services/rag/connectors/` following the existing Google Drive / S3 connectors, register it in the connector registry, and expose its config fields. See `docs/en/guides/howto/add-sync-connector.md` and `docs/en/guides/howto/configure-sync-sources.md`.
 
 ## Tuning retrieval
 
-- Chunk size/overlap and parser (PyMuPDF / LlamaParse) are configured via env — see `docs/configuration.md` and `docs/rag.md`.
+- Chunk size/overlap and parser (PyMuPDF / LlamaParse) are configured via env — see `docs/en/guides/configuration.md` and `docs/rag.md`.
 - Reranking (Cohere or local CrossEncoder) improves result ordering when enabled.
 - If search returns poor results: confirm the collection is populated (`rag-stats`), check the active collection in the chat's KB selector, and verify the embedding provider/key.
 

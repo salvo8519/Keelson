@@ -70,9 +70,22 @@ backend/app/
 - Sync sources: configurable connectors with scheduled sync
 {%- endif %}
 
+## Documentation
+
+The documentation site is built with Zensical from `docs/` (`make docs`, strict); CI fails on
+broken links and on translations older than their English page.
+
+- A change that users or operators notice updates its page in `docs/en` in the same change.
+- Every translated page (`docs/<language>/`) is updated with it and stamped:
+  `python scripts/i18n.py stamp docs/<language>/<page>.md`. `make docs-check` lists what is
+  missing or stale.
+- The API and settings reference is generated from the code at every build: do not write
+  endpoints or settings by hand.
+- Pages under `docs/en/guides` are kept in English.
+
 ## More Info
 
-- `docs/architecture.md` - Architecture details
-- `docs/adding_features.md` - How to add features
-- `docs/testing.md` - Testing guide
-- `docs/patterns.md` - Code patterns
+- `docs/en/guides/architecture.md` - Architecture details
+- `docs/en/guides/adding_features.md` - How to add features
+- `docs/en/guides/testing.md` - Testing guide
+- `docs/en/guides/patterns.md` - Code patterns
