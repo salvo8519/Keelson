@@ -1,6 +1,6 @@
 ---
 source: concepts/architecture.md
-source_hash: 6bceddc6902b
+source_hash: dd0d2d0669b7
 ---
 # Architettura di un progetto generato
 
@@ -51,4 +51,4 @@ API è generato dal documento OpenAPI del backend (`bun run generate-client`).
 
 File Docker Compose per sviluppo, staging e produzione; Traefik con HTTPS automatico in
 produzione; manifest Kubernetes (API, worker, scheduler, configurazione, ingress); una
-pipeline GitLab o GitHub che esegue lint, test e build delle immagini.
+pipeline GitHub o GitLab che esegue lint, test e build delle immagini.

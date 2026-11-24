@@ -1,0 +1,102 @@
+# Pipeline of the Keelson repository. The CI of generated projects lives in
+# template/.github/workflows (GitHub) and template/.gitlab-ci.yml.jinja (GitLab).
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_LINK_MODE: copy
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.4.0
+        with:
+          python-version: "3.13"
+          enable-cache: true
+      - run: uv sync --all-groups --frozen
+      - run: uv run just style yaml python skills-lock agents i18n
+
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # Copier renders from the git history (vcs_ref HEAD)
+      - uses: astral-sh/setup-uv@v10.4.0
+        with:
+          python-version: "3.13"
+          enable-cache: true
+      - run: uv sync --all-groups --frozen
+      - run: uv run just test
+
+  generated:
+    # The default project, rendered and tested end to end: backend suite against a real
+    # PostgreSQL (the row level security tests must run, not skip), frontend build.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: acme_service
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v10.4.0
+        with:
+          python-version: "3.13"
+          enable-cache: true
+      - uses: oven-sh/setup-bun@v2
+      - run: uv sync --all-groups --frozen
+      - run: uv run just test-generated
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.4.0
+        with:
+          python-version: "3.13"
+          enable-cache: true
+      - run: uv sync --all-groups --frozen
+      - run: uv run just docs
+      - uses: actions/upload-pages-artifact@v5
+        if: github.ref == 'refs/heads/main'
+        with:
+          path: site
+
+  pages:
+    if: github.ref == 'refs/heads/main'
+    needs: [docs]
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

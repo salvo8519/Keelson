@@ -28,19 +28,19 @@ gaps: tenant isolation, API key governance, internationalisation, operations. Re
 
 ## How work is done here
 
-1. Every change starts from an issue on GitLab, in a milestone. A merge request closes exactly
+1. Every change starts from an issue on GitHub, in a milestone. A pull request closes exactly
    one issue (`Closes #<n>` in its description).
 2. **Assemble, do not rewrite.** Before writing code, look for it in the two upstream sources
    (`PROVENANCE.md` names the commits). New code is written only where neither source covers
-   the requirement, and the reason is stated in the merge request.
+   the requirement, and the reason is stated in the pull request.
 3. Every change to an imported file is recorded in the table of `PROVENANCE.md` (milestone,
    area, change), so a re-sync can re-apply it.
 4. Test first where it pays: acceptance criteria and bug fixes. A change to `template/` is
    verified on a rendered project, not only on the Jinja source.
-5. Run `uv run just check` before every merge request.
+5. Run `uv run just check` before every pull request.
 6. Leave the code better than you found it. A defect found during any work is fixed in the same
    change, with a test where it pays. A defect too large for the change becomes an issue at
-   once, cited in the merge request.
+   once, cited in the pull request.
 
 ## Hard rules
 
@@ -63,13 +63,13 @@ gaps: tenant isolation, API key governance, internationalisation, operations. Re
 ## Documentation stays in sync
 
 - English is the source. Every changed English page needs its Italian translation in the same
-  merge request, stamped with `uv run python scripts/i18n.py stamp <file>`.
+  pull request, stamped with `uv run python scripts/i18n.py stamp <file>`.
 - Every user-facing change adds a fragment in `changes/` (`<issue>.<type>.md`, types: breaking,
   feature, improvement, fix).
 
 ## Review effort proportional to risk
 
-| Tier | Merge requests | Gate before merge |
+| Tier | Pull requests | Gate before merge |
 | --- | --- | --- |
 | Small | Documentation, tooling, CI | `just check`, green pipeline |
 | Substantial | Changes to `template/` | One review pass by an agent other than the author, render tests of the affected answers |

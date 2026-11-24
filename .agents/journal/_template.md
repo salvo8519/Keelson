@@ -1,13 +1,13 @@
 # <YYYY-MM-DD> <branch>
 
 - Issue: #<n> <title>
-- Merge request: !<n> (draft | ready | merged | none)
+- Pull request: !<n> (draft | ready | merged | none)
 - Milestone: M<n>
 
 ## Checkout
 - Holder: <agent and vendor, for example Claude Code (Anthropic) or Codex (OpenAI)>, session <id or date-time>
 - Branch: <type>/<issue>-<slug>, worktree <path or none>
-- Step reached: <analysis | tests | build | verify | review | merge request | merge>
+- Step reached: <analysis | tests | build | verify | review | pull request | merge>
 - Released: <yes, with this hand-over | no, lease until YYYY-MM-DDTHH:MMZ>
 
 ## Done

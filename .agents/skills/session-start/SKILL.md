@@ -3,10 +3,10 @@ name: session-start
 description: Opens a working session on Keelson with full context. Use when a session begins, or when the maintainer asks where the project stands.
 ---
 
-Talk to the maintainer in their preferred language (`CLAUDE.local.md`); everything written to the repository or to GitLab is in English, without icons.
+Talk to the maintainer in their preferred language (`CLAUDE.local.md`); everything written to the repository or to GitHub is in English, without icons.
 
 ## Produces
-A briefing (branch, uncommitted work, latest hand-over, open merge requests, skills state), a short plan, and, once the maintainer chooses, a branch for the chosen issue.
+A briefing (branch, uncommitted work, latest hand-over, open pull requests, skills state), a short plan, and, once the maintainer chooses, a branch for the chosen issue.
 
 ## Steps
 1. **State.** `git status`, `git log --oneline -5`, the current branch and its issue number (`<type>/<issue>-<slug>`).

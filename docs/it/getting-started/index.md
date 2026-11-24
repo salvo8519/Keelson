@@ -1,6 +1,6 @@
 ---
 source: getting-started/index.md
-source_hash: 64645fe930e4
+source_hash: fa56e2a79130
 ---
 # Generare un progetto
 
@@ -18,7 +18,7 @@ Copier pone le domande elencate nel [riferimento](../reference/questions.md). L'
 risposte e formatta il codice.
 
 ```bash
-uvx copier copy --trust https://gitlab.com/salvo8519/keelson my_service
+uvx copier copy --trust https://github.com/salvo8519/keelson my_service
 ```
 
 Per accettare tutti i valori predefiniti aggiungi `--defaults`. Per fornire le risposte senza

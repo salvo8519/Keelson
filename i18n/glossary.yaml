@@ -8,6 +8,7 @@ keep_english:
   - scheduler
   - skill
   - merge request
+  - pull request
   - pipeline
   - upstream
 translations:

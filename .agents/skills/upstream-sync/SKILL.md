@@ -3,7 +3,7 @@ name: upstream-sync
 description: Re-syncs the template with new commits of the upstream templates, keeping the Keelson changes. Use when an upstream release fixes defects or adds features Keelson wants.
 ---
 
-Talk to the maintainer in their preferred language (`CLAUDE.local.md`); everything written to the repository or to GitLab is in English, without icons.
+Talk to the maintainer in their preferred language (`CLAUDE.local.md`); everything written to the repository or to GitHub is in English, without icons.
 
 ## Produces
 A branch where `template/` holds the new upstream code plus every Keelson change listed in `PROVENANCE.md`, with the commits updated.

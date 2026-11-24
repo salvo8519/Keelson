@@ -1,3 +1,8 @@
+---
+name: Task
+about: A change to Keelson, with its acceptance criteria
+---
+
 ## Problem or goal
 
 ## Acceptance criteria

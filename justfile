@@ -8,7 +8,7 @@ render_dir := ".generated/default"
 default:
     @just --list
 
-# Full local gate: run before every merge request (CI runs the same checks).
+# Full local gate: run before every pull request (CI runs the same checks).
 check: style yaml python skills-lock agents i18n test
     @echo "All checks passed."
 

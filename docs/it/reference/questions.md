@@ -1,6 +1,6 @@
 ---
 source: reference/questions.md
-source_hash: 762dad863165
+source_hash: 602733be729a
 ---
 # Domande
 
@@ -21,7 +21,7 @@ Le domande poste da Copier, con il valore predefinito. Le risposte sono registra
 | `ai_framework` | `pydantic_ai` | `pydantic_ai`, `langgraph`, `langchain`, `deepagents`, `pydantic_deep` |
 | `llm_provider` | `openai` | `openai`, `anthropic`, `google`, `openrouter`, `openai_compatible`, `all` |
 | `vector_database` | `qdrant` | `none`, `qdrant`, `pgvector` |
-| `ci_provider` | `gitlab` | `gitlab`, `github` |
+| `ci_provider` | `github` | `github`, `gitlab` |
 | `kubernetes` | `true` | Manifest Kubernetes |
 | `logfire` | `false` | Pydantic Logfire |
 

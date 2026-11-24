@@ -16,7 +16,7 @@ coprono.
 | Full Stack FastAPI Template (FastAPI) | MIT | Frontend React |
 
 I commit, la procedura di import e ogni modifica che Keelson aggiunge sono registrati in
-[Provenance](https://salvo8519.gitlab.io/keelson/project/provenance/) (in inglese).
+[Provenance](https://salvo8519.github.io/keelson/project/provenance/) (in inglese).
 
 ## Da cookiecutter a Copier
 
@@ -34,7 +34,7 @@ generatore upstream: le uniche differenze sono quelle volute.
 ## Cosa aggiunge Keelson
 
 - I difetti trovati nell'audit del codice importato sono corretti e coperti da test; l'elenco
-  è in [Provenance](https://salvo8519.gitlab.io/keelson/project/provenance/).
+  è in [Provenance](https://salvo8519.github.io/keelson/project/provenance/).
 - Una traccia delle licenze: i progetti generati contengono `NOTICE` e
   `THIRD_PARTY_NOTICES.md`.
 - Stile della casa: niente emoji né icone nei file generati.

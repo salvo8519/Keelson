@@ -46,5 +46,5 @@ client is generated from the backend's OpenAPI document (`bun run generate-clien
 ## Delivery
 
 Docker Compose files for development, staging and production; Traefik with automatic HTTPS
-in production; Kubernetes manifests (API, workers, scheduler, configuration, ingress); a GitLab
-or GitHub pipeline that lints, tests and builds the images.
+in production; Kubernetes manifests (API, workers, scheduler, configuration, ingress); a GitHub
+or GitLab pipeline that lints, tests and builds the images.

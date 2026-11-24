@@ -26,5 +26,5 @@ instructions are in `AGENTS.md` (all agents) and `CLAUDE.md` (Claude Code specif
 
 ## Provisional
 
-These files are adapted from Fairmark and Wayloop. When Wayloop supports GitLab, Keelson will
-take its process from Wayloop and this folder will keep only what is specific to the template.
+These files are adapted from Fairmark and Wayloop. Keelson will take its process
+from Wayloop as it matures, and this folder will keep only what is specific to the template.

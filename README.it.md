@@ -1,4 +1,4 @@
-<!-- i18n source: README.md source_hash: c75390c94cf1 -->
+<!-- i18n source: README.md source_hash: 3aee06fc41fa -->
 <p align="center">
   <img src="docs/_shared/assets/brand/mark.svg" alt="Keelson" width="96">
 </p>
@@ -58,7 +58,7 @@ programmazione.
 ## Avvio rapido
 
 ```bash
-uvx copier copy --trust https://gitlab.com/salvo8519/keelson my_service
+uvx copier copy --trust https://github.com/salvo8519/keelson my_service
 cd my_service
 cp backend/.env.example backend/.env
 make dev
@@ -77,7 +77,7 @@ nel progetto con `uvx copier update --trust`.
 | Framework agentico | Pydantic AI, LangGraph, LangChain, Deep Agents, Pydantic Deep |
 | Provider LLM | OpenAI, Anthropic, Google, OpenRouter, compatibile OpenAI (on-premise), tutti |
 | Database vettoriale | Qdrant, pgvector, nessuno |
-| CI | GitLab CI, GitHub Actions |
+| CI | GitHub Actions, GitLab CI |
 | Kubernetes | sì, no |
 
 ## Documentazione

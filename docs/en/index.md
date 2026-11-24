@@ -54,7 +54,7 @@ deployment on Docker and Kubernetes, and a development process for coding agents
     ---
 
     PostgreSQL with migrations, Redis, rate limiting, Prometheus metrics, Traefik with HTTPS,
-    Kubernetes manifests, and a GitLab or GitHub pipeline.
+    Kubernetes manifests, and a GitHub or GitLab pipeline.
 
     [Architecture](concepts/architecture.md)
 

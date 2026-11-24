@@ -2,7 +2,7 @@
 
 ## Reporting a vulnerability
 
-Report vulnerabilities privately, through a confidential issue on GitLab or by email to the
+Report vulnerabilities privately, through GitHub private vulnerability reporting (Security tab of the repository) or by email to the
 maintainer listed in `GOVERNANCE.md`. Include the affected template version (the `_commit` in
 `.copier-answers.yml` of a generated project), the answers used, and the steps to reproduce.
 You will receive an acknowledgement within five working days.

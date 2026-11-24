@@ -5,7 +5,7 @@ description: Re-syncs the template with new commits of the upstream templates, k
 
 <!-- Generated from .agents/skills/upstream-sync/SKILL.md by scripts/sync_agents.py. Edit the source, not this file. -->
 
-Talk to the maintainer in their preferred language (`CLAUDE.local.md`); everything written to the repository or to GitLab is in English, without icons.
+Talk to the maintainer in their preferred language (`CLAUDE.local.md`); everything written to the repository or to GitHub is in English, without icons.
 
 ## Produces
 A branch where `template/` holds the new upstream code plus every Keelson change listed in `PROVENANCE.md`, with the commits updated.

@@ -1,12 +1,14 @@
 ---
-name: pre-mr
-description: Runs the full gate, renders the template for the affected answers, delegates review by tier and drafts the merge request. Use before opening a merge request.
+name: pre-pr
+description: Runs the full gate, renders the template for the affected answers, delegates review by tier and drafts the pull request. Use before opening a pull request.
 ---
 
-Talk to the maintainer in their preferred language (`CLAUDE.local.md`); everything written to the repository or to GitLab is in English, without icons.
+<!-- Generated from .agents/skills/pre-pr/SKILL.md by scripts/sync_agents.py. Edit the source, not this file. -->
+
+Talk to the maintainer in their preferred language (`CLAUDE.local.md`); everything written to the repository or to GitHub is in English, without icons.
 
 ## Produces
-A green `uv run just check`, render tests of the affected answers, a review by tier with every finding fixed, and the merge request description.
+A green `uv run just check`, render tests of the affected answers, a review by tier with every finding fixed, and the pull request description.
 
 ## Steps
 1. **Gate.** `uv run just check`; fix and re-run until it passes.

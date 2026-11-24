@@ -16,7 +16,7 @@ The questions Copier asks, with their default. Answers are recorded in `.copier-
 | `ai_framework` | `pydantic_ai` | `pydantic_ai`, `langgraph`, `langchain`, `deepagents`, `pydantic_deep` |
 | `llm_provider` | `openai` | `openai`, `anthropic`, `google`, `openrouter`, `openai_compatible`, `all` |
 | `vector_database` | `qdrant` | `none`, `qdrant`, `pgvector` |
-| `ci_provider` | `gitlab` | `gitlab`, `github` |
+| `ci_provider` | `github` | `github`, `gitlab` |
 | `kubernetes` | `true` | Kubernetes manifests |
 | `logfire` | `false` | Pydantic Logfire |
 

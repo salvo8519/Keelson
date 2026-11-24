@@ -54,7 +54,7 @@ deployment on Docker and Kubernetes, and a development process for coding agents
 ## Quick start
 
 ```bash
-uvx copier copy --trust https://gitlab.com/salvo8519/keelson my_service
+uvx copier copy --trust https://github.com/salvo8519/keelson my_service
 cd my_service
 cp backend/.env.example backend/.env
 make dev
@@ -73,7 +73,7 @@ The questions and their defaults are in the
 | Agent framework | Pydantic AI, LangGraph, LangChain, Deep Agents, Pydantic Deep |
 | LLM provider | OpenAI, Anthropic, Google, OpenRouter, OpenAI-compatible (on-premise), all |
 | Vector database | Qdrant, pgvector, none |
-| CI | GitLab CI, GitHub Actions |
+| CI | GitHub Actions, GitLab CI |
 | Kubernetes | yes, no |
 
 ## Documentation

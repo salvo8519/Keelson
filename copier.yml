@@ -144,9 +144,9 @@ ci_provider:
   type: str
   help: CI/CD system for the generated project
   choices:
-    GitLab CI: gitlab
     GitHub Actions: github
-  default: gitlab
+    GitLab CI: gitlab
+  default: github
 
 kubernetes:
   type: bool
@@ -163,7 +163,7 @@ keelson_url:
   type: str
   when: false
   # Single source of the template's home, used by NOTICE and README of generated projects.
-  default: https://gitlab.com/salvo8519/keelson
+  default: https://github.com/salvo8519/keelson
 
 generator_name:
   type: str

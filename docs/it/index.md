@@ -3,7 +3,7 @@ hide:
 - navigation
 - toc
 source: index.md
-source_hash: 0aa3498365f2
+source_hash: 2a3c2ef6005c
 ---
 <div class="kl-hero" markdown>
 
@@ -57,7 +57,7 @@ programmazione.
     ---
 
     PostgreSQL con migrazioni, Redis, rate limiting, metriche Prometheus, Traefik con HTTPS,
-    manifest Kubernetes e una pipeline GitLab o GitHub.
+    manifest Kubernetes e una pipeline GitHub o GitLab.
 
     [Architettura](concepts/architecture.md)
 

@@ -14,7 +14,7 @@ Copier asks the questions listed in the [reference](../reference/questions.md). 
 exclude and formats the code.
 
 ```bash
-uvx copier copy --trust https://gitlab.com/salvo8519/keelson my_service
+uvx copier copy --trust https://github.com/salvo8519/keelson my_service
 ```
 
 To accept every default, add `--defaults`. To set answers without prompts, add

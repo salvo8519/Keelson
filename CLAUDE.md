@@ -16,7 +16,7 @@
 ## Skills
 
 Process skills (`.agents/skills/`, mirrored to `.claude/skills/`): `/session-start`,
-`/session-end`, `/pre-mr`, `/upstream-sync`.
+`/session-end`, `/pre-pr`, `/upstream-sync`.
 
 Component skills from the maintainers of the libraries we use (FastAPI, Pydantic, Pydantic AI,
 LangChain and LangGraph, Qdrant, React) are installed with `uv run just skills`; the list and

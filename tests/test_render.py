@@ -30,7 +30,7 @@ CASES: dict[str, dict[str, Any]] = {
         "ai_framework": "langgraph",
         "llm_provider": "anthropic",
         "vector_database": "pgvector",
-        "ci_provider": "github",
+        "ci_provider": "gitlab",
         "kubernetes": False,
     },
     "arq-on-premise-llm": {
@@ -162,7 +162,7 @@ def test_task_backend_files(
 @pytest.mark.parametrize("case", list(CASES))
 def test_delivery_files_follow_the_answers(render: Render, case: str) -> None:
     project = render(answers(case))
-    gitlab = CASES[case].get("ci_provider", "gitlab") == "gitlab"
+    gitlab = CASES[case].get("ci_provider", "github") == "gitlab"
     assert (project / ".gitlab-ci.yml").is_file() is gitlab
     assert (project / ".github" / "workflows").is_dir() is not gitlab
     kubernetes = CASES[case].get("kubernetes", True)
