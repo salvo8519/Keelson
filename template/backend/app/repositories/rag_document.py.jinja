@@ -126,13 +126,15 @@ async def update_status(
 
 
 async def delete(db: AsyncSession, doc_id: UUID) -> bool:
-    """Delete a RAG document by ID."""
-    doc = await db.get(RAGDocument, doc_id)
-    if not doc:
-        return False
-    await db.delete(doc)
+    """Delete a RAG document by ID; False when no row was deleted.
+
+    Keelson: the row count is the answer. A row the session can read and row level security
+    does not let it delete matches nothing; the ORM's delete of a loaded object reported that
+    as success.
+    """
+    result = await db.execute(sql_delete(RAGDocument).where(RAGDocument.id == doc_id))
     await db.flush()
-    return True
+    return bool(result.rowcount)  # ty: ignore[unresolved-attribute]
 
 
 async def sum_filesize_for_org(db: AsyncSession, org_id: UUID) -> int:
@@ -143,6 +145,21 @@ async def sum_filesize_for_org(db: AsyncSession, org_id: UUID) -> int:
         )
     )
     return int(result.scalar_one())
+
+
+{%- if enable_teams and use_jwt %}
+
+
+async def delete_for_kb(db: AsyncSession, kb_id: UUID) -> list[UUID]:
+    """Delete the documents of a knowledge base; returns the stored objects they referenced."""
+    result = await db.execute(
+        sql_delete(RAGDocument)
+        .where(RAGDocument.knowledge_base_id == kb_id)
+        .returning(RAGDocument.stored_object_id)
+    )
+    await db.flush()
+    return [object_id for object_id in result.scalars() if object_id is not None]
+{%- endif %}
 
 
 async def delete_by_collection(db: AsyncSession, collection_name: str) -> int:

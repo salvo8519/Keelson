@@ -4,13 +4,17 @@ import re
 import secrets
 from uuid import UUID
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import AuthorizationError, NotFoundError
+from app.core.exceptions import AlreadyExistsError, AuthorizationError, BadRequestError, NotFoundError
 from app.db.models.knowledge_base import KBScope, KnowledgeBase
+from app.db.models.organization import ORG_WRITER_ROLES
 from app.repositories import conversation_repo, knowledge_base_repo, member_repo
 from app.schemas.knowledge_base import KnowledgeBaseCreate, KnowledgeBaseUpdate
 from app.services.rag.tenancy import APP_TENANT, TenantFilter, knowledge_base_tenant
+from app.services.rag.vectorstore import BaseVectorStore
+from app.services.rag_document import RAGDocumentService
 
 logger = logging.getLogger(__name__)
 
@@ -205,6 +209,26 @@ class KnowledgeBaseService:
         self._check_read_access(kb, user_id=user_id, organization_id=organization_id)
         return kb
 
+    async def get_writable(
+        self,
+        kb_id: UUID,
+        *,
+        user_id: UUID,
+        organization_id: UUID | None,
+        is_app_admin: bool,
+    ) -> KnowledgeBase:
+        """A knowledge base the user may change (Keelson: reading one is not enough).
+
+        Raises:
+            NotFoundError: The knowledge base does not exist or is not visible to the user.
+            AuthorizationError: The user sees it and may not change it.
+        """
+        kb = await self.get(kb_id, user_id=user_id, organization_id=organization_id)
+        await self._check_write_access(
+            kb, user_id=user_id, organization_id=organization_id, is_app_admin=is_app_admin
+        )
+        return kb
+
     async def create(
         self,
         data: KnowledgeBaseCreate,
@@ -213,25 +237,44 @@ class KnowledgeBaseService:
         organization_id: UUID | None = None,
         is_app_admin: bool = False,
     ) -> KnowledgeBase:
-        self._check_create_permission(
+        await self._check_create_permission(
             scope=data.scope,
             user_id=user_id,
             organization_id=organization_id,
             is_app_admin=is_app_admin,
         )
+        # Keelson: the tenant of a collection's vectors is its knowledge base's, so a
+        # collection belongs to one knowledge base. Only the application's knowledge bases,
+        # created by the platform administration, may name an existing collection of the
+        # administration (the command line); the others get a new one.
+        if data.collection_name and data.scope != KBScope.APP.value:
+            raise BadRequestError(
+                message="Only the application's knowledge bases choose their collection",
+                details={"scope": data.scope},
+            )
         owner_user_id = user_id if data.scope == KBScope.PERSONAL.value else None
         org_id = (
             organization_id if data.scope in (KBScope.ORG.value, KBScope.PERSONAL.value) else None
         )
-        return await knowledge_base_repo.create(
-            self.db,
-            name=data.name,
-            collection_name=data.collection_name or _derive_collection_name(data.name),
-            scope=data.scope,
-            description=data.description,
-            owner_user_id=owner_user_id,
-            organization_id=org_id,
-        )
+        collection_name = data.collection_name or _derive_collection_name(data.name)
+        try:
+            async with self.db.begin_nested():
+                return await knowledge_base_repo.create(
+                    self.db,
+                    name=data.name,
+                    collection_name=collection_name,
+                    scope=data.scope,
+                    description=data.description,
+                    owner_user_id=owner_user_id,
+                    organization_id=org_id,
+                )
+        except IntegrityError as error:
+            if "collection_name" not in str(error.orig):
+                raise
+            raise AlreadyExistsError(
+                message="Collection already belongs to a knowledge base",
+                details={"collection_name": collection_name},
+            ) from None
 
     async def create_default_for_org(
         self,
@@ -260,11 +303,8 @@ class KnowledgeBaseService:
         organization_id: UUID | None = None,
         is_app_admin: bool = False,
     ) -> KnowledgeBase:
-        kb = await knowledge_base_repo.get_by_id(self.db, kb_id)
-        if not kb:
-            raise NotFoundError(message="Knowledge base not found", details={"kb_id": str(kb_id)})
-        self._check_write_access(
-            kb, user_id=user_id, organization_id=organization_id, is_app_admin=is_app_admin
+        kb = await self.get_writable(
+            kb_id, user_id=user_id, organization_id=organization_id, is_app_admin=is_app_admin
         )
         return await knowledge_base_repo.update(
             self.db,
@@ -280,18 +320,28 @@ class KnowledgeBaseService:
         user_id: UUID,
         organization_id: UUID | None = None,
         is_app_admin: bool = False,
+        vector_store: BaseVectorStore,
     ) -> None:
-        kb = await knowledge_base_repo.get_by_id(self.db, kb_id)
-        if not kb:
-            raise NotFoundError(message="Knowledge base not found", details={"kb_id": str(kb_id)})
-        if kb.is_default:
-            from app.core.exceptions import BadRequestError
+        """Delete a knowledge base with its documents, their files and its vectors.
 
-            raise BadRequestError(message="Cannot delete the default knowledge base")
-        self._check_write_access(
-            kb, user_id=user_id, organization_id=organization_id, is_app_admin=is_app_admin
+        Keelson: upstream deleted the row only, so the documents and the vectors stayed (and
+        reached whoever later got the same collection), and a delete refused by row level
+        security answered as done.
+
+        Raises:
+            NotFoundError: Nothing was deleted (absent, invisible, or refused by the database).
+        """
+        kb = await self.get_writable(
+            kb_id, user_id=user_id, organization_id=organization_id, is_app_admin=is_app_admin
         )
-        await knowledge_base_repo.delete(self.db, kb_id)
+        if kb.is_default:
+            raise BadRequestError(message="Cannot delete the default knowledge base")
+        await RAGDocumentService(self.db).delete_for_knowledge_base(kb.id)
+        if not await knowledge_base_repo.delete(self.db, kb.id):
+            raise NotFoundError(message="Knowledge base not found", details={"kb_id": str(kb_id)})
+        # Last, once the rows are gone: the vector store has no transaction to roll back.
+        if kb.collection_name in await vector_store.list_collections():
+            await vector_store.delete_collection(kb.collection_name)
 
     def _check_read_access(
         self,
@@ -312,7 +362,23 @@ class KnowledgeBaseService:
             return
         raise NotFoundError(message="Knowledge base not found", details={"kb_id": str(kb.id)})
 
-    def _check_write_access(
+    async def _check_org_writer(self, organization_id: UUID | None, user_id: UUID) -> None:
+        """Keelson: owners, admins and members change an organization's content; viewers read.
+
+        The same rule is enforced by row level security (app/db/tenancy.py).
+        """
+        member = (
+            await member_repo.get(self.db, organization_id=organization_id, user_id=user_id)
+            if organization_id
+            else None
+        )
+        if member is None or member.role not in ORG_WRITER_ROLES:
+            raise AuthorizationError(
+                message="Viewers cannot change the organization's knowledge bases",
+                details={"required": list(ORG_WRITER_ROLES)},
+            )
+
+    async def _check_write_access(
         self,
         kb: KnowledgeBase,
         *,
@@ -320,18 +386,21 @@ class KnowledgeBaseService:
         organization_id: UUID | None,
         is_app_admin: bool,
     ) -> None:
-        if kb.scope == KBScope.APP.value and not is_app_admin:
-            raise AuthorizationError(
-                message="App admin required to modify app-scoped knowledge base"
-            )
-        if kb.scope == KBScope.PERSONAL.value and str(kb.owner_user_id) != str(user_id):
-            raise AuthorizationError(message="Only the owner can modify this knowledge base")
-        if kb.scope == KBScope.ORG.value and (
-            not organization_id or str(kb.organization_id) != str(organization_id)
-        ):
+        if kb.scope == KBScope.APP.value:
+            if not is_app_admin:
+                raise AuthorizationError(
+                    message="App admin required to modify app-scoped knowledge base"
+                )
+            return
+        if kb.scope == KBScope.PERSONAL.value:
+            if str(kb.owner_user_id) != str(user_id):
+                raise AuthorizationError(message="Only the owner can modify this knowledge base")
+            return
+        if not organization_id or str(kb.organization_id) != str(organization_id):
             raise AuthorizationError(message="Not a member of this knowledge base's organization")
+        await self._check_org_writer(organization_id, user_id)
 
-    def _check_create_permission(
+    async def _check_create_permission(
         self,
         *,
         scope: str,
@@ -343,10 +412,12 @@ class KnowledgeBaseService:
             raise AuthorizationError(
                 message="App admin required to create app-scoped knowledge base"
             )
-        if scope == KBScope.ORG.value and not organization_id:
-            raise AuthorizationError(
-                message="Organization context required to create org-scoped knowledge base"
-            )
+        if scope == KBScope.ORG.value:
+            if not organization_id:
+                raise AuthorizationError(
+                    message="Organization context required to create org-scoped knowledge base"
+                )
+            await self._check_org_writer(organization_id, user_id)
 
 {%- else %}
 """Knowledge Base service — not configured."""

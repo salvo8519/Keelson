@@ -1,0 +1,74 @@
+{%- if enable_teams and enable_rag and use_jwt and use_postgresql %}
+"""who changes knowledge bases, their documents and sync sources (Keelson)
+
+Revision ID: k0006_knowledge_base_writes
+Revises: k0005_stored_objects
+Create Date: 2026-11-25T00:00:00+00:00
+
+A collection belongs to one knowledge base: the tenant of its vectors is that knowledge base's,
+so the index on knowledge_bases.collection_name becomes unique. The upgrade stops on existing
+duplicates, which an administrator resolves first (the query is in the error).
+
+The policies of knowledge_bases, rag_documents, sync_sources and sync_logs are applied again
+from app/db/tenancy.py: an organization's content is changed by its owners, admins and members
+only, a document is written only with a knowledge base the user may write, and the columns
+that decide a knowledge base's tenant are frozen.
+"""
+
+import sqlalchemy as sa
+from alembic import op
+
+from app.db.tenancy import segregation_statements
+
+revision = "k0006_knowledge_base_writes"
+down_revision = "k0005_stored_objects"
+branch_labels = None
+depends_on = None
+
+INDEX = "ix_knowledge_bases_collection_name"
+TABLES = {"knowledge_bases", "rag_documents", "sync_sources", "sync_logs"}
+DUPLICATES = (
+    "SELECT collection_name, count(*) FROM knowledge_bases GROUP BY collection_name HAVING count(*) > 1"
+)
+
+
+def upgrade() -> None:
+    duplicates = op.get_bind().execute(sa.text(DUPLICATES)).fetchall()
+    if duplicates:
+        names = ", ".join(row[0] for row in duplicates)
+        raise RuntimeError(
+            f"Knowledge bases share the collections {names}: give each its own collection"
+            f" before upgrading ({DUPLICATES})"
+        )
+    op.drop_index(INDEX, table_name="knowledge_bases")
+    op.create_index(INDEX, "knowledge_bases", ["collection_name"], unique=True)
+    op.execute("SET LOCAL check_function_bodies = off")
+    existing = set(sa.inspect(op.get_bind()).get_table_names())
+    for statement in segregation_statements(TABLES & existing):
+        op.execute(statement)
+
+
+def downgrade() -> None:
+    # The stricter policies stay: they are a correction, not a feature to remove.
+    op.drop_index(INDEX, table_name="knowledge_bases")
+    op.create_index(INDEX, "knowledge_bases", ["collection_name"])
+{%- else %}
+"""knowledge base writes - skipped (no knowledge bases in this project)
+
+Revision ID: k0006_knowledge_base_writes
+Revises: k0005_stored_objects
+"""
+
+revision = "k0006_knowledge_base_writes"
+down_revision = "k0005_stored_objects"
+branch_labels = None
+depends_on = None
+
+
+def upgrade() -> None:
+    pass
+
+
+def downgrade() -> None:
+    pass
+{%- endif %}

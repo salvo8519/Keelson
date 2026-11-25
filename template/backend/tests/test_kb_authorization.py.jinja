@@ -1,0 +1,342 @@
+{%- if enable_teams and enable_rag and use_jwt %}
+"""Who may change a knowledge base, its documents and its sync sources (Keelson).
+
+Reading a knowledge base is not enough to change it: the application's knowledge bases are
+changed by platform administrators only, an organization's by its owners, admins and members
+(viewers read), a personal one by its owner. A change that removes nothing answers not found,
+and a removed document takes its vectors with it.
+"""
+
+from collections.abc import AsyncGenerator, Iterator
+from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock
+from uuid import UUID, uuid4
+
+import pytest
+from httpx import AsyncClient
+
+from app.api import deps
+from app.core.config import settings
+from app.core.exceptions import BadRequestError
+from app.main import app
+from app.repositories import knowledge_base_repo, member_repo, rag_document_repo, sync_source_repo
+from app.schemas.knowledge_base import KnowledgeBaseCreate
+from app.services.knowledge_base import KnowledgeBaseService
+from app.services.rag.ingestion import IngestionService
+
+KB = f"{settings.API_V1_STR}/kb"
+
+
+@dataclass
+class Scene:
+    """A user acting in an organization, a knowledge base, and the services around it."""
+
+    client: AsyncClient
+    user: MagicMock
+    org_id: UUID
+    kb: MagicMock
+    membership: MagicMock
+    documents: MagicMock
+    sync_sources: MagicMock
+    store: MagicMock
+    system_reasons: list[str] = field(default_factory=list)
+
+    def act_as(self, *, role: str = "member", admin: bool = False) -> None:
+        self.membership.role = role
+        self.user.is_app_admin = admin
+        self.user.has_role = MagicMock(return_value=admin)
+
+    def kb_is(self, scope: str, *, owner: UUID | None = None, is_default: bool = False) -> None:
+        self.kb.scope = scope
+        self.kb.organization_id = self.org_id if scope == "org" else None
+        self.kb.owner_user_id = owner
+        self.kb.is_default = is_default
+
+
+def _kb() -> MagicMock:
+    kb = MagicMock()
+    kb.id = uuid4()
+    kb.collection_name = "handbook_0a1b2c"
+    return kb
+
+
+@pytest.fixture
+def scene(client: AsyncClient, monkeypatch: pytest.MonkeyPatch) -> Iterator[Scene]:
+    user = MagicMock(id=uuid4())
+    org_id = uuid4()
+    kb = _kb()
+    membership = MagicMock()
+    documents = MagicMock()
+    documents.dispatch_upload = AsyncMock(return_value={"id": str(uuid4()), "status": "processing",
+                                                        "filename": "a.txt", "collection": kb.collection_name,
+                                                        "message": "accepted"})
+    sync_sources = MagicMock()
+    sync_sources.create_source = AsyncMock()
+    store = MagicMock()
+    store.delete_document = AsyncMock()
+    store.delete_collection = AsyncMock()
+    store.list_collections = AsyncMock(return_value=[kb.collection_name])
+    scene = Scene(client, user, org_id, kb, membership, documents, sync_sources, store)
+    scene.act_as(role="member")
+    scene.kb_is("org")
+
+    monkeypatch.setattr(knowledge_base_repo, "get_by_id", AsyncMock(return_value=kb))
+    monkeypatch.setattr(member_repo, "get", AsyncMock(return_value=membership))
+    app.dependency_overrides[deps.get_current_user] = lambda: user
+    app.dependency_overrides[deps.get_active_organization] = lambda: MagicMock(id=org_id)
+    app.dependency_overrides[deps.get_rag_document_service] = lambda: documents
+    app.dependency_overrides[deps.get_sync_source_service] = lambda: sync_sources
+    app.dependency_overrides[deps.get_vectorstore] = lambda: store
+    app.dependency_overrides[deps.get_ingestion_service] = lambda: IngestionService(
+        processor=MagicMock(), vector_store=store
+    )
+
+    @asynccontextmanager
+    async def system_session(reason: str) -> AsyncGenerator[MagicMock, None]:
+        scene.system_reasons.append(reason)
+        yield MagicMock()
+
+    monkeypatch.setattr(deps, "system_session", system_session, raising=False)
+    yield scene
+
+
+def _upload(scene: Scene):
+    return scene.client.post(f"{KB}/{scene.kb.id}/documents", files={"file": ("a.txt", b"text", "text/plain")})
+
+
+# --- The application's knowledge bases ---------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_a_user_cannot_upload_into_the_application_knowledge_base(scene: Scene) -> None:
+    """Every tenant reads the application's knowledge bases: an upload there reached them all."""
+    scene.kb_is("app")
+    response = await _upload(scene)
+    assert response.status_code == 403
+    scene.documents.dispatch_upload.assert_not_awaited()
+    assert scene.system_reasons == []
+
+
+@pytest.mark.anyio
+async def test_a_platform_administrator_writes_the_application_knowledge_base_as_the_system(
+    scene: Scene, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.services.rag_document import RAGDocumentService
+
+    dispatch = AsyncMock(return_value=scene.documents.dispatch_upload.return_value)
+    monkeypatch.setattr(RAGDocumentService, "dispatch_upload", dispatch)
+    scene.kb_is("app")
+    scene.act_as(role="member", admin=True)
+    response = await _upload(scene)
+    assert response.status_code == 202
+    dispatch.assert_awaited_once()
+    scene.documents.dispatch_upload.assert_not_awaited()
+    assert len(scene.system_reasons) == 1
+    assert str(scene.user.id) in scene.system_reasons[0]
+
+
+# --- Viewers read, they do not write ------------------------------------------------------
+
+
+VIEWER_WRITES = [
+    ("POST", "", {"json": {"name": "Team", "scope": "org"}}),
+    ("PATCH", "/{kb}", {"json": {"name": "Renamed"}}),
+    ("DELETE", "/{kb}", {}),
+    ("POST", "/{kb}/documents", {"files": {"file": ("a.txt", b"text", "text/plain")}}),
+    ("DELETE", "/{kb}/documents/{doc}", {}),
+    ("POST", "/{kb}/sync-sources", {"json": {"name": "Drive", "connector_type": "local", "config": {}}}),
+    ("POST", "/{kb}/sync-sources/{doc}/clone", {"json": {"collection_name": "x"}}),
+    ("POST", "/{kb}/sync-sources/{doc}/trigger", {}),
+    ("DELETE", "/{kb}/sync-sources/{doc}", {}),
+]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(("method", "path", "body"), VIEWER_WRITES)
+async def test_a_viewer_cannot_change_the_organization_knowledge_bases(
+    scene: Scene, method: str, path: str, body: dict
+) -> None:
+    scene.act_as(role="viewer")
+    url = KB + path.format(kb=scene.kb.id, doc=uuid4())
+    response = await scene.client.request(method, url, **body)
+    assert response.status_code == 403, response.text
+    scene.documents.dispatch_upload.assert_not_awaited()
+    scene.sync_sources.create_source.assert_not_awaited()
+    scene.store.delete_document.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_a_viewer_still_reads_the_organization_knowledge_base(scene: Scene) -> None:
+    scene.act_as(role="viewer")
+    scene.documents.list_for_kb = AsyncMock(return_value={"items": [], "total": 0})
+    response = await scene.client.get(f"{KB}/{scene.kb.id}/documents")
+    assert response.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_a_member_uploads_into_the_organization_knowledge_base(scene: Scene) -> None:
+    response = await _upload(scene)
+    assert response.status_code == 202
+    scene.documents.dispatch_upload.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_a_viewer_writes_its_own_personal_knowledge_base(scene: Scene) -> None:
+    """The role is about the organization's content; a personal knowledge base is its owner's."""
+    scene.act_as(role="viewer")
+    scene.kb_is("personal", owner=scene.user.id)
+    response = await _upload(scene)
+    assert response.status_code == 202
+
+
+# --- Deletes remove vectors, and report what they did not remove -------------------------
+
+
+def _document(scene: Scene, monkeypatch: pytest.MonkeyPatch, *, deleted: bool) -> MagicMock:
+    """A real RAGDocumentService over a document of the scene's knowledge base."""
+    doc = MagicMock(id=uuid4(), collection_name=scene.kb.collection_name, vector_document_id="vec-1",
+                    stored_object_id=None)
+    monkeypatch.setattr(rag_document_repo, "get_by_id", AsyncMock(return_value=doc))
+    monkeypatch.setattr(rag_document_repo, "delete", AsyncMock(return_value=deleted))
+    app.dependency_overrides.pop(deps.get_rag_document_service)
+    return doc
+
+
+@pytest.mark.anyio
+async def test_deleting_a_document_removes_its_vectors(scene: Scene, monkeypatch: pytest.MonkeyPatch) -> None:
+    doc = _document(scene, monkeypatch, deleted=True)
+    response = await scene.client.delete(f"{KB}/{scene.kb.id}/documents/{doc.id}")
+    assert response.status_code == 204
+    scene.store.delete_document.assert_awaited_once_with(
+        collection_name=scene.kb.collection_name, document_id="vec-1"
+    )
+
+
+@pytest.mark.anyio
+async def test_a_document_delete_that_removes_no_row_answers_not_found(
+    scene: Scene, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Row level security refuses a delete by matching no row: that is not a success."""
+    doc = _document(scene, monkeypatch, deleted=False)
+    response = await scene.client.delete(f"{KB}/{scene.kb.id}/documents/{doc.id}")
+    assert response.status_code == 404
+    scene.store.delete_document.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_deleting_a_knowledge_base_removes_its_documents_and_vectors(
+    scene: Scene, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    removed = AsyncMock(return_value=[])
+    monkeypatch.setattr(rag_document_repo, "delete_for_kb", removed, raising=False)
+    monkeypatch.setattr(knowledge_base_repo, "delete", AsyncMock(return_value=True))
+    response = await scene.client.delete(f"{KB}/{scene.kb.id}")
+    assert response.status_code == 204
+    removed.assert_awaited_once()
+    scene.store.delete_collection.assert_awaited_once_with(scene.kb.collection_name)
+
+
+@pytest.mark.anyio
+async def test_a_knowledge_base_delete_that_removes_no_row_answers_not_found(
+    scene: Scene, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(rag_document_repo, "delete_for_kb", AsyncMock(return_value=[]), raising=False)
+    monkeypatch.setattr(knowledge_base_repo, "delete", AsyncMock(return_value=False))
+    response = await scene.client.delete(f"{KB}/{scene.kb.id}")
+    assert response.status_code == 404
+    scene.store.delete_collection.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_a_sync_source_delete_that_removes_no_row_answers_not_found(
+    scene: Scene, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = MagicMock(id=uuid4(), collection_name=scene.kb.collection_name)
+    monkeypatch.setattr(sync_source_repo, "get_by_id", AsyncMock(return_value=source))
+    monkeypatch.setattr(sync_source_repo, "delete", AsyncMock(return_value=False))
+    app.dependency_overrides.pop(deps.get_sync_source_service)
+    response = await scene.client.delete(f"{KB}/{scene.kb.id}/sync-sources/{source.id}")
+    assert response.status_code == 404
+
+
+# --- A collection belongs to one knowledge base -------------------------------------------
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("scope", ["personal", "org"])
+async def test_only_the_application_knowledge_bases_choose_their_collection(scope: str) -> None:
+    """The tenant of a vector is its collection's knowledge base: a user who named their own
+    knowledge base after another one's collection wrote vectors in that one's tenant."""
+    service = KnowledgeBaseService(MagicMock())
+    member_repo_get = AsyncMock(return_value=MagicMock(role="owner"))
+    data = KnowledgeBaseCreate(name="Mine", scope=scope, collection_name="global_handbook")
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(member_repo, "get", member_repo_get)
+        patch.setattr(knowledge_base_repo, "create", AsyncMock())
+        with pytest.raises(BadRequestError):
+            await service.create(data, user_id=uuid4(), organization_id=uuid4(), is_app_admin=False)
+
+
+# --- Local sync reads one configured directory --------------------------------------------
+
+
+def _local_sync(monkeypatch: pytest.MonkeyPatch, root: Path | None, scope: str = "app"):
+    from app.services.rag_sync import RAGSyncService
+
+    monkeypatch.setattr(settings, "RAG_LOCAL_SYNC_ROOT", root, raising=False)
+    monkeypatch.setattr(
+        knowledge_base_repo, "get_by_collection_name", AsyncMock(return_value=MagicMock(scope=scope))
+    )
+    service = RAGSyncService(MagicMock())
+    service.create_sync_log = AsyncMock()  # type: ignore[method-assign]
+    return service
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("path", ["/etc", "../outside", "inside/../../outside"])
+async def test_local_sync_refuses_a_path_outside_its_root(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, path: str
+) -> None:
+    root = tmp_path / "corpus"
+    root.mkdir()
+    service = _local_sync(monkeypatch, root)
+    with pytest.raises(BadRequestError):
+        await service.start_local_sync(collection_name="handbook", mode="full", path=path)
+    service.create_sync_log.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_local_sync_feeds_only_the_application_knowledge_bases(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Files of the server carry no tenant: they go to the application's knowledge bases."""
+    service = _local_sync(monkeypatch, tmp_path, scope="org")
+    with pytest.raises(BadRequestError):
+        await service.start_local_sync(collection_name="handbook", mode="full", path="")
+    service.create_sync_log.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_local_sync_is_disabled_when_deployed_without_a_root(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = _local_sync(monkeypatch, None)
+    monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+    with pytest.raises(BadRequestError):
+        await service.start_local_sync(collection_name="handbook", mode="full", path="/srv")
+    service.create_sync_log.assert_not_awaited()
+
+
+def test_a_safe_path_keeps_its_directories_and_refuses_escapes(tmp_path: Path) -> None:
+    from app.core.sanitize import validate_safe_path
+
+    assert validate_safe_path(tmp_path, "docs/a.txt") == tmp_path.resolve() / "docs" / "a.txt"
+    assert validate_safe_path(tmp_path, str(tmp_path / "b.txt")) == tmp_path.resolve() / "b.txt"
+    for escape in ("../x", "/etc/passwd", "docs/../../x"):
+        with pytest.raises(ValueError):
+            validate_safe_path(tmp_path, escape)
+{%- else %}
+"""Knowledge base authorization tests - not configured."""
+{%- endif %}

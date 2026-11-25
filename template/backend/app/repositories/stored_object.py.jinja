@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any, cast
 from uuid import UUID
 
+from sqlalchemy import delete as sql_delete
 from sqlalchemy import and_, exists, func, not_, or_, select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -39,9 +40,11 @@ async def update_fields(db: AsyncSession, stored: StoredObject, **fields: Any) -
     return stored
 
 
-async def delete(db: AsyncSession, stored: StoredObject) -> None:
-    await db.delete(stored)
+async def delete(db: AsyncSession, stored: StoredObject) -> bool:
+    """False when no row was deleted: the bytes of a row that stays must stay too."""
+    result = await db.execute(sql_delete(StoredObject).where(StoredObject.id == stored.id))
     await db.flush()
+    return bool(cast(CursorResult[Any], result).rowcount)
 
 
 # --- Migration between backends (system session) ------------------------------------------

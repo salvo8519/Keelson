@@ -30,6 +30,9 @@ The rules (``POLICIES``) mirror the application's access model:
 * organization data (organization stored objects included) is visible to the organization's
   members, and to its API keys;
 * managing API keys, members and invitations needs the owner or admin role, in the database too;
+* an organization's knowledge bases, documents and sync sources are changed by its owners,
+  admins and members (``ORG_WRITER_ROLES``); viewers read them. The application's knowledge
+  bases are changed by the platform administration only, through the system session;
 * child rows (messages, tool calls, sync logs) follow their parent;
 * the audit log is append-only: the application can write it, not read it.
 
@@ -51,6 +54,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session, SessionTransaction
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from app.db.models.organization import ORG_WRITER_ROLES
 from app.db.models.stored_object import ORGANIZATION_PREFIX, USER_PREFIX
 from app.db.session import REQUEST_SESSION
 
@@ -118,10 +122,35 @@ _KB_VISIBLE = (
     # The application's knowledge bases are for every authenticated principal, not anyone.
     f" OR (scope = 'app' AND ({ME} IS NOT NULL OR {S}.is_service()))"
 )
+_WRITER_ROLES = "ARRAY[" + ", ".join(f"'{role}'" for role in ORG_WRITER_ROLES) + "]"
+
+
+def _org_writer(column: str) -> str:
+    """The acting user may change the content of organization ``column`` (viewers read only)."""
+    return f"{S}.has_org_role({column}, {_WRITER_ROLES})"
+
+
+# The application's knowledge bases are written by the platform administration only, through
+# the system session: no rule here opens them to the application login.
 _KB_WRITABLE = (
     f"(scope = 'personal' AND owner_user_id = {ME})"
-    f" OR (scope = 'org' AND {S}.in_organization(organization_id))"
+    f" OR (scope = 'org' AND {_org_writer('organization_id')})"
 )
+# A document is written with its knowledge base, and never carries another organization.
+_DOCUMENT_WRITABLE = (
+    "(organization_id IS NULL OR {in_org})"
+    " AND CASE WHEN knowledge_base_id IS NULL"
+    " THEN organization_id IS NOT NULL AND {writer}"
+    " ELSE EXISTS (SELECT 1 FROM knowledge_bases k WHERE k.id = knowledge_base_id AND ({kb}))"
+    " END"
+).format(
+    in_org=f"{S}.in_organization(organization_id)",
+    writer=_org_writer("organization_id"),
+    kb=f"(k.scope = 'personal' AND k.owner_user_id = {ME})"
+    f" OR (k.scope = 'org' AND {_org_writer('k.organization_id')})",
+)
+_SYNC_SOURCE_VISIBLE = f"organization_id IS NOT NULL AND {S}.in_organization(organization_id)"
+_SYNC_SOURCE_WRITABLE = f"organization_id IS NOT NULL AND {_org_writer('organization_id')}"
 
 # table -> policies for TENANT_ROLE. Tables in UNISOLATED_TABLES carry the reason they have
 # none (closed to the application login). Tables a project does not have are skipped.
@@ -234,7 +263,8 @@ POLICIES: dict[str, list[Policy]] = {
         Policy("DELETE", using=_KB_WRITABLE),
     ],
     # Readable with a visible knowledge base, writable only with a writable one (the
-    # application's knowledge bases are visible to everyone, written by the system).
+    # application's knowledge bases are visible to everyone, written by the system). Keelson:
+    # the row's own organization no longer opens a knowledge base the user cannot write.
     "rag_documents": [
         Policy(
             "SELECT",
@@ -242,17 +272,21 @@ POLICIES: dict[str, list[Policy]] = {
             " OR (knowledge_base_id IS NOT NULL"
             " AND EXISTS (SELECT 1 FROM knowledge_bases k WHERE k.id = knowledge_base_id))",
         ),
+        *_writes(_DOCUMENT_WRITABLE),
+    ],
+    # Integrations of an organization, with their credentials: read by its members and API
+    # keys, changed by its owners, admins and members.
+    "sync_sources": [Policy("SELECT", using=_SYNC_SOURCE_VISIBLE), *_writes(_SYNC_SOURCE_WRITABLE)],
+    "sync_logs": [
+        Policy(
+            "SELECT",
+            using="sync_source_id IS NOT NULL AND EXISTS (SELECT 1 FROM sync_sources s WHERE s.id = sync_source_id)",
+        ),
         *_writes(
-            f"(organization_id IS NOT NULL AND {S}.in_organization(organization_id))"
-            " OR (knowledge_base_id IS NOT NULL AND EXISTS (SELECT 1 FROM knowledge_bases k"
-            f" WHERE k.id = knowledge_base_id AND ((k.scope = 'personal' AND k.owner_user_id = {ME})"
-            f" OR (k.scope = 'org' AND {S}.in_organization(k.organization_id)))))"
+            "sync_source_id IS NOT NULL AND EXISTS (SELECT 1 FROM sync_sources s"
+            f" WHERE s.id = sync_source_id AND {_org_writer('s.organization_id')})"
         ),
     ],
-    "sync_sources": _all(f"organization_id IS NOT NULL AND {S}.in_organization(organization_id)"),
-    "sync_logs": _all(
-        "sync_source_id IS NOT NULL AND EXISTS (SELECT 1 FROM sync_sources s WHERE s.id = sync_source_id)"
-    ),
     # Append-only for the application: it records, only system code reads.
     # Written, never read, by the application login: an entry names its own actor, or the
     # organization of the API key that acts. Read by the platform administration only.
@@ -284,6 +318,10 @@ FROZEN_COLUMNS: dict[str, tuple[str, ...]] = {
     "stored_objects": (
         "organization_id", "user_id", "backend", "storage_key", "previous_backend", "previous_key"
     ),
+    # The tenant of a knowledge base's vectors follows from these (app/services/rag/tenancy.py).
+    "knowledge_bases": ("scope", "organization_id", "owner_user_id", "collection_name", "is_default"),
+    "rag_documents": ("organization_id", "knowledge_base_id", "collection_name"),
+    "sync_sources": ("organization_id",),
 }
 
 

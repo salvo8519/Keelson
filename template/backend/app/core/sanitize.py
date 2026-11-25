@@ -122,8 +122,13 @@ def validate_safe_path(
 ) -> Path:
     """Validate that a user-provided path is within the allowed base directory.
 
-    Prevents path traversal attacks by ensuring the resolved path
-    is within the expected directory.
+    Prevents path traversal attacks by ensuring the resolved path (symbolic links
+    followed) is within the expected directory. A relative path is taken from
+    ``base_dir``; an absolute one must already lie inside it.
+
+    Keelson: upstream reduced the path to its last component (sanitize_filename), so
+    "images/photo.jpg" became "photo.jpg" and "/etc/passwd" became "etc_passwd" under
+    the base directory instead of being refused.
 
     Args:
         base_dir: The base directory that all paths must be within.
@@ -133,7 +138,7 @@ def validate_safe_path(
         The resolved, safe path.
 
     Raises:
-        ValueError: If the path would escape the base directory.
+        ValueError: If the path would escape the base directory, or holds a NUL byte.
 
     Example:
         >>> validate_safe_path("/uploads", "../../../etc/passwd")
@@ -141,10 +146,10 @@ def validate_safe_path(
         >>> validate_safe_path("/uploads", "images/photo.jpg")
         Path("/uploads/images/photo.jpg")
     """
+    if "\x00" in user_path:
+        raise ValueError("Path contains a NUL byte")
     base_path = Path(base_dir).resolve()
-    user_path_sanitized = sanitize_filename(user_path.lstrip("/\\"))
-
-    full_path = (base_path / user_path_sanitized).resolve()
+    full_path = (base_path / user_path).resolve()
 
     try:
         full_path.relative_to(base_path)

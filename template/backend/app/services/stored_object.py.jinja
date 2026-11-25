@@ -200,7 +200,9 @@ class StoredObjectService:
         if stored is None:
             return
         backend, key = stored.backend, stored.storage_key
-        await stored_object_repo.delete(self.db, stored)
+        if not await stored_object_repo.delete(self.db, stored):
+            # Keelson: refused by row level security; the bytes stay with their record.
+            raise NotFoundError(message="Stored object not found", details={"object_id": str(object_id)})
         try:
             await get_file_storage(backend).delete(key)
         except Exception:

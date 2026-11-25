@@ -417,6 +417,19 @@ class ConversationService:
             user_id=user_id,
 {%- endif %}
         )
+{%- if use_jwt %}
+        # Keelson: a share lets its holder read or write, not delete. Row level security
+        # refused the delete and the request still answered 204.
+        if (
+            user_id is not None
+            and conversation.user_id is not None
+            and str(conversation.user_id) != str(user_id)
+        ):
+            raise AuthorizationError(
+                message="Only the owner can delete this conversation",
+                details={"conversation_id": str(conversation_id)},
+            )
+{%- endif %}
         await conversation_repo.delete_conversation(self.db, db_conversation=conversation)
         return True
 

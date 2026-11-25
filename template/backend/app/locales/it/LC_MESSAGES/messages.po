@@ -108,6 +108,9 @@ msgstr ""
 msgid "Cannot transfer ownership to yourself"
 msgstr "Non puoi trasferire la proprietà a te stesso"
 
+msgid "Collection already belongs to a knowledge base"
+msgstr "La collezione appartiene già a una knowledge base"
+
 msgid "Collection not found"
 msgstr "Collezione non trovata"
 
@@ -207,6 +210,12 @@ msgstr "Knowledge base non trovata"
 msgid "Knowledge base search failed"
 msgstr "Ricerca nella knowledge base non riuscita"
 
+msgid "Local sync feeds only the application's knowledge bases"
+msgstr "La sincronizzazione locale alimenta solo le knowledge base dell'applicazione"
+
+msgid "Local sync is disabled: set RAG_LOCAL_SYNC_ROOT"
+msgstr "La sincronizzazione locale è disattivata: imposta RAG_LOCAL_SYNC_ROOT"
+
 msgid "Magic link is invalid or has expired"
 msgstr "Il magic link non è valido o è scaduto"
 
@@ -288,11 +297,17 @@ msgstr "Solo l'Owner può eliminare l'organizzazione"
 msgid "Only the Owner can transfer ownership"
 msgstr "Solo l'Owner può trasferire la proprietà"
 
+msgid "Only the application's knowledge bases choose their collection"
+msgstr "Solo le knowledge base dell'applicazione scelgono la propria collezione"
+
 msgid "Only the conversation owner can share it"
 msgstr "Solo il proprietario della conversazione può condividerla"
 
 msgid "Only the conversation owner can view shares"
 msgstr "Solo il proprietario della conversazione può vedere le condivisioni"
+
+msgid "Only the owner can delete this conversation"
+msgstr "Solo il proprietario può eliminare questa conversazione"
 
 msgid "Only the owner can modify this knowledge base"
 msgstr "Solo il proprietario può modificare questa knowledge base"
@@ -316,6 +331,9 @@ msgstr "Organizzazione non trovata o accesso negato"
 
 msgid "Owner cannot leave the project"
 msgstr "Il proprietario non può lasciare il progetto"
+
+msgid "Path outside the local sync root"
+msgstr "Percorso esterno alla cartella della sincronizzazione locale"
 
 msgid "Payment Required"
 msgstr "Pagamento richiesto"
@@ -370,6 +388,9 @@ msgstr "Slug già in uso"
 msgid "Could not choose a free slug"
 msgstr "Impossibile scegliere uno slug libero"
 
+msgid "Stored object not found"
+msgstr "Oggetto archiviato non trovato"
+
 msgid "Sync is not in running state"
 msgstr "La sincronizzazione non è in corso"
 
@@ -384,6 +405,9 @@ msgstr "Fonte di sincronizzazione non trovata in questa knowledge base"
 
 msgid "Target user is not a member of this organization"
 msgstr "L'utente indicato non è membro di questa organizzazione"
+
+msgid "The document's vectors could not be deleted"
+msgstr "Non è stato possibile eliminare i vettori del documento"
 
 msgid "This document keeps no original file: sync its source again"
 msgstr "Questo documento non conserva il file originale: sincronizza di nuovo la sua sorgente"
@@ -427,6 +451,9 @@ msgstr "L'utente è già membro del progetto"
 msgid "User not found"
 msgstr "Utente non trovato"
 
+msgid "Viewers cannot change the organization's knowledge bases"
+msgstr "Chi ha il ruolo viewer non può modificare le knowledge base dell'organizzazione"
+
 msgid "Workload token not accepted"
 msgstr "Token di workload non accettato"
 
@@ -449,4 +476,3 @@ msgstr "{count} ore"
 #, python-brace-format
 msgid "{count} minutes"
 msgstr "{count} minuti"
-

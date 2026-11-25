@@ -7,6 +7,7 @@ Contains database operations for SyncSource entities.
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
+from sqlalchemy import delete as sql_delete
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -101,13 +102,14 @@ async def update(
 
 
 async def delete(db: AsyncSession, source_id: UUID) -> bool:
-    """Delete a sync source by ID. Returns True if deleted."""
-    source = await db.get(SyncSource, source_id)
-    if not source:
-        return False
-    await db.delete(source)
+    """Delete by ID; False when no row was deleted (absent, or refused by row level security).
+
+    Keelson: the row count is the answer; the ORM's delete of a loaded object reported a
+    delete refused by row level security as done.
+    """
+    result = await db.execute(sql_delete(SyncSource).where(SyncSource.id == source_id))
     await db.flush()
-    return True
+    return bool(result.rowcount)  # ty: ignore[unresolved-attribute]
 
 
 async def update_sync_status(

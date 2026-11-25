@@ -1,4 +1,4 @@
-<!-- i18n source: concepts/tenancy-and-api-keys.md source_hash: 4bf30093bf56 -->
+<!-- i18n source: concepts/tenancy-and-api-keys.md source_hash: 17909c8e69a8 -->
 # Tenancy e API key
 
 I progetti Keelson servono più organizzazioni con un solo deploy. Questa pagina spiega come
@@ -37,6 +37,9 @@ e ogni transazione del login applicativo lo scrive in impostazioni locali alla t
 - i ruoli sono verificati anche nel database: solo owner e admin gestiscono API key, membri e
   inviti; un admin gestisce solo membri e viewer, il ruolo owner lo assegna un owner, e chi
   crea un'organizzazione ne diventa owner una sola volta;
+- i viewer leggono le knowledge base, i documenti e le sorgenti di sincronizzazione di
+  un'organizzazione; owner, admin e membri li modificano. Un documento si scrive solo con una
+  knowledge base che l'utente può modificare, qualunque organizzazione indichi la riga;
 - ciò che una riga concede non può essere riscritto dal login applicativo: i privilegi di
   colonna mantengono come sono stati creati il ruolo e il flag di amministratore di un utente,
   l'autore, l'organizzazione e il flag di demo pubblica di una conversazione, e l'autore di una
@@ -69,8 +72,14 @@ eliminerebbe questo limite ed è un possibile passo futuro.
 ## Knowledge base e vettori
 
 Una knowledge base è personale (solo il proprietario), di un'organizzazione (i suoi membri) o
-dell'applicazione (tutti gli utenti). La vector store non ha una propria row level security,
-quindi ha due barriere:
+dell'applicazione (tutti gli utenti). Chi legge una knowledge base non è chi la modifica: una
+personale la modifica il proprietario, una di un'organizzazione i suoi owner, admin e membri,
+e quelle dell'applicazione solo gli amministratori della piattaforma, attraverso la sessione di
+sistema, perché ogni tenant le legge. Una collezione appartiene a una sola knowledge base (un
+indice univoco), e le colonne che ne decidono il tenant (scope, organizzazione, proprietario,
+collezione) non possono essere modificate dal login applicativo.
+
+La vector store non ha una propria row level security, quindi ha due barriere:
 
 1. **Quali collezioni.** Una ricerca raggiunge solo le collezioni delle knowledge base che
    l'utente vede nell'organizzazione attiva; a qualsiasi altro nome risponde che non esiste.
@@ -81,6 +90,12 @@ quindi ha due barriere:
    (un indice di tenant, il pattern di multitenancy di Qdrant), una clausola `WHERE` in
    pgvector. Una ricerca senza lettore non restituisce nulla. Solo la riga di comando, per
    l'amministrazione, può cercare in tutti i tenant.
+
+Eliminare un documento ne elimina i vettori, ed eliminare una knowledge base ne elimina i
+documenti e la collezione: il contenuto eliminato non è più recuperabile. La sincronizzazione
+locale (`POST /rag/sync/local`) legge solo dentro `RAG_LOCAL_SYNC_ROOT` e alimenta solo le
+knowledge base dell'applicazione; senza questa impostazione è rifiutata in staging e
+produzione.
 
 ## API key
 

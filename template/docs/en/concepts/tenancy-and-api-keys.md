@@ -36,6 +36,9 @@ every transaction of the application login writes it into transaction-local sett
 - roles are checked in the database too: only owners and administrators manage API keys,
   members and invitations; an administrator manages members and viewers only, the owner role
   is granted by an owner, and an organization's creator becomes its owner once;
+- viewers read an organization's knowledge bases, documents and sync sources; owners,
+  administrators and members change them. A document is written only with a knowledge base
+  the user may write, whatever organization the row names;
 - what a row grants cannot be rewritten by the application login: column privileges keep a
   user's role and administrator flag, a conversation's author, organization and public demo
   flag, and the author of a share, as they were created;
@@ -65,8 +68,14 @@ a possible future step.
 ## Knowledge bases and vectors
 
 A knowledge base is personal (its owner only), of an organization (its members) or of the
-application (every user). The vector store has no row level security of its own, so it gets
-two barriers:
+application (every user). Who reads a knowledge base is not who changes it: a personal one is
+changed by its owner, an organization's by its owners, administrators and members, and the
+application's by platform administrators only, through the system session, because every
+tenant reads it. A collection belongs to one knowledge base (a unique index), and the columns
+that decide its tenant (scope, organization, owner, collection) cannot be changed by the
+application login.
+
+The vector store has no row level security of its own, so it gets two barriers:
 
 1. **Which collections.** A search reaches only the collections of the knowledge bases the user
    can see in the active organization; any other name is answered as not found. The agent
@@ -77,6 +86,11 @@ two barriers:
    Qdrant (a tenant index, Qdrant's multitenancy pattern), a `WHERE` clause in pgvector. A
    search without a reader returns nothing. Only the command line, for administration, may
    search every tenant.
+
+Deleting a document removes its vectors, and deleting a knowledge base removes its documents
+and its collection: deleted content is no longer retrievable. Local sync
+(`POST /rag/sync/local`) reads only inside `RAG_LOCAL_SYNC_ROOT` and feeds only the
+application's knowledge bases; without that setting it is refused in staging and production.
 
 ## API keys
 

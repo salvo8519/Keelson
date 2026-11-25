@@ -1124,6 +1124,9 @@ export class RagService {
      * Trigger Local Sync
      *
      * Trigger a local directory sync via background task.
+     *
+     * The path is read inside `RAG_LOCAL_SYNC_ROOT` (relative to it, or absolute within it), and
+     * the collection must belong to one of the application's knowledge bases.
      */
     public static triggerLocalSync<ThrowOnError extends boolean = true>(options: Options<ragTriggerLocalSyncData, ThrowOnError>) {
         return (options.client ?? client).post<ragTriggerLocalSyncResponses, ragTriggerLocalSyncErrors, ThrowOnError>({
@@ -1870,8 +1873,8 @@ export class KnowledgeBasesService {
      * Create a new Knowledge Base.
      *
      * - ``personal`` scope: visible only to you
-     * - ``org`` scope: visible to all members of the active org (admin/owner only)
-     * - ``app`` scope: visible to all users (app admin only)
+     * - ``org`` scope: visible to all members of the active org (owners, admins, members)
+     * - ``app`` scope: visible to all users (platform administrators, through the system session)
      */
     public static createKnowledgeBase<ThrowOnError extends boolean = true>(options: Options<knowledgeBasesCreateKnowledgeBaseData, ThrowOnError>) {
         return (options.client ?? client).post<knowledgeBasesCreateKnowledgeBaseResponses, knowledgeBasesCreateKnowledgeBaseErrors, ThrowOnError>({
@@ -1889,7 +1892,7 @@ export class KnowledgeBasesService {
     /**
      * Delete Knowledge Base
      *
-     * Delete a Knowledge Base. Default KBs cannot be deleted.
+     * Delete a Knowledge Base with its documents and vectors. Default KBs cannot be deleted.
      */
     public static deleteKnowledgeBase<ThrowOnError extends boolean = true>(options: Options<knowledgeBasesDeleteKnowledgeBaseData, ThrowOnError>) {
         return (options.client ?? client).delete<knowledgeBasesDeleteKnowledgeBaseResponses, knowledgeBasesDeleteKnowledgeBaseErrors, ThrowOnError>({
@@ -1950,9 +1953,9 @@ export class KnowledgeBasesService {
      *
      * Upload a file into the KB's underlying vector collection.
      *
-     * Auth is per-KB (owner / org member / admin) — unlike the bulk
-     * ``/rag/{collection}/documents`` endpoint which is admin-only — so a
-     * workspace user can manage their own KB without elevation.
+     * Needs write access to the KB, not only read access: the owner of a personal KB, an owner,
+     * admin or member of the KB's organization, a platform administrator for the application's
+     * KBs.
      */
     public static uploadKbDocument<ThrowOnError extends boolean = true>(options: Options<knowledgeBasesUploadKbDocumentData, ThrowOnError>) {
         return (options.client ?? client).post<knowledgeBasesUploadKbDocumentResponses, knowledgeBasesUploadKbDocumentErrors, ThrowOnError>({

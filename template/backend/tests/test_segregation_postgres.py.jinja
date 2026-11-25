@@ -79,6 +79,7 @@ async def world():
             for conversation in (conv_a1, conv_a2, conv_b1):
                 await _insert(s, "messages", conversation_id=conversation, role="user", content="secret")
             await _insert(s, "conversation_shares", conversation_id=conv_a1, shared_by=a1, shared_with=c, permission="view")
+{%- if enable_rag %}
             for scope, org, owner, name in (
                 ("personal", None, a1, "kb_a1"),
                 ("org", org_a, a1, "kb_org_a"),
@@ -87,6 +88,7 @@ async def world():
             ):
                 await _insert(s, "knowledge_bases", scope=scope, organization_id=org, owner_user_id=owner,
                               name=name, collection_name=name)
+{%- endif %}
             for org in (org_a, org_b):
                 await _insert(s, "api_keys", organization_id=org, name="ci", prefix=f"key_{uuid.uuid4().hex[:12]}",
                               secret_hash="0" * 64, scopes=["agent:run"])
@@ -253,6 +255,9 @@ async def test_api_keys_and_invitations_need_owner_or_admin(world: World) -> Non
     assert await _ids(world, member, "invitations") == set()
 
 
+{%- if enable_rag %}
+
+
 async def test_knowledge_bases_follow_their_scope(world: World) -> None:
     names = await _ids(world, _user(world, world.a2, world.org_a), "knowledge_bases", "name")
     assert names == {"kb_org_a", "kb_app"}, "a2 sees its organization's and the app's, not a1's personal"
@@ -261,6 +266,7 @@ async def test_knowledge_bases_follow_their_scope(world: World) -> None:
         "INSERT INTO knowledge_bases (id, scope, organization_id, name, collection_name) VALUES (:id, 'org', :o, 'x', 'x')",
         id=uuid.uuid4(), o=world.org_b,
     )
+{%- endif %}
 
 
 async def test_the_audit_log_is_append_only_for_the_application(world: World) -> None:
@@ -357,7 +363,9 @@ async def test_nobody_creates_changes_or_deletes_another_owners_object(world: Wo
 
 async def test_an_api_key_sees_its_organization_and_no_personal_data(world: World) -> None:
     service = Principal(organization_id=world.org_a, service=True)
+{%- if enable_rag %}
     assert await _ids(world, service, "knowledge_bases", "name") == {"kb_org_a", "kb_app"}
+{%- endif %}
     assert await _ids(world, service, "conversations") == set(), "members' chats stay private"
     assert await _ids(world, service, "api_keys") == set(), "a key does not manage keys"
     created = uuid.uuid4()
@@ -436,9 +444,138 @@ async def test_tool_calls_and_documents_are_written_only_with_write_access(world
     # c can read conv_a1 (view share) but not write into it.
     await _refused_insert(world, _user(world, world.c), "tool_calls",
                           message_id=message, tool_call_id="t", tool_name="search")
+{%- if enable_rag %}
     (kb_app,) = [row[0] for row in await _system(world, "SELECT id FROM knowledge_bases WHERE name = 'kb_app'")]
     await _refused_insert(world, _user(world, world.a2, world.org_a), "rag_documents",
                           collection_name="kb_app", filename="x.txt", filetype="txt", knowledge_base_id=kb_app)
+{%- endif %}
+
+
+{%- if enable_rag %}
+
+
+async def _kb_id(world: World, name: str) -> uuid.UUID:
+    (kb,) = [row[0] for row in await _system(world, "SELECT id FROM knowledge_bases WHERE name = :n", n=name)]
+    return kb
+
+
+def _document(name: str, kb: uuid.UUID | None, org: uuid.UUID | None) -> dict:
+    return {"collection_name": name, "filename": "x.txt", "filetype": "txt", "organization_id": org,
+            "knowledge_base_id": kb}
+
+
+async def _allowed_insert(world: World, principal: Principal, table: str, **values: object) -> uuid.UUID:
+    """The legitimate counterpart of a refused insert."""
+    with acting_as(principal):
+        async with world.db.app() as session:
+            created = await _insert(session, table, **values)
+            await session.commit()
+    return created
+
+
+async def _seed(world: World, table: str, **values: object) -> uuid.UUID:
+    async with world.db.system() as session:
+        created = await _insert(session, table, **values)
+        await session.commit()
+    return created
+
+
+async def test_a_document_cannot_be_planted_in_another_tenants_knowledge_base(world: World) -> None:
+    """The own organization on the row does not open a knowledge base the user cannot write."""
+    member = _user(world, world.a2, world.org_a)
+    for target in ("kb_org_b", "kb_app", "kb_a1"):
+        await _refused_insert(world, member, "rag_documents",
+                              **_document(target, await _kb_id(world, target), world.org_a))
+    # Nor does a writable knowledge base carry a document into another organization.
+    await _refused_insert(world, member, "rag_documents",
+                          **_document("kb_org_a", await _kb_id(world, "kb_org_a"), world.org_b))
+    await _allowed_insert(world, member, "rag_documents",
+                          **_document("kb_org_a", await _kb_id(world, "kb_org_a"), world.org_a))
+
+
+async def test_a_viewer_reads_the_organization_content_and_does_not_change_it(world: World) -> None:
+    await _system(world, "UPDATE organization_members SET role = 'viewer' WHERE user_id = :u", u=world.a2)
+    viewer, owner = _user(world, world.a2, world.org_a), _user(world, world.a1, world.org_a)
+    kb_org_a = await _kb_id(world, "kb_org_a")
+    await _seed(world, "rag_documents", **_document("kb_org_a", kb_org_a, world.org_a))
+    source = await _seed(world, "sync_sources", organization_id=world.org_a, name="drive",
+                         connector_type="local", collection_name="kb_org_a", config={})
+    assert await _ids(world, viewer, "knowledge_bases", "name") == {"kb_org_a", "kb_app"}
+    assert len(await _ids(world, viewer, "rag_documents")) == 1
+    assert await _ids(world, viewer, "sync_sources") == {source}
+
+    await _refused_insert(world, viewer, "knowledge_bases", scope="org", organization_id=world.org_a,
+                          name="v", collection_name="v")
+    await _refused(world, viewer, "UPDATE knowledge_bases SET name = 'taken' WHERE id = :k", k=kb_org_a)
+    await _refused_insert(world, viewer, "rag_documents", **_document("kb_org_a", kb_org_a, world.org_a))
+    await _refused_insert(world, viewer, "rag_documents", **_document("kb_org_a", None, world.org_a))
+    await _refused(world, viewer, "DELETE FROM rag_documents")
+    await _refused_insert(world, viewer, "sync_sources", organization_id=world.org_a, name="x",
+                          connector_type="local", config={})
+    await _refused(world, viewer, "UPDATE sync_sources SET name = 'taken'")
+    await _refused(world, viewer, "DELETE FROM sync_sources")
+    await _refused_insert(world, viewer, "sync_logs", source="local", collection_name="kb_org_a",
+                          sync_source_id=source)
+    await _refused(world, viewer, "DELETE FROM knowledge_bases WHERE id = :k", k=kb_org_a)
+    # The owner keeps every right the viewer lacks.
+    await _allowed_insert(world, owner, "sync_logs", source="local", collection_name="kb_org_a",
+                          sync_source_id=source)
+    await _allowed(world, owner, "UPDATE sync_sources SET name = 'renamed'")
+    await _allowed(world, owner, "DELETE FROM knowledge_bases WHERE id = :k", k=kb_org_a)
+
+
+async def test_a_knowledge_base_keeps_its_scope_owner_and_collection(world: World) -> None:
+    """The tenant of a knowledge base's vectors follows from these columns."""
+    owner = _user(world, world.a1, world.org_a)
+    kb_org_a = await _kb_id(world, "kb_org_a")
+    for change, params in (
+        ("collection_name = 'kb_app'", {}),
+        ("scope = 'app'", {}),
+        ("organization_id = :v", {"v": world.org_b}),
+        ("owner_user_id = :v", {"v": world.a2}),
+        ("is_default = true", {}),
+    ):
+        await _refused(world, owner, f"UPDATE knowledge_bases SET {change} WHERE id = :k", k=kb_org_a, **params)
+    await _allowed(world, owner, "UPDATE knowledge_bases SET name = 'renamed' WHERE id = :k", k=kb_org_a)
+
+
+async def test_two_knowledge_bases_cannot_share_a_collection(world: World) -> None:
+    with acting_as(_user(world, world.a1, world.org_a)):
+        async with world.db.app() as session:
+            with pytest.raises(DBAPIError, match="unique"):
+                await _insert(session, "knowledge_bases", scope="personal", owner_user_id=world.a1,
+                              organization_id=world.org_a, name="mine", collection_name="kb_app")
+                await session.commit()
+
+
+async def test_a_delete_refused_by_the_database_is_not_reported_as_done(world: World) -> None:
+    """The application's documents are visible to a member, and not deletable by one."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from app.core.exceptions import NotFoundError
+    from app.services.knowledge_base import KnowledgeBaseService
+    from app.services.rag.ingestion import IngestionService
+    from app.services.rag_document import RAGDocumentService
+
+    kb_app = await _kb_id(world, "kb_app")
+    document = await _seed(world, "rag_documents", **_document("kb_app", kb_app, None))
+    store = MagicMock(delete_document=AsyncMock(), delete_collection=AsyncMock(),
+                      list_collections=AsyncMock(return_value=["kb_app"]))
+    with acting_as(_user(world, world.a2, world.org_a)):
+        async with world.db.app() as session:
+            with pytest.raises(NotFoundError):
+                await RAGDocumentService(session).delete_document(
+                    str(document), IngestionService(processor=MagicMock(), vector_store=store)
+                )
+        async with world.db.app() as session:
+            with pytest.raises(NotFoundError):
+                await KnowledgeBaseService(session).delete(
+                    kb_app, user_id=world.a2, organization_id=world.org_a, is_app_admin=True, vector_store=store
+                )
+    store.delete_document.assert_not_awaited()
+    store.delete_collection.assert_not_awaited()
+    assert await _system(world, "SELECT count(*) FROM rag_documents WHERE id = :d", d=document) == [(1,)]
+{%- endif %}
 
 
 async def test_tables_created_later_stay_closed_to_the_application(world: World) -> None:

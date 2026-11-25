@@ -3,6 +3,7 @@
 
 from uuid import UUID
 
+from sqlalchemy import delete as sql_delete
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -96,12 +97,14 @@ async def update(
 
 
 async def delete(db: AsyncSession, kb_id: UUID) -> bool:
-    kb = await db.get(KnowledgeBase, kb_id)
-    if not kb:
-        return False
-    await db.delete(kb)
+    """Delete by ID; False when no row was deleted (absent, or refused by row level security).
+
+    Keelson: the row count is the answer; the ORM's delete of a loaded object reported a
+    delete refused by row level security as done.
+    """
+    result = await db.execute(sql_delete(KnowledgeBase).where(KnowledgeBase.id == kb_id))
     await db.flush()
-    return True
+    return bool(result.rowcount)  # ty: ignore[unresolved-attribute]
 
 
 async def get_by_collection_name(

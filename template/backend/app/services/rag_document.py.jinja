@@ -5,13 +5,13 @@
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.exceptions import BadRequestError, NotFoundError
+from app.core.exceptions import BadRequestError, ExternalServiceError, NotFoundError
 from app.db.models.rag_document import RAGDocument
 from app.services.rag.config import get_supported_formats
 from app.repositories import rag_document_repo
@@ -19,6 +19,9 @@ from app.schemas.rag import RAGIngestResponse, RAGTrackedDocumentItem, RAGTracke
 from app.services.file_storage import AsyncReadable, ObjectTooLargeError, iter_readable
 from app.services.stored_object import ObjectOwner, StoredObjectService
 from starlette.responses import Response
+
+if TYPE_CHECKING:
+    from app.services.rag.ingestion import IngestionService
 {%- if use_arq %}
 from app.worker.arq_pool import get_arq_pool
 {%- elif not (use_celery or use_taskiq or use_prefect) %}
@@ -345,31 +348,40 @@ class RAGDocumentService:
         )
         return updated
 
-    async def delete_document(
-        self,
-        doc_id: str,
-        ingestion_service: Any = None,
-    ) -> None:
-        """Delete a document with cascading cleanup.
+    async def delete_document(self, doc_id: str, ingestion: "IngestionService") -> None:
+        """Delete a document, its vectors and its stored file.
 
-        Removes the record from the database and attempts to clean up
-        the vector store entry and stored file. Failures in cleanup
-        are logged but do not prevent the DB deletion.
+        Keelson: the vectors are part of the delete, not an optional extra (upstream kept them
+        when no ingestion service was passed, so a deleted document stayed searchable), and a
+        delete that removes no row (absent, or refused by row level security) is not a success.
+        The row goes first, so a refused delete touches nothing else; a vector store failure
+        undoes the request's transaction.
+
+        Raises:
+            NotFoundError: The document does not exist or was not deleted.
+            ExternalServiceError: The vector store did not delete the vectors.
         """
         doc = await self.get_document(doc_id)
+        if not await rag_document_repo.delete(self.db, doc.id):
+            raise NotFoundError(message="Document not found", details={"doc_id": doc_id})
+        if doc.vector_document_id and not await ingestion.remove_document(
+            doc.collection_name, doc.vector_document_id
+        ):
+            raise ExternalServiceError(
+                message="The document's vectors could not be deleted", details={"doc_id": doc_id}
+            )
+        if doc.stored_object_id is not None:
+            await StoredObjectService(self.db).delete(doc.stored_object_id)
+{%- if enable_teams and use_jwt %}
 
-        if doc.vector_document_id and ingestion_service:
-            try:
-                await ingestion_service.remove_document(
-                    doc.collection_name, doc.vector_document_id
-                )
-            except Exception as e:
-                logger.warning("Failed to delete from vector store: %s", e)
+    async def delete_for_knowledge_base(self, kb_id: UUID) -> None:
+        """Delete the documents of a knowledge base and their stored files (Keelson).
 
-        stored_object_id = doc.stored_object_id
-        await rag_document_repo.delete(self.db, doc.id)
-        if stored_object_id is not None:
+        The vectors go with the knowledge base's collection (KnowledgeBaseService.delete).
+        """
+        for stored_object_id in await rag_document_repo.delete_for_kb(self.db, kb_id):
             await StoredObjectService(self.db).delete(stored_object_id)
+{%- endif %}
 
     async def delete_by_collection(self, collection_name: str) -> int:
         """Delete all RAG document records for a collection.

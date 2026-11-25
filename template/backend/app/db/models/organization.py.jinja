@@ -21,6 +21,11 @@ class OrgRole(enum.StrEnum):
     VIEWER = "viewer"
 
 
+# Keelson: the roles that change an organization's content (knowledge bases, their documents
+# and sync sources). Viewers read it. Checked by the services and by row level security.
+ORG_WRITER_ROLES: tuple[str, ...] = (OrgRole.OWNER.value, OrgRole.ADMIN.value, OrgRole.MEMBER.value)
+
+
 class InvitationStatus(enum.StrEnum):
     PENDING = "pending"
     ACCEPTED = "accepted"
@@ -216,6 +221,11 @@ class OrgRole(enum.StrEnum):
     ADMIN = "admin"
     MEMBER = "member"
     VIEWER = "viewer"
+
+
+# Keelson: the roles that change an organization's content (knowledge bases, their documents
+# and sync sources). Viewers read it. Checked by the services and by row level security.
+ORG_WRITER_ROLES: tuple[str, ...] = (OrgRole.OWNER.value, OrgRole.ADMIN.value, OrgRole.MEMBER.value)
 
 
 class InvitationStatus(enum.StrEnum):

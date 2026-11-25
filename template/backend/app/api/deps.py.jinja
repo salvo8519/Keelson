@@ -430,7 +430,7 @@ CurrentAdmin = Annotated[User, Depends(RoleChecker(UserRole.ADMIN))]
 
 {%- if enable_teams %}
 from app.core.exceptions import AuthorizationError, NotFoundError
-from app.db.models.organization import Organization, OrgRole
+from app.db.models.organization import ORG_WRITER_ROLES, Organization, OrgRole
 
 # Module-level alias so tests can patch via `app.api.deps._member_repo`.
 # RequireOrgRole methods reference this alias instead of importing the repo
@@ -527,10 +527,76 @@ RequireOwner = Annotated[Organization, Depends(RequireOrgRole(OrgRole.OWNER.valu
 RequireAdminPlus = Annotated[
     Organization, Depends(RequireOrgRole(OrgRole.OWNER.value, OrgRole.ADMIN.value))
 ]
-RequireMemberPlus = Annotated[
-    Organization,
-    Depends(RequireOrgRole(OrgRole.OWNER.value, OrgRole.ADMIN.value, OrgRole.MEMBER.value)),
-]
+# Keelson: the roles that change the organization's content (viewers read it).
+RequireMemberPlus = Annotated[Organization, Depends(RequireOrgRole(*ORG_WRITER_ROLES))]
+{%- if enable_rag and use_jwt and use_postgresql %}
+from contextlib import AbstractAsyncContextManager
+from dataclasses import dataclass
+
+from app.db.models.knowledge_base import KBScope, KnowledgeBase
+
+
+def is_platform_admin(user: User) -> bool:
+    """The platform administration: the admin role and the is_app_admin flag (Keelson)."""
+    return user.has_role(UserRole.ADMIN)
+
+
+class PlatformSession:
+    """The system session for a platform administrator's write to the application's
+    knowledge bases (Keelson). Row level security opens them to nobody: every tenant reads
+    them, so only the platform administration writes them, and each write is logged."""
+
+    def __init__(self, request: Request, user: CurrentUser) -> None:
+        self.reason = f"platform admin {user.id}: {request.method} {request.url.path}"
+        self.allowed = is_platform_admin(user)
+
+    def open(self) -> AbstractAsyncContextManager[AsyncSession]:
+        if not self.allowed:
+            raise AuthorizationError(message="App admin required to modify app-scoped knowledge base")
+        return system_session(self.reason)
+
+
+PlatformWrites = Annotated[PlatformSession, Depends()]
+
+
+@dataclass
+class KnowledgeBaseWrite:
+    """A knowledge base the user may change, with the services that change it (Keelson)."""
+
+    kb: KnowledgeBase
+    knowledge_bases: KnowledgeBaseService
+    documents: RAGDocumentService
+    sync_sources: SyncSourceService
+
+
+async def get_knowledge_base_write(
+    kb_id: UUID,
+    user: CurrentUser,
+    active_org: ActiveOrg,
+    platform: PlatformWrites,
+    knowledge_bases: KnowledgeBaseSvc,
+    documents: RAGDocumentSvc,
+    sync_sources: SyncSourceSvc,
+) -> AsyncGenerator[KnowledgeBaseWrite, None]:
+    """Every route that changes a knowledge base, its documents or its sync sources takes
+    this: the write check runs before the route, never inside it.
+
+    Personal and organization knowledge bases are changed through the request's session, under
+    row level security. The application's are changed through the system session, by platform
+    administrators only.
+    """
+    kb = await knowledge_bases.get_writable(
+        kb_id, user_id=user.id, organization_id=active_org.id, is_app_admin=is_platform_admin(user)
+    )
+    if kb.scope != KBScope.APP.value:
+        yield KnowledgeBaseWrite(kb, knowledge_bases, documents, sync_sources)
+        return
+    async with platform.open() as db:
+        yield KnowledgeBaseWrite(kb, KnowledgeBaseService(db), RAGDocumentService(db), SyncSourceService(db))
+
+
+KnowledgeBaseWriter = Annotated[KnowledgeBaseWrite, Depends(get_knowledge_base_write, scope="function")]
+{%- endif %}
 {%- endif %}
 
 

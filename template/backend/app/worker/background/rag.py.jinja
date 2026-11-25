@@ -73,9 +73,10 @@ async def sync_local_in_background(
     try:
         async with get_db_context() as db:
             tenant = await collection_tenant(db, collection_name)
-        target = Path(path)
-        files = list(target.rglob("*")) if target.is_dir() else [target]
-        files = [f for f in files if f.is_file()]
+        from app.services.rag_sync import local_sync_files
+
+        # Keelson: only files inside RAG_LOCAL_SYNC_ROOT, symbolic links included.
+        files = local_sync_files(path)
         total = len(files)
         for filepath in files:
             try:

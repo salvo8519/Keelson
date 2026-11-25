@@ -375,7 +375,11 @@ async def trigger_local_sync(
     _: CurrentAdmin,
 {%- endif %}
 ) -> Any:
-    """Trigger a local directory sync via background task."""
+    """Trigger a local directory sync via background task.
+
+    The path is read inside `RAG_LOCAL_SYNC_ROOT` (relative to it, or absolute within it), and
+    the collection must belong to one of the application's knowledge bases.
+    """
     sync_log = await rag_sync_svc.start_local_sync(
         collection_name=request.collection_name,
         mode=request.mode,

@@ -88,10 +88,11 @@ class TestKBAccessControl:
         user_id = uuid.uuid4()
         kb = _kb("org", organization_id=org_id, is_default=True)
 
-        with patch("app.repositories.knowledge_base_repo.get_by_id", new=AsyncMock(return_value=kb)):
+        with patch("app.repositories.knowledge_base_repo.get_by_id", new=AsyncMock(return_value=kb)), \
+             patch("app.repositories.member_repo.get", new=AsyncMock(return_value=MagicMock(role="owner"))):
             svc = KnowledgeBaseService(mock_db)
             with pytest.raises(BadRequestError):
-                await svc.delete(kb.id, user_id=user_id, organization_id=org_id)
+                await svc.delete(kb.id, user_id=user_id, organization_id=org_id, vector_store=MagicMock())
 
     @pytest.mark.anyio
     async def test_non_app_admin_cannot_create_app_kb(self, mock_db):
@@ -127,10 +128,12 @@ class TestKBAccessControl:
         user_id = uuid.uuid4()
         kb = _kb("personal", owner_user_id=user_id)
 
+        store = MagicMock(list_collections=AsyncMock(return_value=[]), delete_collection=AsyncMock())
         with patch("app.repositories.knowledge_base_repo.get_by_id", new=AsyncMock(return_value=kb)), \
+             patch("app.repositories.rag_document_repo.delete_for_kb", new=AsyncMock(return_value=[])), \
              patch("app.repositories.knowledge_base_repo.delete", new=AsyncMock(return_value=True)):
             svc = KnowledgeBaseService(mock_db)
-            await svc.delete(kb.id, user_id=user_id)
+            await svc.delete(kb.id, user_id=user_id, vector_store=store)
 
     @pytest.mark.anyio
     async def test_personal_kb_non_owner_cannot_delete(self, mock_db):
@@ -140,8 +143,9 @@ class TestKBAccessControl:
 
         with patch("app.repositories.knowledge_base_repo.get_by_id", new=AsyncMock(return_value=kb)):
             svc = KnowledgeBaseService(mock_db)
-            with pytest.raises(AuthorizationError):
-                await svc.delete(kb.id, user_id=other)
+            # Keelson: another user's personal knowledge base is not even visible.
+            with pytest.raises(NotFoundError):
+                await svc.delete(kb.id, user_id=other, vector_store=MagicMock())
 
     @pytest.mark.anyio
     async def test_list_accessible_passes_correct_params(self, mock_db):

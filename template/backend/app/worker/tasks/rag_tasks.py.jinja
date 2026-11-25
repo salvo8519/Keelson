@@ -271,15 +271,13 @@ async def _run_sync(sync_log_id: str, source: str, collection_name: str, mode: s
     from app.services.rag_sync import RAGSyncService
     ingestion_service = _build_ingestion_service()
 
-    target_path = Path(path).resolve()
-    if not target_path.exists():
+    from app.services.rag_sync import local_sync_files
+
+    if not Path(path).exists():
         await _update_sync_log(sync_log_id, "error", error_message=f"Path not found: {path}")
         return {"status": "error", "message": f"Path not found: {path}"}
-
-    if target_path.is_file():
-        files = [target_path]
-    else:
-        files = [f for f in target_path.rglob("*") if f.is_file() and not f.name.startswith(".")]
+    # Keelson: only files inside RAG_LOCAL_SYNC_ROOT, symbolic links included.
+    files = local_sync_files(path)
 
     allowed = {ext.value for ext in DocumentExtensions}
     files = [f for f in files if f.suffix.lower() in allowed]

@@ -110,7 +110,7 @@ These are defined in `app/api/deps.py` and used throughout the route layer:
 | `/rag/documents/{id}` | DELETE | Y | -- | Delete tracked document (admin only) |
 | `/rag/documents/{id}/retry` | POST | Y | -- | Retry failed ingestion (admin only) |
 | `/rag/sync/logs` | GET | Y | -- | List sync logs (admin only) |
-| `/rag/sync/local` | POST | Y | -- | Trigger local directory sync (admin only) |
+| `/rag/sync/local` | POST | Y | -- | Sync a directory inside `RAG_LOCAL_SYNC_ROOT` into an application knowledge base (admin only) |
 | `/rag/sync/{id}` | DELETE | Y | -- | Cancel sync operation (admin only) |
 | `/rag/sync/sources` | GET | Y | -- | List sync sources (admin only) |
 | `/rag/sync/sources` | POST | Y | -- | Create sync source (admin only) |
@@ -118,6 +118,28 @@ These are defined in `app/api/deps.py` and used throughout the route layer:
 | `/rag/sync/sources/{id}` | DELETE | Y | -- | Delete sync source (admin only) |
 | `/rag/sync/sources/{id}/trigger` | POST | Y | -- | Trigger manual sync (admin only) |
 | `/rag/sync/connectors` | GET | Y | -- | List available connector types (admin only) |
+{%- if enable_teams %}
+
+### Knowledge bases
+
+Reading a knowledge base does not allow changing it. Every route under `/kb/{kb_id}` that
+changes the knowledge base, its documents or its sync sources takes `KnowledgeBaseWriter`
+(`app/api/deps.py`), which checks write access before the route runs:
+
+| Knowledge base | Read by | Changed by |
+|----------------|---------|------------|
+| Personal | its owner | its owner |
+| Organization | the organization's members | the organization's owners, admins and members (`ORG_WRITER_ROLES`); viewers read only |
+| Application | every authenticated user | platform administrators, through the system session |
+
+Sync sources hold an organization's credentials: creating, cloning, triggering or deleting
+one also needs the owner, admin or member role in the active organization
+(`RequireMemberPlus`). Row level security enforces the same rules in the database.
+
+A delete that removes nothing, because the row is gone or the database refused it, answers
+404. Deleting a document removes its vectors; deleting a knowledge base removes its
+documents, their files and its vector collection.
+{%- endif %}
 {%- endif %}
 
 {%- if enable_webhooks and use_database %}
