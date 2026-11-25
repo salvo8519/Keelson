@@ -7,9 +7,9 @@ from typing import Annotated, Literal
 from urllib.parse import quote
 
 {% if use_database or enable_redis or enable_rag -%}
-from pydantic import computed_field, field_validator, model_validator{% if use_jwt or use_api_key or enable_cors %}, ValidationInfo{% endif %}
+from pydantic import computed_field, field_validator, model_validator{% if use_jwt or (enable_admin_panel and admin_require_auth) or enable_oauth or enable_cors %}, ValidationInfo{% endif %}
 {% else -%}
-from pydantic import field_validator, model_validator{% if use_jwt or use_api_key or enable_cors %}, ValidationInfo{% endif %}
+from pydantic import field_validator, model_validator{% if use_jwt or (enable_admin_panel and admin_require_auth) or enable_oauth or enable_cors %}, ValidationInfo{% endif %}
 {% endif -%}
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 {%- if enable_mcp_client %}
@@ -42,6 +42,34 @@ class McpServerConfig(BaseModel):
     # None = expose every tool the server offers.
     allowed_tools: list[str] | None = None
 {%- endif %}
+
+
+# Keelson: secrets that must be real wherever the application is deployed, one rule for all
+# of them. A value is refused when it is empty, a stand-in from this file or .env.example
+# ("change-me...", "...xxx") or a well-known password. Settings absent from a project, and
+# optional ones left unset (None), are skipped.
+DEPLOYED_ENVIRONMENTS = frozenset({"staging", "production"})
+SECRETS_WHEN_DEPLOYED = (
+    "SECRET_KEY",
+    "API_KEY",
+    "POSTGRES_PASSWORD",
+    "POSTGRES_APP_PASSWORD",
+    "CHANNEL_ENCRYPTION_KEY",
+    "REDIS_PASSWORD",
+    "ARQ_REDIS_PASSWORD",
+)
+_PLACEHOLDER_MARKERS = ("change-me", "changeme", "changethis", "xxx")
+_WELL_KNOWN_SECRETS = frozenset({"postgres", "password", "admin", "secret", "redis", "root"})
+
+
+def is_placeholder_secret(value: str) -> bool:
+    """True for a value that only stands in for a secret."""
+    lowered = value.strip().lower()
+    return (
+        not lowered
+        or lowered in _WELL_KNOWN_SECRETS
+        or any(marker in lowered for marker in _PLACEHOLDER_MARKERS)
+    )
 
 
 def find_env_file() -> Path | None:
@@ -110,14 +138,6 @@ class Settings(BaseSettings):
     POSTGRES_APP_USER: str = "{{ project_slug }}_app"
     POSTGRES_APP_PASSWORD: str = "change-me-app-password"
 
-    @field_validator("POSTGRES_APP_PASSWORD")
-    @classmethod
-    def validate_app_password(cls, v: str, info: ValidationInfo) -> str:
-        env = info.data.get("ENVIRONMENT", "local") if info.data else "local"
-        if env == "production" and v == "change-me-app-password":
-            raise ValueError("POSTGRES_APP_PASSWORD must be changed in production")
-        return v
-
     def _postgres_url(self, driver: str, user: str, password: str) -> str:
         # Keelson: credentials are escaped (upstream broke on passwords with @, : or /).
         return (
@@ -171,26 +191,18 @@ class Settings(BaseSettings):
     @classmethod
     def require_data_keys_in_production(cls, v: list[str], info: ValidationInfo) -> list[str]:
         env = info.data.get("ENVIRONMENT", "local") if info.data else "local"
-        if env == "production" and not v:
-            raise ValueError(
-                "DATA_ENCRYPTION_KEYS must be set in production: openssl rand -hex 32"
-            )
+        if env in DEPLOYED_ENVIRONMENTS and not v:
+            raise ValueError(f"DATA_ENCRYPTION_KEYS must be set in {env}: openssl rand -hex 32")
         if any(len(key) < 32 for key in v):
             raise ValueError("each DATA_ENCRYPTION_KEYS entry must be at least 32 characters")
         return v
 
     @field_validator("SECRET_KEY")
     @classmethod
-    def validate_secret_key(cls, v: str, info: ValidationInfo) -> str:
+    def validate_secret_key(cls, v: str) -> str:
         """Validate SECRET_KEY is secure in production."""
         if len(v) < 32:
             raise ValueError("SECRET_KEY must be at least 32 characters long")
-        env = info.data.get("ENVIRONMENT", "local") if info.data else "local"
-        if v == "change-me-in-production-use-openssl-rand-hex-32" and env == "production":
-            raise ValueError(
-                "SECRET_KEY must be changed in production! "
-                "Generate a secure key with: openssl rand -hex 32"
-            )
         return v
 {%- endif %}
 
@@ -288,18 +300,6 @@ class Settings(BaseSettings):
 
     API_KEY: str = "change-me-in-production"
     API_KEY_HEADER: str = "X-API-Key"
-
-    @field_validator("API_KEY")
-    @classmethod
-    def validate_api_key(cls, v: str, info: ValidationInfo) -> str:
-        """Validate API_KEY is set in production."""
-        env = info.data.get("ENVIRONMENT", "local") if info.data else "local"
-        if v == "change-me-in-production" and env == "production":
-            raise ValueError(
-                "API_KEY must be changed in production! "
-                "Generate a secure key with: openssl rand -hex 32"
-            )
-        return v
 {%- endif %}
 
 {%- if enable_redis %}
@@ -567,18 +567,6 @@ class Settings(BaseSettings):
     # Fernet encryption key for bot tokens — generate with: openssl rand -hex 32
     CHANNEL_ENCRYPTION_KEY: str = "change-me-generate-with-openssl-rand-hex-32"
 
-    @field_validator("CHANNEL_ENCRYPTION_KEY")
-    @classmethod
-    def validate_channel_encryption_key(cls, v: str, info: ValidationInfo) -> str:
-        """Reject the default key in production — bot tokens at rest would be
-        encrypted with a public, well-known key."""
-        env = info.data.get("ENVIRONMENT", "local") if info.data else "local"
-        if v == "change-me-generate-with-openssl-rand-hex-32" and env == "production":
-            raise ValueError(
-                "CHANNEL_ENCRYPTION_KEY must be changed in production! "
-                "Generate a secure key with: openssl rand -hex 32"
-            )
-        return v
 {%- if use_telegram %}
     # Telegram: webhook base URL (e.g. https://api.yourdomain.com) — leave empty to use polling
     TELEGRAM_WEBHOOK_BASE_URL: str = ""
@@ -812,6 +800,25 @@ class Settings(BaseSettings):
         )
 
 {%- endif %}
+
+    @model_validator(mode="after")
+    def refuse_placeholder_secrets(self) -> "Settings":
+        """Keelson: a deployed environment starts only with real secrets."""
+        if self.ENVIRONMENT not in DEPLOYED_ENVIRONMENTS:
+            return self
+        placeholders = [
+            name
+            for name in SECRETS_WHEN_DEPLOYED
+            if isinstance(value := getattr(self, name, None), str) and is_placeholder_secret(value)
+        ]
+        if any(is_placeholder_secret(key) for key in getattr(self, "DATA_ENCRYPTION_KEYS", [])):
+            placeholders.append("DATA_ENCRYPTION_KEYS")
+        if placeholders:
+            raise ValueError(
+                f"{', '.join(placeholders)} must be set to real secrets in {self.ENVIRONMENT}: "
+                "openssl rand -hex 32"
+            )
+        return self
 
 {%- if enable_rag %}
 # Rebuild Settings to resolve RAGSettings forward reference

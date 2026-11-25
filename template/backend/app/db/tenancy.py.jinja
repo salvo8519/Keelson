@@ -38,6 +38,7 @@ attacks every table against a real database.
 
 from __future__ import annotations
 
+import re
 from contextvars import ContextVar
 from dataclasses import dataclass, replace
 from uuid import UUID
@@ -341,19 +342,26 @@ def role_statements(schema: str = "public") -> list[str]:
     ]
 
 
+_ROLE_NAME = re.compile(r"[a-z_][a-z0-9_]{0,62}")
+
+
 def login_statements(user: str, password: str) -> list[str]:
     """The application login: member of TENANT_ROLE, no ownership, no bypass of the policies."""
+    if not _ROLE_NAME.fullmatch(user):
+        raise ValueError(f"POSTGRES_APP_USER must match {_ROLE_NAME.pattern}: {user!r}")
+    # The password stays out of the dollar-quoted block: a "$$" in it would end the block.
     secret = password.replace("'", "''")
     return [
         f"""
         DO $$ BEGIN
             IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{user}') THEN
-                CREATE ROLE "{user}" LOGIN NOBYPASSRLS NOCREATEDB NOCREATEROLE PASSWORD '{secret}';
+                CREATE ROLE "{user}" LOGIN NOBYPASSRLS NOCREATEDB NOCREATEROLE;
             ELSE
-                ALTER ROLE "{user}" LOGIN NOBYPASSRLS NOCREATEDB NOCREATEROLE PASSWORD '{secret}';
+                ALTER ROLE "{user}" LOGIN NOBYPASSRLS NOCREATEDB NOCREATEROLE;
             END IF;
         END $$
         """,
+        f"ALTER ROLE \"{user}\" PASSWORD '{secret}'",
         f'GRANT "{TENANT_ROLE}" TO "{user}"',
     ]
 

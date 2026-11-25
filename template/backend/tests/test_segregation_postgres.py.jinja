@@ -18,10 +18,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.db.models  # noqa: F401  (registers every table on the metadata)
 from app.db.base import Base
-from app.db.tenancy import CLOSED_TABLES, POLICIES, TENANT_ROLE, UNISOLATED_TABLES, Principal
+from app.db.tenancy import CLOSED_TABLES, POLICIES, TENANT_ROLE, UNISOLATED_TABLES, Principal, login_statements
 from tests.postgres import SegregatedDatabase, acting_as, require_postgres, segregated_database
 
 pytestmark = pytest.mark.anyio
+
+
+def test_the_application_login_name_cannot_carry_sql() -> None:
+    for name in ('app"; DROP ROLE postgres; --', "App", "x" * 64, ""):
+        with pytest.raises(ValueError, match="POSTGRES_APP_USER"):
+            login_statements(name, "secret")
 
 
 def test_every_table_has_policies_or_a_reason_to_be_closed() -> None:
@@ -367,4 +373,28 @@ async def test_tables_created_later_stay_closed_to_the_application(world: World)
         role=TENANT_ROLE,
     )
     assert open_tables == [], f"tables open to the application without row level security: {open_tables}"
+
+
+async def test_any_password_creates_a_working_application_login(world: World) -> None:
+    """Quotes and dollar quotes in the password stay data (they used to end the DO block)."""
+    import asyncpg
+
+    from app.core.config import settings
+
+    user, password = f"keelson_login_{uuid.uuid4().hex[:8]}", "p'w$$; DROP TABLE users; --$$x"
+    async with world.db.system() as session:
+        for statement in login_statements(user, password):
+            await session.execute(text(statement))
+        await session.commit()
+    try:
+        connection = await asyncpg.connect(
+            host=settings.POSTGRES_HOST, port=settings.POSTGRES_PORT, user=user,
+            password=password, database=settings.POSTGRES_DB,
+        )
+        assert await connection.fetchval("SELECT current_user") == user
+        await connection.close()
+    finally:
+        async with world.db.system() as session:
+            await session.execute(text(f'DROP ROLE "{user}"'))
+            await session.commit()
 {%- endif %}
