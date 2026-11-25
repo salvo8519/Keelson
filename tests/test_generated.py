@@ -72,9 +72,14 @@ def test_kubernetes_secret_stand_ins_do_not_start_in_production(render: Render) 
         check=True,
     )
     outcome = json.loads(result.stdout.strip().splitlines()[-1])
-    assert {"SECRET_KEY", "POSTGRES_PASSWORD", "REDIS_PASSWORD", "PROMETHEUS_AUTH_TOKEN", "S3_SECRET_KEY"} <= set(
-        outcome["checked"]
-    )
+    expected = {
+        "SECRET_KEY",
+        "POSTGRES_PASSWORD",
+        "REDIS_PASSWORD",
+        "PROMETHEUS_AUTH_TOKEN",
+        "S3_SECRET_KEY",
+    }
+    assert expected <= set(outcome["checked"])
     assert outcome["started"] == [], outcome
 
 
