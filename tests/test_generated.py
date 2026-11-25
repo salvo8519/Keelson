@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 from pathlib import Path
 
 import pytest
 import yaml
-from conftest import Render
+from conftest import ROOT, Render
 
 pytestmark = pytest.mark.generated
 
@@ -31,6 +32,50 @@ def test_default_project_backend_passes_its_checks(render: Render) -> None:
     # The PostgreSQL tests (row level security, API keys, migrations) skip themselves without a
     # database; here a skip means the check did not run.
     assert "skipped" not in summary.splitlines()[-1], summary[-3000:]
+
+
+# Run in the generated backend: each secret of the Kubernetes manifest, alone on top of real
+# values, must stop a production start. Prints the names that started anyway.
+_K8S_SECRET_PROBE = """
+import json, secrets, sys
+from pydantic import ValidationError
+from app.core.config import OPTIONAL_SECRETS_WHEN_DEPLOYED, SECRETS_WHEN_DEPLOYED, Settings
+
+shipped = json.load(sys.stdin)
+real = {n: secrets.token_hex(32) for n in SECRETS_WHEN_DEPLOYED if n in Settings.model_fields}
+real |= {"DATA_ENCRYPTION_KEYS": [secrets.token_hex(32)], "CORS_ORIGINS": ["https://a.example"]}
+checked = [*SECRETS_WHEN_DEPLOYED, *OPTIONAL_SECRETS_WHEN_DEPLOYED, "DATA_ENCRYPTION_KEYS"]
+started = []
+for name in [name for name in checked if name in shipped]:
+    value = [shipped[name]] if name == "DATA_ENCRYPTION_KEYS" else shipped[name]
+    try:
+        Settings(_env_file=None, ENVIRONMENT="production", **{**real, name: value})
+    except ValidationError:
+        continue
+    started.append(name)
+print(json.dumps({"checked": [name for name in checked if name in shipped], "started": started}))
+"""
+
+
+def test_kubernetes_secret_stand_ins_do_not_start_in_production(render: Render) -> None:
+    """The values of kubernetes/secret.yaml, deployed unchanged, are refused (Keelson)."""
+    project = render({"project_name": "acme_service"})
+    backend = project / "backend"
+    shipped = yaml.safe_load((project / "kubernetes" / "secret.yaml").read_text(encoding="utf-8"))
+    _run(["uv", "sync", "--quiet"], backend)
+    result = subprocess.run(
+        ["uv", "run", "python", "-c", _K8S_SECRET_PROBE],
+        cwd=backend,
+        input=json.dumps(shipped["stringData"]),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    outcome = json.loads(result.stdout.strip().splitlines()[-1])
+    assert {"SECRET_KEY", "POSTGRES_PASSWORD", "PROMETHEUS_AUTH_TOKEN", "S3_SECRET_KEY"} <= set(
+        outcome["checked"]
+    )
+    assert outcome["started"] == [], outcome
 
 
 def test_default_project_frontend_passes_its_checks(render: Render) -> None:
@@ -105,6 +150,49 @@ def test_default_project_compose_stacks_are_valid(render: Render) -> None:
     }
     local = resolved["prod-local"]["services"]
     assert "traefik" not in local, "the rehearsal publishes ports instead of running Traefik"
+    # Keelson hardening: secrets readable by their owner only, the rehearsal on the loopback
+    # interface, the Valkey password off every command line, forwarded headers from the proxy.
+    assert (project / ".env.prod-local").stat().st_mode & 0o077 == 0
+    for name in ("app", "frontend"):
+        assert {port["host_ip"] for port in local[name]["ports"]} == {"127.0.0.1"}, name
+    questions = next(yaml.safe_load_all((ROOT / "copier.yml").read_text(encoding="utf-8")))
+    proxy_subnet = questions["proxy_network_subnet"]["default"]
+    password = dict(
+        line.split("=", 1)
+        for line in (project / ".env.prod-local").read_text(encoding="utf-8").splitlines()
+        if "=" in line and not line.startswith("#")
+    )["REDIS_PASSWORD"]
+    for name in ("prod", "prod-local"):
+        redis = resolved[name]["services"]["redis"]
+        assert password not in json.dumps([redis["command"], redis["healthcheck"]]), name
+        app = resolved[name]["services"]["app"]
+        assert app["environment"]["FORWARDED_ALLOW_IPS"] == proxy_subnet, name
+        assert "--forwarded-allow-ips" not in " ".join(app["command"]), name
+    incomplete = project / ".env.incomplete"
+    incomplete.write_text(
+        "".join(
+            line + "\n"
+            for line in (project / ".env.prod-local").read_text(encoding="utf-8").splitlines()
+            if not line.startswith("ACME_EMAIL=")
+        ),
+        encoding="utf-8",
+    )
+    refused = subprocess.run(
+        [
+            "docker",
+            "compose",
+            "--env-file",
+            str(incomplete),
+            "-f",
+            "docker-compose.prod.yml",
+            "config",
+        ],
+        cwd=project,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert refused.returncode != 0 and "ACME_EMAIL is required" in refused.stderr
     assert local["app"]["environment"]["ENVIRONMENT"] == "production"
     assert local["frontend"]["build"]["args"]["VITE_API_URL"] == "http://localhost:8000"
     images = {svc.get("image") for svc in resolved["prod"]["services"].values()}

@@ -25,21 +25,14 @@ Check `frontend/package.json` to see the other available commands.
 
 ## Removing the Frontend
 
-If you are developing an API-only app and want to remove the frontend, you can do it easily:
+The frontend is optional. To turn the project into an API-only service, update it with the
+`web_frontend` answer set to `none`: the template is rendered without this directory and
+without the references to it (Compose services, Makefile targets, CI jobs). Review the
+changes before committing them.
 
-- Remove the `./frontend` directory.
-
-- In the `backend/app/main.py` file, remove the `app.frontend()` call.
-
-- In the `backend/Dockerfile` file, remove the frontend build stage and the `COPY --from=frontend-build` instruction.
-
-- In the `compose.override.yml` file, remove the `playwright` service.
-
-- In the `.github/workflows/deploy.yml` file, remove the **Set up Bun**, **Install frontend dependencies**, and **Build frontend** steps.
-
-- In the `.fastapicloudignore` file, remove the `!backend/app/frontend/` entry.
-
-Done, you now have an API-only app.
+```bash
+make upgrade ARGS="--data web_frontend=none"
+```
 
 ## Generate Client
 

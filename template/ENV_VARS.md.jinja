@@ -12,8 +12,9 @@ group is for and which are required vs optional.
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `PROJECT_NAME` | optional | `{{ project_name }}` | Used in logs, OpenAPI title, email templates |
-| `DEBUG` | optional | `true` | When `true`, FastAPI returns full tracebacks |
-| `ENVIRONMENT` | optional | `local` | Free-form tag: `local` / `staging` / `production` |
+| `DEBUG` | optional | `false` | When `true`, FastAPI returns full tracebacks; refused in staging and production |
+| `ENVIRONMENT` | optional | `local` | `local`, `development`, `staging` or `production`; the last two refuse development secrets and debug |
+| `FORWARDED_ALLOW_IPS` | optional | `127.0.0.1` | Addresses whose `X-Forwarded-*` headers Uvicorn trusts; the production Compose stack sets it to the proxy network (`PROXY_NETWORK_SUBNET`, default `{{ proxy_network_subnet }}`) |
 | `TIMEZONE` | optional | `{{ timezone }}` | IANA TZ name (e.g. `Europe/Warsaw`) |
 | `BACKEND_URL` | optional | `http://localhost:{{ backend_port }}` | Used by frontend BFF + email link generation |
 | `FRONTEND_URL` | optional | `http://localhost:{{ frontend_port }}` | Used by password-reset / magic-link emails |
@@ -163,7 +164,7 @@ group is for and which are required vs optional.
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `PROMETHEUS_METRICS_PATH` | optional | `/metrics` | URL path where metrics are exposed |
-| `PROMETHEUS_AUTH_TOKEN` | optional (off if empty) | — | When set, `/metrics` requires `Authorization: Bearer <token>` |
+| `PROMETHEUS_AUTH_TOKEN` | **required in staging and prod** | — | `/metrics` requires `Authorization: Bearer <token>`; empty (development only) leaves it open |
 {%- endif %}
 
 {%- if enable_file_storage %}

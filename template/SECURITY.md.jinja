@@ -2,7 +2,11 @@
 
 ## Reporting a vulnerability
 
-Email: **{{ author_email }}** (or open a private security advisory on the repo). Please include:
+{% if security_contact -%}
+Email: **{{ security_contact }}** (or open a private security advisory on the repository). Please include:
+{%- else -%}
+Open a private security advisory on the repository. Please include:
+{%- endif %}
 
 - Affected version / commit
 - Steps to reproduce
@@ -86,7 +90,7 @@ We aim to acknowledge within 48h and ship a fix within 7 days for high-severity 
 - [ ] Tune `RATE_LIMIT_REQUESTS` / `RATE_LIMIT_PERIOD` in `.env`.
 {%- endif %}
 {%- if enable_prometheus %}
-- [ ] Set `PROMETHEUS_AUTH_TOKEN` if `/metrics` is exposed on a public endpoint.
+- [ ] Set `PROMETHEUS_AUTH_TOKEN` (required in staging and production) and give it to the scraper.
 {%- endif %}
 {%- if enable_sentry %}
 - [ ] Set `SENTRY_DSN` to ship errors. Verify PII scrubbing rules in `core/sentry.py`.

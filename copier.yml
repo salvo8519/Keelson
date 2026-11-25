@@ -55,6 +55,11 @@ author_email:
   help: Author contact email
   default: you@example.com
 
+security_contact:
+  type: str
+  help: Address that receives vulnerability reports (SECURITY.md); empty for private advisories only
+  default: "{{ '' if author_email.endswith('@example.com') else author_email }}"
+
 timezone:
   type: str
   help: IANA timezone used by schedulers and logs
@@ -168,6 +173,37 @@ logfire:
   type: bool
   help: Enable Pydantic Logfire (OpenTelemetry export is always available)
   default: false
+
+# --- Tool versions ---------------------------------------------------------------
+uv_version:
+  type: str
+  when: false
+  # Single source of the uv release used by the generated project's CI (GitHub and GitLab) and
+  # its backend image (docs/en/concepts/security-controls.md, supply chain).
+  default: "0.13.10"
+
+bun_version:
+  type: str
+  when: false
+  # Single source of the Bun release of the generated frontend: CI (GitHub and GitLab) and the
+  # build stage of frontend/Dockerfile.
+  default: "1.4.4"
+
+oasdiff_version:
+  type: str
+  when: false
+  # Single source of the oasdiff release that checks the API contract for breaking changes in
+  # both CI providers (scripts/openapi-breaking.sh verifies its published checksum).
+  default: "1.35.0"
+
+# --- Reverse proxy ---------------------------------------------------------------
+proxy_network_subnet:
+  type: str
+  when: false
+  # Single source of the default subnet of the network between the reverse proxy and the API
+  # in docker-compose.prod.yml. The API trusts the X-Forwarded-* headers only from it
+  # (FORWARDED_ALLOW_IPS); both can be changed with PROXY_NETWORK_SUBNET in backend/.env.
+  default: 10.250.250.0/24
 
 # --- Object storage --------------------------------------------------------------
 garage_image:

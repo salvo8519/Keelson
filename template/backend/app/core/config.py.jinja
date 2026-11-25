@@ -47,9 +47,9 @@ class McpServerConfig(BaseModel):
 
 
 # Keelson: secrets that must be real wherever the application is deployed, one rule for all
-# of them. A value is refused when it is empty, a stand-in from this file or .env.example
-# ("change-me...", "...xxx") or a well-known password. Settings absent from a project, and
-# optional ones left unset (None), are skipped.
+# of them. A value is refused when it is empty, a stand-in from this file, .env.example or the
+# Kubernetes secret ("change-me...", "CHANGE_ME_IN_PRODUCTION", "...xxx") or a well-known
+# password. Settings absent from a project, and optional ones left unset (None), are skipped.
 DEPLOYED_ENVIRONMENTS = frozenset({"staging", "production"})
 SECRETS_WHEN_DEPLOYED = (
     "SECRET_KEY",
@@ -59,18 +59,30 @@ SECRETS_WHEN_DEPLOYED = (
     "CHANNEL_ENCRYPTION_KEY",
     "REDIS_PASSWORD",
     "ARQ_REDIS_PASSWORD",
+    # The metrics endpoint is served on the API port: without a token anyone reaching the API
+    # reads it, so a deployed environment needs one (Prometheus sends it as a bearer token).
+    "PROMETHEUS_AUTH_TOKEN",
 )
-_PLACEHOLDER_MARKERS = ("change-me", "changeme", "changethis", "xxx")
+# Credentials that may be left empty (S3 from the instance role, for example) but, when set,
+# must not be a stand-in: the Kubernetes secret ships them as "CHANGE_ME".
+OPTIONAL_SECRETS_WHEN_DEPLOYED = ("S3_ACCESS_KEY", "S3_SECRET_KEY")
+# Compared after _normalise_secret, so "CHANGE_ME", "change_this" and "Change-Me" all match.
+_PLACEHOLDER_MARKERS = ("changeme", "changethis", "xxx")
 _WELL_KNOWN_SECRETS = frozenset({"postgres", "password", "admin", "secret", "redis", "root"})
+
+
+def _normalise_secret(value: str) -> str:
+    """Lower case and letters and digits only: the form in which stand-ins are compared."""
+    return "".join(char for char in value.lower() if char.isalnum())
 
 
 def is_placeholder_secret(value: str) -> bool:
     """True for a value that only stands in for a secret."""
-    lowered = value.strip().lower()
+    normalised = _normalise_secret(value)
     return (
-        not lowered
-        or lowered in _WELL_KNOWN_SECRETS
-        or any(marker in lowered for marker in _PLACEHOLDER_MARKERS)
+        not normalised
+        or normalised in _WELL_KNOWN_SECRETS
+        or any(marker in normalised for marker in _PLACEHOLDER_MARKERS)
     )
 
 
@@ -212,7 +224,8 @@ class Settings(BaseSettings):
 
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30  # 30 minutes
     REFRESH_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
-    ALGORITHM: str = "HS256"
+    # Keelson: the tokens are signed with SECRET_KEY, so only HMAC algorithms are accepted.
+    ALGORITHM: Literal["HS256", "HS384", "HS512"] = "HS256"
 {%- endif %}
 
     # Public URL of the frontend; used to build OAuth redirect targets and
@@ -827,14 +840,19 @@ class Settings(BaseSettings):
 {%- endif %}
 
     @model_validator(mode="after")
-    def refuse_placeholder_secrets(self) -> "Settings":
-        """Keelson: a deployed environment starts only with real secrets."""
+    def refuse_development_settings(self) -> "Settings":
+        """Keelson: a deployed environment starts only with real secrets and without debug."""
         if self.ENVIRONMENT not in DEPLOYED_ENVIRONMENTS:
             return self
         placeholders = [
             name
             for name in SECRETS_WHEN_DEPLOYED
             if isinstance(value := getattr(self, name, None), str) and is_placeholder_secret(value)
+        ]
+        placeholders += [
+            name
+            for name in OPTIONAL_SECRETS_WHEN_DEPLOYED
+            if (value := getattr(self, name, None)) and is_placeholder_secret(value)
         ]
         if any(is_placeholder_secret(key) for key in getattr(self, "DATA_ENCRYPTION_KEYS", [])):
             placeholders.append("DATA_ENCRYPTION_KEYS")
@@ -843,6 +861,8 @@ class Settings(BaseSettings):
                 f"{', '.join(placeholders)} must be set to real secrets in {self.ENVIRONMENT}: "
                 "openssl rand -hex 32"
             )
+        if self.DEBUG:
+            raise ValueError(f"DEBUG must be false in {self.ENVIRONMENT}")
         return self
 
 {%- if enable_rag %}

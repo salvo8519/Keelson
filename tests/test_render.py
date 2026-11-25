@@ -241,3 +241,90 @@ def test_provider_requires_a_compatible_framework(tmp_path: Path) -> None:
             vcs_ref="HEAD",
             quiet=True,
         )
+
+
+# --- Supply chain and deployment hardening -----------------------------------------------------
+
+ROOT = Path(__file__).resolve().parents[1]
+FULL_SHA_USE = re.compile(r"uses: [\w./-]+@[0-9a-f]{40} # v\d[\w.]*$")
+
+
+def _template_default(name: str) -> str:
+    """Default of a computed variable in copier.yml (its first YAML document)."""
+    questions = next(yaml.safe_load_all((ROOT / "copier.yml").read_text(encoding="utf-8")))
+    return str(questions[name]["default"])
+
+
+def _workflow_problems(text: str) -> list[str]:
+    """Pinning rules every GitHub workflow follows, the repository's and the generated ones."""
+    problems = []
+    for number, line in enumerate(text.splitlines(), 1):
+        stripped = line.strip().removeprefix("- ")
+        local = stripped.startswith("uses: ./")
+        if stripped.startswith("uses:") and not local and not FULL_SHA_USE.fullmatch(stripped):
+            problems.append(f"{number}: action not pinned to a commit SHA: {stripped}")
+        if re.search(r"\buv sync\b", line) and "--locked" not in line:
+            problems.append(f"{number}: uv sync without --locked")
+        if 'version: "latest"' in line:
+            problems.append(f"{number}: unpinned tool version")
+    workflow = yaml.safe_load(text)
+    for name, job in workflow["jobs"].items():
+        for step in job.get("steps", []):
+            checkout = step.get("uses", "").startswith("actions/checkout@")
+            keeps_token = (step.get("with") or {}).get("persist-credentials") is not False
+            if checkout and keeps_token:
+                problems.append(f"{name}: checkout keeps the token (persist-credentials)")
+            if "${{" in step.get("run", ""):
+                problems.append(f"{name}: expression inside run, use env instead")
+    return problems
+
+
+def test_repository_workflows_are_pinned() -> None:
+    for path in (ROOT / ".github" / "workflows").glob("*.yml"):
+        assert _workflow_problems(path.read_text(encoding="utf-8")) == [], path.name
+
+
+def test_repository_ci_uses_the_tool_versions_of_the_template() -> None:
+    env = yaml.safe_load((ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+    assert env["env"]["UV_VERSION"] == _template_default("uv_version")
+    assert env["env"]["BUN_VERSION"] == _template_default("bun_version")
+
+
+@pytest.mark.parametrize("case", list(CASES))
+def test_generated_pipelines_are_pinned(render: Render, case: str) -> None:
+    project = render(answers(case))
+    uv_version = _template_default("uv_version")
+    for path in (project / ".github" / "workflows").glob("*.yml"):
+        assert _workflow_problems(path.read_text(encoding="utf-8")) == [], path.name
+    gitlab = project / ".gitlab-ci.yml"
+    if gitlab.is_file():
+        text = gitlab.read_text(encoding="utf-8")
+        assert f'UV_VERSION: "{uv_version}"' in text
+        assert re.findall(r"pip install (\S+)", text) == ['"uv==$UV_VERSION"'] * text.count(
+            "pip install"
+        )
+        assert all("--locked" in line for line in text.splitlines() if "uv sync" in line)
+    dockerfile = (project / "backend" / "Dockerfile").read_text(encoding="utf-8")
+    assert f"ghcr.io/astral-sh/uv:{uv_version} " in dockerfile
+    assert ".raise_for_status()" in dockerfile, "the health check fails on an error answer"
+    assert not (project / "frontend" / "Dockerfile.playwright").exists()
+    if gitlab.is_file():
+        assert (project / "renovate.json").is_file()
+        json.loads((project / "renovate.json").read_text(encoding="utf-8"))
+    else:
+        dependabot = yaml.safe_load(
+            (project / ".github" / "dependabot.yml").read_text(encoding="utf-8")
+        )
+        ecosystems = {update["package-ecosystem"] for update in dependabot["updates"]}
+        assert {"github-actions", "uv", "docker"} <= ecosystems
+
+
+@pytest.mark.parametrize("case", list(CASES))
+def test_production_compose_keeps_secrets_off_the_command_line(render: Render, case: str) -> None:
+    project = render(answers(case))
+    compose = (project / "docker-compose.prod.yml").read_text(encoding="utf-8")
+    assert "--requirepass $" not in compose and '"-a"' not in compose
+    assert '--forwarded-allow-ips="*"' not in compose
+    # A production value is required, not replaced by a stand-in.
+    for name in ("ACME_EMAIL", "TRAEFIK_DASHBOARD_AUTH", "DOMAIN", "POSTGRES_PASSWORD"):
+        assert f"${{{name}:-" not in compose, name

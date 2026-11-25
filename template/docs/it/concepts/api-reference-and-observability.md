@@ -1,4 +1,4 @@
-<!-- i18n source: concepts/api-reference-and-observability.md source_hash: dac1c1b4cb87 -->
+<!-- i18n source: concepts/api-reference-and-observability.md source_hash: 060652a33f08 -->
 # Riferimento API e osservabilità
 
 ## Riferimento API
@@ -46,8 +46,16 @@ OpenTelemetry.
 ## Metriche
 
 `/metrics` espone metriche Prometheus: numero e latenza delle richieste per route, più le
-metriche standard del processo. Con `PROMETHEUS_AUTH_TOKEN` l'endpoint richiede un bearer
-token, utile quando è raggiungibile dall'esterno.
+metriche standard del processo. Con `PROMETHEUS_AUTH_TOKEN` l'endpoint lo richiede come bearer
+token. L'endpoint è servito sulla porta dell'API, quindi staging e produzione non si avviano
+senza un token; lo stesso token va dato allo scraper (`authorization` nel job di Prometheus).
+
+## Sonde di salute
+
+`/api/v1/health/live` e `/api/v1/health/ready` rispondono senza autenticazione, quindi
+riportano uno stato per dipendenza (`healthy`, `unhealthy`, `unknown`) e nient'altro: nessun
+testo di errore, nessun ambiente. Il motivo di un controllo fallito è registrato nel log da
+`app.api.routes.v1.health`, con l'eccezione.
 
 ## Header di sicurezza
 

@@ -38,22 +38,21 @@ async def test_readiness_check_redis_healthy(client: AsyncClient, mock_redis):
     response = await client.get(f"{settings.API_V1_STR}/ready")
     assert response.status_code == 200
     data = response.json()
-    assert data["checks"]["redis"]["status"] == "healthy"
-    assert "latency_ms" in data["checks"]["redis"]
+    assert data["checks"]["redis"] == {"status": "healthy"}
 
 
 @pytest.mark.anyio
 async def test_readiness_check_redis_unhealthy(client: AsyncClient, mock_redis):
     """Test readiness when Redis is unhealthy."""
-    mock_redis.ping = AsyncMock(side_effect=Exception("Connection failed"))
+    mock_redis.ping = AsyncMock(side_effect=Exception("AUTH failed for redis://:s3cret@cache:6379"))
 
     response = await client.get(f"{settings.API_V1_STR}/ready")
     # Should return 503 when Redis is down
     assert response.status_code == 503
     data = response.json()
     assert data["status"] == "not_ready"
-    assert data["checks"]["redis"]["status"] == "unhealthy"
-    assert "error" in data["checks"]["redis"]
+    assert data["checks"]["redis"] == {"status": "unhealthy"}
+    assert "s3cret" not in response.text
 {%- endif %}
 
 
@@ -74,13 +73,40 @@ async def test_readiness_check_db_healthy(client: AsyncClient, mock_db_session):
 @pytest.mark.anyio
 async def test_readiness_check_db_unhealthy(client: AsyncClient, mock_db_session):
     """Test readiness when database is unhealthy."""
-    mock_db_session.execute = AsyncMock(side_effect=Exception("DB connection failed"))
+    mock_db_session.execute = AsyncMock(
+        side_effect=Exception('password authentication failed for user "app_owner" at db-primary')
+    )
 
-    response = await client.get(f"{settings.API_V1_STR}/ready")
+    response = await client.get(f"{settings.API_V1_STR}/health/ready")
     # Should return 503 when DB is down
     assert response.status_code == 503
     data = response.json()
     assert data["status"] == "not_ready"
-    assert data["checks"]["database"]["status"] == "unhealthy"
+    # Keelson: an unauthenticated probe reports a status, never the reason of the failure.
+    assert data["checks"]["database"] == {"status": "unhealthy"}
+    assert data["database"] == {"status": "unhealthy"}
+    assert "app_owner" not in response.text
+    assert "db-primary" not in response.text
+
+
+@pytest.mark.anyio
+async def test_readiness_failure_is_logged(client: AsyncClient, mock_db_session, caplog):
+    """The reason of a failed check goes to the log instead of the response."""
+    mock_db_session.execute = AsyncMock(side_effect=Exception("connection refused by db-primary"))
+
+    with caplog.at_level("WARNING", logger="app.api.routes.v1.health"):
+        await client.get(f"{settings.API_V1_STR}/health/ready")
+
+    failures = [r for r in caplog.records if r.name == "app.api.routes.v1.health"]
+    assert failures, "the failed check is logged"
+    assert any("db-primary" in str(r.exc_info[1]) for r in failures if r.exc_info)
+
+
+@pytest.mark.anyio
+async def test_liveness_does_not_disclose_the_environment(client: AsyncClient):
+    """The unauthenticated liveness probe does not say where it runs."""
+    response = await client.get(f"{settings.API_V1_STR}/health/live")
+    assert response.status_code == 200
+    assert "environment" not in response.json()["details"]
 
 

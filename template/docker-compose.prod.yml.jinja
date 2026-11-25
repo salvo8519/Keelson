@@ -20,9 +20,10 @@
 {%- if include_traefik_service %}
 #
 # Prerequisites:
-#   1. Configure backend/.env with DOMAIN and ACME_EMAIL
+#   1. Configure backend/.env with DOMAIN, ACME_EMAIL and TRAEFIK_DASHBOARD_AUTH
+#      (htpasswd -nB admin, every "$" doubled); Compose stops when one is missing
 #   2. Ensure ports 80 and 443 are available
-#   3. Generate passwords: openssl rand -base64 32
+#   3. Generate passwords: openssl rand -hex 32
 {%- elif include_traefik_labels %}
 #
 # Prerequisites:
@@ -62,7 +63,7 @@ services:
       # Let's Encrypt
       - "--certificatesresolvers.letsencrypt.acme.httpchallenge=true"
       - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
-      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:-admin@example.com}"
+      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:?ACME_EMAIL is required (the Let's Encrypt account)}"
       - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
       # Access logs
       - "--accesslog=true"
@@ -78,12 +79,12 @@ services:
     labels:
       # Dashboard
       - "traefik.enable=true"
-      - "traefik.http.routers.{{ project_slug }}-traefik.rule=Host(`traefik.${DOMAIN:-localhost}`)"
+      - "traefik.http.routers.{{ project_slug }}-traefik.rule=Host(`traefik.${DOMAIN:?DOMAIN is required}`)"
       - "traefik.http.routers.{{ project_slug }}-traefik.entrypoints=websecure"
       - "traefik.http.routers.{{ project_slug }}-traefik.tls.certresolver=letsencrypt"
       - "traefik.http.routers.{{ project_slug }}-traefik.service=api@internal"
       - "traefik.http.routers.{{ project_slug }}-traefik.middlewares={{ project_slug }}-auth"
-      - "traefik.http.middlewares.{{ project_slug }}-auth.basicauth.users=${TRAEFIK_DASHBOARD_AUTH:-admin:$$apr1$$xyz$$hash}"
+      - "traefik.http.middlewares.{{ project_slug }}-auth.basicauth.users=${TRAEFIK_DASHBOARD_AUTH:?TRAEFIK_DASHBOARD_AUTH is required (htpasswd -nB admin)}"
       # Security headers middleware
       - "traefik.http.middlewares.{{ project_slug }}-security-headers.headers.stsSeconds=31536000"
       - "traefik.http.middlewares.{{ project_slug }}-security-headers.headers.stsIncludeSubdomains=true"
@@ -153,6 +154,13 @@ services:
       - DEBUG=false
       - ENVIRONMENT=production
       - POSTGRES_HOST=db
+{%- if include_traefik_service or include_nginx_service %}
+      # The proxy's network (networks below); only it may set the client address and scheme.
+      - FORWARDED_ALLOW_IPS=${PROXY_NETWORK_SUBNET:-{{ proxy_network_subnet }}}
+{%- elif include_traefik_labels %}
+      # The subnet of the external traefik-public network: docker network inspect traefik-public
+      - FORWARDED_ALLOW_IPS=${FORWARDED_ALLOW_IPS:?FORWARDED_ALLOW_IPS is required (subnet of traefik-public)}
+{%- endif %}
 {%- if enable_redis %}
       - REDIS_HOST=redis
 {%- endif %}
@@ -165,23 +173,24 @@ services:
       - QDRANT_PORT=6333
 {%- endif %}
 {%- if use_celery %}
-      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/0
 {%- endif %}
 {%- if use_taskiq %}
-      - TASKIQ_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/1
-      - TASKIQ_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/1
+      - TASKIQ_BROKER_URL=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/1
+      - TASKIQ_RESULT_BACKEND=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/1
 {%- endif %}
     # Keelson: websockets-sansio as in development (the default implementation breaks the
-    # chat WebSocket), and the client address and scheme from the proxy.
-    command: uvicorn app.main:app --host 0.0.0.0 --port {{ backend_port }} --workers 4 --ws websockets-sansio --proxy-headers --forwarded-allow-ips="*"
+    # chat WebSocket), and the client address and scheme from the proxy. Uvicorn trusts the
+    # X-Forwarded-* headers only from the addresses in FORWARDED_ALLOW_IPS (environment above).
+    command: uvicorn app.main:app --host 0.0.0.0 --port {{ backend_port }} --workers 4 --ws websockets-sansio --proxy-headers
 {%- if include_traefik_labels %}
     networks:
       - traefik-public
       - backend-internal
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.{{ project_slug }}-api.rule=Host(`api.${DOMAIN:-localhost}`)"
+      - "traefik.http.routers.{{ project_slug }}-api.rule=Host(`api.${DOMAIN:?DOMAIN is required}`)"
       - "traefik.http.routers.{{ project_slug }}-api.entrypoints=websecure"
       - "traefik.http.routers.{{ project_slug }}-api.tls.certresolver=letsencrypt"
       - "traefik.http.routers.{{ project_slug }}-api.middlewares={{ project_slug }}-security-headers@docker"
@@ -232,7 +241,7 @@ services:
     container_name: {{ project_slug }}_db
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-postgres}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       - POSTGRES_DB=${POSTGRES_DB:-{{ project_slug }}}
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -256,14 +265,27 @@ services:
   redis:
     image: valkey/valkey:9-alpine
     container_name: {{ project_slug }}_redis
-    command: valkey-server --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    # Keelson: the password reaches Valkey as a Compose secret (a file in /run/secrets), written
+    # to a configuration file readable by the valkey user only; the image's entrypoint then
+    # drops root. On the command line (`--requirepass`) it was visible in the process list and
+    # in `docker inspect`. The health check reads it into REDISCLI_AUTH for the same reason.
+    command:
+      - sh
+      - -c
+      - >-
+        umask 077 &&
+        printf 'requirepass "%s"\n' "$$(cat /run/secrets/redis_password)" > /tmp/valkey.conf &&
+        chown valkey:valkey /tmp/valkey.conf &&
+        exec docker-entrypoint.sh valkey-server /tmp/valkey.conf
+    secrets:
+      - redis_password
     # NO external ports - only accessible within backend-internal network
     volumes:
       - redis_data:/data
     networks:
       - backend-internal
     healthcheck:
-      test: ["CMD", "valkey-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$(cat /run/secrets/redis_password)\" valkey-cli ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -308,7 +330,7 @@ services:
       - minio_data:/data
     environment:
       - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
-      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-changeme}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
     networks:
       - backend-internal
     healthcheck:
@@ -411,8 +433,8 @@ services:
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
 {%- endif %}
-      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/0
     networks:
       - backend-internal
     depends_on:
@@ -458,8 +480,8 @@ services:
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
 {%- endif %}
-      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/0
     networks:
       - backend-internal
     depends_on:
@@ -485,8 +507,8 @@ services:
       - DEBUG=false
       - ENVIRONMENT=production
       - REDIS_HOST=redis
-      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/0
       - FLOWER_BASIC_AUTH=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:?FLOWER_PASSWORD is required}
 {%- if include_traefik_labels %}
     networks:
@@ -494,7 +516,7 @@ services:
       - backend-internal
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.{{ project_slug }}-flower.rule=Host(`flower.${DOMAIN:-localhost}`)"
+      - "traefik.http.routers.{{ project_slug }}-flower.rule=Host(`flower.${DOMAIN:?DOMAIN is required}`)"
       - "traefik.http.routers.{{ project_slug }}-flower.entrypoints=websecure"
       - "traefik.http.routers.{{ project_slug }}-flower.tls.certresolver=letsencrypt"
       - "traefik.http.services.{{ project_slug }}-flower.loadbalancer.server.port=5555"
@@ -555,8 +577,8 @@ services:
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
 {%- endif %}
-      - TASKIQ_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/1
-      - TASKIQ_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/1
+      - TASKIQ_BROKER_URL=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/1
+      - TASKIQ_RESULT_BACKEND=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/1
     networks:
       - backend-internal
     depends_on:
@@ -602,8 +624,8 @@ services:
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
 {%- endif %}
-      - TASKIQ_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/1
-      - TASKIQ_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/1
+      - TASKIQ_BROKER_URL=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/1
+      - TASKIQ_RESULT_BACKEND=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/1
     networks:
       - backend-internal
     depends_on:
@@ -690,7 +712,7 @@ services:
       # its Next.js frontend, which this one does not read. Rebuild after changing it.
       args:
 {%- if include_traefik_labels or include_nginx_service %}
-        - VITE_API_URL=${VITE_API_URL:-https://api.${DOMAIN:-localhost}}
+        - VITE_API_URL=${VITE_API_URL:-https://api.${DOMAIN:?DOMAIN is required}}
 {%- else %}
         - VITE_API_URL=${VITE_API_URL:-http://${PUBLIC_HOST:-localhost}:{{ backend_port }}}
 {%- endif %}
@@ -700,7 +722,7 @@ services:
       - traefik-public
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.{{ project_slug }}-frontend.rule=Host(`${DOMAIN:-localhost}`)"
+      - "traefik.http.routers.{{ project_slug }}-frontend.rule=Host(`${DOMAIN:?DOMAIN is required}`)"
       - "traefik.http.routers.{{ project_slug }}-frontend.entrypoints=websecure"
       - "traefik.http.routers.{{ project_slug }}-frontend.tls.certresolver=letsencrypt"
       - "traefik.http.routers.{{ project_slug }}-frontend.middlewares={{ project_slug }}-security-headers@docker"
@@ -773,6 +795,10 @@ networks:
 {%- if include_traefik_service %}
   traefik-public:
     driver: bridge
+    # Keelson: a known subnet, the only source the API trusts for X-Forwarded-* headers.
+    ipam:
+      config:
+        - subnet: ${PROXY_NETWORK_SUBNET:-{{ proxy_network_subnet }}}
 {%- elif include_traefik_labels %}
   traefik-public:
     external: true
@@ -780,6 +806,19 @@ networks:
   backend-internal:
     driver: bridge
     internal: true
+{%- if include_nginx_service %}
+    ipam:
+      config:
+        - subnet: ${PROXY_NETWORK_SUBNET:-{{ proxy_network_subnet }}}
+{%- endif %}
+{%- if enable_redis %}
+
+secrets:
+  # The password of Valkey, read from the environment of `docker compose` (backend/.env or
+  # .env.prod-local through --env-file) and mounted as a file, never in the container's Env.
+  redis_password:
+    environment: REDIS_PASSWORD
+{%- endif %}
 
 volumes:
   media_data:

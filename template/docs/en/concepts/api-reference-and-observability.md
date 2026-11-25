@@ -43,8 +43,16 @@ OpenTelemetry.
 ## Metrics
 
 `/metrics` exposes Prometheus metrics: request counts and latencies per route, plus the
-standard process metrics. Set `PROMETHEUS_AUTH_TOKEN` to require a bearer token when the
-endpoint is reachable from outside.
+standard process metrics. With `PROMETHEUS_AUTH_TOKEN` the endpoint requires it as a bearer
+token. The endpoint is served on the API port, so staging and production refuse to start
+without a token; give the same token to the scraper (`authorization` in the Prometheus job).
+
+## Health probes
+
+`/api/v1/health/live` and `/api/v1/health/ready` answer without authentication, so they report
+a status per dependency (`healthy`, `unhealthy`, `unknown`) and nothing else: no error text,
+no environment. The reason of a failed check is logged by `app.api.routes.v1.health` with the
+exception.
 
 ## Security headers
 

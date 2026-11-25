@@ -38,6 +38,18 @@ No emoji, icons or decorative symbols in any file, commit or pull request. Corpo
 English. `uv run just style` checks the repository and the render tests check generated
 projects.
 
+## Pinned versions
+
+Every tool and action is pinned, in the repository and in generated projects. Dependabot
+(`.github/dependabot.yml`) proposes updates for the repository's actions, its Python tooling
+and the template's frontend packages, each release after a seven-day cooldown. It cannot see
+the pins inside the template: the commit SHAs of the actions in
+`template/.github/workflows/ci.yml.jinja` and the tool versions in `copier.yml`
+(`uv_version`, `bun_version`, `oasdiff_version`, `garage_image`). Update those by hand: take
+the commit of a release tag with `git ls-remote https://github.com/<owner>/<repo>
+refs/tags/<tag>` (the `^{}` line for an annotated tag) and keep the version in the comment.
+`tests/test_render.py` keeps the uv and Bun versions of this pipeline equal to the template's.
+
 ## Re-sync with the upstream templates
 
 Follow `PROVENANCE.md`, Re-sync procedure, or the `/upstream-sync` skill.

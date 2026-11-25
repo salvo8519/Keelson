@@ -1,6 +1,6 @@
 ---
 source: reference/questions.md
-source_hash: 4566f9bb74cd
+source_hash: 80b7bf201076
 ---
 # Domande
 
@@ -12,6 +12,7 @@ Le domande poste da Copier, con il valore predefinito. Le risposte sono registra
 | `project_name` | `my_project` | snake_case: nome del pacchetto Python e della CLI |
 | `project_description` | `An enterprise FastAPI service` | Una riga |
 | `author_name`, `author_email` | `Your Name`, `you@example.com` | |
+| `security_contact` | `author_email`, vuoto finché è un indirizzo `example.com` | Indirizzo per le segnalazioni di vulnerabilità in `SECURITY.md`; vuoto: solo advisory di sicurezza private |
 | `timezone` | `UTC` | Fuso orario IANA per scheduler e log |
 | `repository_url` | `https://github.com/your-org/<progetto>` | URL HTTPS del repository: sito della documentazione e link di modifica |
 | `brand_name` | da `project_name` | Nome del prodotto nell'interfaccia e nella documentazione delle API |

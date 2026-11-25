@@ -10,10 +10,19 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from app.core.config import SECRETS_WHEN_DEPLOYED, Settings
+from app.core.config import SECRETS_WHEN_DEPLOYED, Settings, is_placeholder_secret
 
-DEFAULTED_SECRETS = (
-    "SECRET_KEY", "API_KEY", "POSTGRES_PASSWORD", "POSTGRES_APP_PASSWORD", "DATA_ENCRYPTION_KEYS"
+DEFAULTED_SECRETS = tuple(
+    name
+    for name in (
+        "SECRET_KEY",
+        "API_KEY",
+        "POSTGRES_PASSWORD",
+        "POSTGRES_APP_PASSWORD",
+        "DATA_ENCRYPTION_KEYS",
+        "PROMETHEUS_AUTH_TOKEN",
+    )
+    if name in Settings.model_fields
 )
 ENV_EXAMPLE = Path(__file__).resolve().parents[1] / ".env.example"
 
@@ -39,6 +48,8 @@ def _production(environment: str = "production", **overrides: object) -> Setting
         "CORS_ORIGINS": ["https://app.example.com"],
         **overrides,
     }
+    if "PROMETHEUS_AUTH_TOKEN" in Settings.model_fields:
+        values.setdefault("PROMETHEUS_AUTH_TOKEN", secrets.token_hex(32))
     return Settings(_env_file=None, **values)  # type: ignore[call-arg]
 
 
@@ -54,7 +65,21 @@ def test_production_refuses_a_development_default(name: str) -> None:
 
 
 @pytest.mark.parametrize("environment", ["staging", "production"])
-@pytest.mark.parametrize("value", ["", "postgres", "change-me-in-production", "sk_test_xxx", " Password "])
+@pytest.mark.parametrize(
+    "value",
+    [
+        "",
+        "postgres",
+        "change-me-in-production",
+        "sk_test_xxx",
+        " Password ",
+        # The stand-ins of the Kubernetes secret and of other examples, in any case and separator.
+        "CHANGE_ME_IN_PRODUCTION",
+        "CHANGE_ME",
+        "change_this",
+        "Change Me",
+    ],
+)
 def test_deployed_environments_refuse_stand_in_database_passwords(environment: str, value: str) -> None:
     with pytest.raises(ValidationError, match="POSTGRES_PASSWORD"):
         _production(environment, POSTGRES_PASSWORD=value)
@@ -72,3 +97,35 @@ def test_the_values_of_env_example_do_not_start_in_production() -> None:
 def test_development_accepts_stand_ins(environment: str) -> None:
     settings = _production(environment, POSTGRES_PASSWORD="postgres", API_KEY="change-me-in-production")
     assert settings.ENVIRONMENT == environment
+
+
+@pytest.mark.parametrize("value", ["CHANGE_ME_IN_PRODUCTION", "CHANGE_ME", "change_this", "change.me"])
+def test_stand_ins_are_recognised_in_any_spelling(value: str) -> None:
+    assert is_placeholder_secret(value)
+
+
+def test_random_secrets_are_not_stand_ins() -> None:
+    assert not is_placeholder_secret(secrets.token_hex(32))
+    assert not is_placeholder_secret(secrets.token_urlsafe(32).replace("x", "y"))
+
+
+@pytest.mark.parametrize("environment", ["staging", "production"])
+def test_deployed_environments_refuse_debug(environment: str) -> None:
+    with pytest.raises(ValidationError, match="DEBUG"):
+        _production(environment, DEBUG=True)
+
+
+@pytest.mark.skipif(
+    "PROMETHEUS_AUTH_TOKEN" not in Settings.model_fields, reason="metrics are not enabled"
+)
+def test_deployed_metrics_need_a_token() -> None:
+    """Without a token the metrics endpoint is public on the API port."""
+    with pytest.raises(ValidationError, match="PROMETHEUS_AUTH_TOKEN"):
+        _production(PROMETHEUS_AUTH_TOKEN="")
+
+
+@pytest.mark.skipif("ALGORITHM" not in Settings.model_fields, reason="no JWT in this project")
+@pytest.mark.parametrize("algorithm", ["none", "RS256", "hs256"])
+def test_only_hmac_signing_algorithms_are_accepted(algorithm: str) -> None:
+    with pytest.raises(ValidationError, match="ALGORITHM"):
+        _production(ALGORITHM=algorithm)

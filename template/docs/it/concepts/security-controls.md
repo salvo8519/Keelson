@@ -1,4 +1,4 @@
-<!-- i18n source: concepts/security-controls.md source_hash: e5fdd5794da7 -->
+<!-- i18n source: concepts/security-controls.md source_hash: a3f8d0b5ddfe -->
 # Controlli di sicurezza e conformità
 
 Questa pagina collega i controlli della ISO/IEC 27001:2022 (Annex A) e i Trust Services
@@ -40,19 +40,19 @@ Ogni riga indica la sua evidenza. I test girano nella pipeline del progetto, qui
 | --- | --- | --- | --- | --- |
 | Registrazione degli eventi | A.8.15 | CC7.2 | Log JSON con request id, trace id e span id | `app/core/logging.py`, `tests/test_observability.py` |
 | Traccia di audit | A.8.15, A.5.33 | CC7.2 | Creazione, rotazione, revoca e usi rifiutati delle API key registrati; l'applicazione può aggiungere voci ma non leggerle, modificarle o cancellarle; un'azione che non si può registrare viene annullata | `app/core/audit.py`, `tests/test_segregation_postgres.py` |
-| Monitoraggio | A.8.16 | CC7.2 | Metriche Prometheus, trace OpenTelemetry, sonde di liveness e readiness | `app/core/telemetry.py`, `app/api/routes/v1/health.py` |
+| Monitoraggio | A.8.16 | CC7.2 | Metriche Prometheus, dietro un bearer token negli ambienti di rilascio; trace OpenTelemetry; sonde di liveness e readiness che riportano uno stato per dipendenza, mentre il motivo di un errore va nel log | `app/core/telemetry.py`, `app/api/routes/v1/health.py`, `tests/api/test_health.py` |
 
 ## Sviluppo, modifiche e catena di fornitura
 
 | Controllo | ISO 27001 | SOC 2 | Cosa fa il progetto | Evidenza |
 | --- | --- | --- | --- | --- |
-| Configurazione sicura | A.8.9 | CC7.1 | Un avvio in produzione rifiuta i valori di sviluppo dei segreti | `app/core/config.py`, `tests/test_production_settings.py` |
+| Configurazione sicura | A.8.9 | CC7.1 | Un avvio in staging o in produzione rifiuta i valori di sviluppo e i segnaposto dei segreti (compresi quelli di `.env.example` e del secret Kubernetes), la modalità debug, le metriche senza token e algoritmi di firma dei token diversi da HMAC; lo stack Compose di produzione si ferma se manca un valore obbligatorio, tiene la password di Valkey fuori dalla riga di comando e accetta gli indirizzi client inoltrati solo dalla rete del proxy | `app/core/config.py`, `tests/test_production_settings.py`, `docker-compose.prod.yml` |
 | Gestione delle modifiche | A.8.32 | CC8.1 | Il contratto API è versionato; disallineamenti e modifiche incompatibili fanno fallire la pipeline; migrazioni testate in avanti e indietro | `scripts/openapi.py`, `tests/test_migrations.py`, workflow di CI |
 | Codice sicuro | A.8.28 | CC8.1 | Regole di lint di sicurezza (Ruff `S`, da Bandit) con eccezioni motivate | `backend/pyproject.toml` |
 | Test di sicurezza | A.8.29 | CC7.1 | Test di attacco su un PostgreSQL reale, test-trappola sui log, test di autenticazione | i test citati sopra |
 | Vulnerabilità tecniche | A.8.8 | CC7.1 | Verifica delle dipendenze (pip-audit, e bun audit con un frontend), scansione dell'immagine del container (Trivy); un fallimento ferma la pipeline | workflow di CI |
 | Segreti nel repository | A.8.12 | CC6.1 | L'intera storia è scansionata alla ricerca di segreti (gitleaks) | workflow di CI |
-| Catena di fornitura | A.5.21 | CC6.8, CC9.2 | Distinta dei componenti software (CycloneDX); skill degli agenti vincolate al digest del contenuto e scansionate prima dell'installazione | workflow di CI, `scripts/agent_skills.py`, `skills.lock.toml` |
+| Catena di fornitura | A.5.21 | CC6.8, CC9.2 | Distinta dei componenti software (CycloneDX); action di CI vincolate allo SHA del commit, uv, Bun e oasdiff vincolati a una release (oasdiff verificato con il checksum pubblicato), dipendenze installate solo dai file di lock (`uv sync --locked`, `bun install --frozen-lockfile`); Dependabot (GitHub) o Renovate (GitLab) propongono gli aggiornamenti dopo un periodo di attesa di sette giorni; skill degli agenti vincolate al digest del contenuto e scansionate prima dell'installazione | workflow di CI, `.github/dependabot.yml` o `renovate.json`, `scripts/agent_skills.py`, `skills.lock.toml` |
 
 ## Cosa resta all'organizzazione
 
@@ -67,4 +67,7 @@ Il software non copre, e un auditor chiederà di:
 - backup, prove di ripristino e continuità operativa (A.8.13, A.5.30; disponibilità in SOC 2);
 - conservazione dei log, allarmi e risposta agli incidenti (da A.5.24 a A.5.28; SOC 2 da CC7.3
   a CC7.5);
-- penetration test e valutazione dei fornitori di modelli e di hosting.
+- penetration test e valutazione dei fornitori di modelli e di hosting;
+- immagini di base vincolate al digest (`image:tag@sha256:...`): il generatore non può
+  ottenere i digest, quindi le immagini sono vincolate al tag; vincolatele una volta e
+  Dependabot o Renovate le terranno aggiornate.

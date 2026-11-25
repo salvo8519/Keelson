@@ -49,6 +49,14 @@ ROOT = Path.cwd()
 TARGETS = (Path(".agents") / "skills", Path(".claude") / "skills")
 MARKER = ".skill-source.json"
 CACHE = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "agent-skills"
+# Keelson: what a lock entry may contain. The name becomes a folder under TARGETS and the path
+# a sparse checkout pattern, so neither may climb out of its place; a package source runs an
+# interpreter, so only this one or the project's backend environment.
+NAME_PATTERN = re.compile(r"[a-z0-9][a-z0-9-]*")
+COMMIT_PATTERN = re.compile(r"[0-9a-f]{40}")
+SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
+PACKAGE_PATTERN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*")
+BACKEND_PYTHON = "backend/.venv/bin/python"
 
 
 class SkillError(RuntimeError):
@@ -79,17 +87,50 @@ class Skill:
         return f"package:{self.package}:{self.path}"
 
 
+def _validate(skill: Skill) -> None:
+    """Refuse a lock entry that could write, fetch or run outside what it declares (Keelson)."""
+    if not NAME_PATTERN.fullmatch(skill.name):
+        raise SkillError(repr(skill.name), "a name is lower case letters, digits and hyphens")
+    parts = skill.path.split("/")
+    if (
+        not skill.path
+        or skill.path.startswith("/")
+        or "\\" in skill.path
+        or ":" in skill.path
+        or ".." in parts
+    ):
+        raise SkillError(skill.name, f"path {skill.path!r} must be relative, without '..'")
+    if bool(skill.repository) == bool(skill.package):
+        raise SkillError(skill.name, "declare either repository+commit or package")
+    if skill.repository:
+        if not skill.repository.startswith("https://"):
+            raise SkillError(skill.name, "a git source is fetched over https:// only")
+        if not (skill.commit and COMMIT_PATTERN.fullmatch(skill.commit)):
+            raise SkillError(skill.name, "a git source needs a pinned commit (40 hex digits)")
+        if not (skill.sha256 and SHA256_PATTERN.fullmatch(skill.sha256)):
+            raise SkillError(skill.name, "a git source needs the sha256 of its content")
+        if skill.python:
+            raise SkillError(skill.name, "python applies to package sources only")
+    if skill.package:
+        if not PACKAGE_PATTERN.fullmatch(skill.package):
+            raise SkillError(skill.name, f"package {skill.package!r} is not a module name")
+        if skill.python not in (None, sys.executable, BACKEND_PYTHON):
+            allowed = f"{BACKEND_PYTHON} or this interpreter"
+            raise SkillError(skill.name, f"python must be {allowed}, not {skill.python!r}")
+
+
 def load(lock: Path) -> list[Skill]:
     data = tomllib.loads(lock.read_text(encoding="utf-8"))
-    skills = [
-        Skill(**{**entry, "allow": tuple(entry.get("allow", ()))})
-        for entry in data.get("skill", [])
-    ]
-    for skill in skills:
-        if bool(skill.repository) == bool(skill.package):
-            raise SkillError(skill.name, "declare either repository+commit or package")
-        if skill.repository and not skill.commit:
-            raise SkillError(skill.name, "a git source needs a pinned commit")
+    skills = []
+    for entry in data.get("skill", []):
+        try:
+            skill = Skill(**{**entry, "allow": tuple(entry.get("allow", ()))})
+        except TypeError as err:
+            raise SkillError(str(lock), f"unexpected or missing field in a skill: {err}") from None
+        if not all(isinstance(value, str) for key, value in entry.items() if key != "allow"):
+            raise SkillError(str(entry.get("name")), "every field but allow is a string")
+        _validate(skill)
+        skills.append(skill)
     names = [s.name for s in skills]
     if len(names) != len(set(names)):
         raise SkillError("skills.lock.toml", "skill names must be unique")
@@ -240,6 +281,11 @@ def blocking(skill: Skill, findings: list[Finding]) -> list[Finding]:
 def _verified_source(skill: Skill) -> Path:
     """The skill's source, checked against its pinned digest and scanned."""
     source = _from_git(skill) if skill.repository else _from_package(skill)
+    # Keelson: a link would be copied as the file it points to (copytree follows links), so a
+    # skill could bring any file of this machine into the project; links are refused.
+    links = sorted(p.relative_to(source).as_posix() for p in source.rglob("*") if p.is_symlink())
+    if links:
+        raise SkillError(skill.name, f"symbolic links are not accepted: {', '.join(links)}")
     if skill.sha256 and _digest(source) != skill.sha256:
         raise SkillError(
             skill.name, f"content does not match the sha256 in the lock ({skill.source_id})"
@@ -252,6 +298,12 @@ def _verified_source(skill: Skill) -> Path:
     summary = _summary(f for f in findings if f.rule != "external-link")
     if summary:
         print(f"  {skill.name}: {summary}")
+    for finding in findings:
+        if finding.rule == "unpinned-execution":
+            print(
+                f"  {skill.name}: runs the latest release of a package from the network when "
+                f"an agent follows it, review before use: {finding.where}  {finding.excerpt}"
+            )
     return source
 
 

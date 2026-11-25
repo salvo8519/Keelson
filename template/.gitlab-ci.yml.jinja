@@ -12,6 +12,8 @@ stages:
 
 variables:
   PYTHON_VERSION: "{{ python_version }}"
+  # Keelson: the uv release is pinned, and every job installs the versions recorded in uv.lock.
+  UV_VERSION: "{{ uv_version }}"
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
   UV_CACHE_DIR: "$CI_PROJECT_DIR/.cache/uv"
 
@@ -28,9 +30,9 @@ variables:
 .python_base:
   image: python:${PYTHON_VERSION}-slim
   before_script:
-    - pip install uv
+    - pip install "uv==$UV_VERSION"
     - cd backend
-    - uv sync --dev
+    - uv sync --locked --dev
   <<: *cache_config
 
 # =============================================================================
@@ -74,12 +76,11 @@ i18n-check:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
 # Keelson: openapi/openapi.json is the contract of the API. It must match the code, and a merge
-# request must not break it (oasdiff, pinned and verified against its published checksums).
+# request must not break it (scripts/openapi-breaking.sh: pinned oasdiff, checksum verified).
 api-contract:
   stage: lint
   extends: .python_base
   variables:
-    OASDIFF_VERSION: "1.35.0"
     GIT_DEPTH: "0"
   script:
     - uv run python ../scripts/openapi.py check
@@ -87,19 +88,8 @@ api-contract:
       if [ "$CI_PIPELINE_SOURCE" = "merge_request_event" ]; then
         cd "$CI_PROJECT_DIR"
         apt-get update -qq && apt-get install -y -qq curl git >/dev/null
-        base="origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
         git fetch --depth=1 origin "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
-        if git cat-file -e "$base:openapi/openapi.json" 2>/dev/null; then
-          url="https://github.com/oasdiff/oasdiff/releases/download/v$OASDIFF_VERSION"
-          archive="oasdiff_${OASDIFF_VERSION}_linux_amd64.tar.gz"
-          curl -fsSLO "$url/$archive" && curl -fsSLO "$url/checksums.txt"
-          sha256sum --check --ignore-missing checksums.txt
-          tar -xzf "$archive" oasdiff
-          git show "$base:openapi/openapi.json" > /tmp/base-openapi.json
-          ./oasdiff breaking /tmp/base-openapi.json openapi/openapi.json --fail-on ERR
-        else
-          echo "The target branch has no contract yet: nothing to compare."
-        fi
+        sh scripts/openapi-breaking.sh "origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
       fi
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
@@ -110,7 +100,7 @@ api-contract:
 # suite needs a running stack and is not part of this job.
 frontend:
   stage: lint
-  image: oven/bun:1
+  image: oven/bun:{{ bun_version }}
   before_script:
     - cd frontend
     - bun install --frozen-lockfile
@@ -158,9 +148,9 @@ test:
     REDIS_PORT: "6379"
 {%- endif %}
   before_script:
-    - pip install uv
+    - pip install "uv==$UV_VERSION"
     - cd backend
-    - uv sync --dev
+    - uv sync --locked --dev
   script:
     - uv run pytest tests/ -v --cov=app --cov-report=xml --cov-report=term-missing
   coverage: '/(?i)total.*? (100(?:\.0+)?\%|[1-9]?\d(?:\.\d+)?\%)$/'
@@ -183,7 +173,7 @@ security-scan:
   stage: security
   extends: .python_base
   script:
-    - uv pip install pip-audit
+    # pip-audit is a dev dependency, at the version recorded in uv.lock.
     - uv run pip-audit --require-hashes=false --progress-spinner=off
     # Keelson: agent skills are pinned (commit and content digest) and scanned before install.
     - apt-get update -qq && apt-get install -y -qq git >/dev/null
@@ -250,9 +240,6 @@ docker-build:
 #   needs:
 #     - docker-build
 {%- endif %}
-{%- else %}
-# GitLab CI is disabled for this project
-{%- endif %}
 
 # =============================================================================
 # Documentation (Keelson): Zensical site, reference generated from the code,
@@ -264,8 +251,8 @@ docs:
   image: python:${PYTHON_VERSION}-slim
   before_script:
     - apt-get update -qq && apt-get install -y -qq make >/dev/null
-    - pip install uv
-    - uv sync --directory backend
+    - pip install "uv==$UV_VERSION"
+    - uv sync --locked --directory backend
   script:
     - make docs-check
     - make docs
@@ -286,3 +273,6 @@ pages:
     paths: [public]
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+{%- else %}
+# GitLab CI is disabled for this project
+{%- endif %}

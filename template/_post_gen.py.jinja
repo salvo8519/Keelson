@@ -796,11 +796,24 @@ if os.path.exists(backend_dir) and not _render_only:
 if os.path.exists(backend_dir) and not _render_only:
     ruff_cmd = None
 
+    # Keelson: the ruff version recorded in backend/uv.lock (the dev group), so the generated
+    # code is formatted by the same ruff that `make lint` runs; upstream ran the latest ruff
+    # from the index (`uvx ruff`), whatever it was on the day.
+    locked_ruff = None
+    lock_path = os.path.join(backend_dir, "uv.lock")
+    if os.path.exists(lock_path):
+        import tomllib
+
+        with open(lock_path, "rb") as lock_file:
+            locked_ruff = next(
+                (pkg["version"] for pkg in tomllib.load(lock_file).get("package", []) if pkg.get("name") == "ruff"),
+                None,
+            )
     ruff_path = shutil.which("ruff")
-    if ruff_path:
+    if locked_ruff and shutil.which("uvx"):
+        ruff_cmd = ["uvx", f"ruff@{locked_ruff}"]
+    elif ruff_path:
         ruff_cmd = [ruff_path]
-    elif shutil.which("uvx"):
-        ruff_cmd = ["uvx", "ruff"]
     else:
         result = subprocess.run(
             [sys.executable, "-m", "ruff", "--version"],

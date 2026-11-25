@@ -3,7 +3,6 @@ name = "{{ project_slug }}"
 version = "0.1.0"
 description = "{{ project_description }}"
 requires-python = ">={{ python_version }}"
-license = { text = "MIT" }
 authors = [
     { name = "{{ author_name }}", email = "{{ author_email }}" },
 ]
@@ -330,6 +329,8 @@ dev = [
     "httpx>=0.28.0",
     "ruff>=0.15.0",
     "ty>=0.0.29",
+    # Keelson: the dependency audit of the CI, at the version recorded in uv.lock.
+    "pip-audit>=2.10.1",
 {%- if enable_file_storage %}
     # Keelson: an in-process S3 for the object storage tests (no server needed).
     "moto[s3]>=5.1.0",

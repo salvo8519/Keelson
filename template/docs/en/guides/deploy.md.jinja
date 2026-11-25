@@ -54,6 +54,20 @@ The API must allow the frontend's origin: set `CORS_ORIGINS` and `FRONTEND_URL` 
 `docker-compose.prod.yml` runs Traefik: `DOMAIN` is routed to the frontend and `api.DOMAIN` to
 the API (WebSocket included), with certificates from Let's Encrypt for `ACME_EMAIL`. Point both
 DNS records at the host and keep ports 80 and 443 free.
+
+`DOMAIN`, `ACME_EMAIL`, `TRAEFIK_DASHBOARD_AUTH` (`htpasswd -nB admin`, every `$` doubled),
+`POSTGRES_PASSWORD` and `REDIS_PASSWORD` are required: Compose stops with a message naming the
+missing one instead of starting with a stand-in. Traefik and the API share a network with a
+fixed subnet (`PROXY_NETWORK_SUBNET`, default `{{ proxy_network_subnet }}`), and the API trusts
+the client address and scheme of `X-Forwarded-*` headers from that subnet only
+(`FORWARDED_ALLOW_IPS`). Change the subnet if it overlaps a network of the host.
+
+The Valkey password reaches the container as a Compose secret (a file under `/run/secrets`)
+and Valkey reads it from a configuration file written at start, so it is not on a command
+line (`ps`, `docker inspect`). The API and the workers still receive it, with the other
+settings, as environment variables, which `docker inspect` shows to anyone allowed to use the
+Docker daemon: on a shared host, use a secret manager or Docker secrets for the application
+settings as well.
 {% endif %}
 
 ### Render

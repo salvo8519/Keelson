@@ -38,19 +38,19 @@ on every change, not written once.
 | --- | --- | --- | --- | --- |
 | Event logging | A.8.15 | CC7.2 | JSON logs with request id, trace and span ids | `app/core/logging.py`, `tests/test_observability.py` |
 | Audit trail | A.8.15, A.5.33 | CC7.2 | Creation, rotation, revocation and refused uses of API keys recorded; the application can add entries but not read, change or delete them; an action that cannot be audited is rolled back | `app/core/audit.py`, `tests/test_segregation_postgres.py` |
-| Monitoring | A.8.16 | CC7.2 | Prometheus metrics, OpenTelemetry traces, liveness and readiness probes | `app/core/telemetry.py`, `app/api/routes/v1/health.py` |
+| Monitoring | A.8.16 | CC7.2 | Prometheus metrics, behind a bearer token when deployed; OpenTelemetry traces; liveness and readiness probes that report a status per dependency, the reason of a failure going to the log | `app/core/telemetry.py`, `app/api/routes/v1/health.py`, `tests/api/test_health.py` |
 
 ## Development, change and supply chain
 
 | Control | ISO 27001 | SOC 2 | What the project does | Evidence |
 | --- | --- | --- | --- | --- |
-| Secure configuration | A.8.9 | CC7.1 | A production start refuses development defaults for secrets | `app/core/config.py`, `tests/test_production_settings.py` |
+| Secure configuration | A.8.9 | CC7.1 | A staging or production start refuses development defaults and stand-ins for secrets (the values of `.env.example` and of the Kubernetes secret included), debug mode, metrics without a token and token signing algorithms other than HMAC; the production Compose stack stops when a required value is missing, keeps the Valkey password off the command line and trusts forwarded client addresses only from the proxy network | `app/core/config.py`, `tests/test_production_settings.py`, `docker-compose.prod.yml` |
 | Change management | A.8.32 | CC8.1 | The API contract is versioned; drift and breaking changes fail the pipeline; migrations tested up and down | `scripts/openapi.py`, `tests/test_migrations.py`, CI workflow |
 | Secure coding | A.8.28 | CC8.1 | Security lint rules (Ruff `S`, from Bandit) with reviewed exceptions | `backend/pyproject.toml` |
 | Security testing | A.8.29 | CC7.1 | Attack tests against a real PostgreSQL, log trap, authentication tests | the tests named above |
 | Technical vulnerabilities | A.8.8 | CC7.1 | Dependency audits (pip-audit, and bun audit with a frontend), container image scan (Trivy); failures stop the pipeline | CI workflow |
 | Secrets in the repository | A.8.12 | CC6.1 | The whole history is scanned for secrets (gitleaks) | CI workflow |
-| Supply chain | A.5.21 | CC6.8, CC9.2 | Software bill of materials (CycloneDX); agent skills pinned to the digest of their content and scanned before installation | CI workflow, `scripts/agent_skills.py`, `skills.lock.toml` |
+| Supply chain | A.5.21 | CC6.8, CC9.2 | Software bill of materials (CycloneDX); CI actions pinned to commit SHAs, uv, Bun and oasdiff pinned to a release (oasdiff checked against its published checksum), dependencies installed from the lock files only (`uv sync --locked`, `bun install --frozen-lockfile`); Dependabot (GitHub) or Renovate (GitLab) propose updates after a seven-day cooldown; agent skills pinned to the digest of their content and scanned before installation | CI workflow, `.github/dependabot.yml` or `renovate.json`, `scripts/agent_skills.py`, `skills.lock.toml` |
 
 ## What remains with the organization
 
@@ -63,4 +63,6 @@ The software does not cover, and an auditor will ask about:
   custody for `DATA_ENCRYPTION_KEYS`;
 - backups, restore tests and business continuity (A.8.13, A.5.30; SOC 2 availability);
 - log retention, alerting and incident response (A.5.24 to A.5.28; SOC 2 CC7.3 to CC7.5);
-- penetration tests and supplier assessments of the model providers and hosting.
+- penetration tests and supplier assessments of the model providers and hosting;
+- base images pinned by digest (`image:tag@sha256:...`): the generator cannot fetch digests,
+  so the images are pinned by tag; pin them once and Dependabot or Renovate keep them current.

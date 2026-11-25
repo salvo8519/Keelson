@@ -21,6 +21,14 @@ Then in `backend/.env`:
 
 These are used to sign JWTs and authenticate service-to-service calls. Rotate at every environment promotion (dev → staging → prod each get their own).
 
+## Licence and security contact
+
+- [ ] Choose the licence of this project: add a `LICENSE` file and the `license` field of
+  `backend/pyproject.toml`. The generator sets none, because the choice is yours; `NOTICE`
+  lists the licences of the template and of the code it includes.
+- [ ] Check the contact of `SECURITY.md` (answer `security_contact`), and enable private
+  vulnerability reporting on the repository.
+
 ## PostgreSQL
 
 - [ ] Provision a PostgreSQL ≥ 14 instance (local: `docker compose up -d db`; managed: Neon / Supabase / RDS / Cloud SQL).

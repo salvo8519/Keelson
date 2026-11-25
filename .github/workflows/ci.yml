@@ -17,30 +17,39 @@ concurrency:
 
 env:
   UV_LINK_MODE: copy
+  # The uv and Bun releases of the generated projects (uv_version and bun_version in
+  # copier.yml; tests/test_render.py keeps them equal).
+  UV_VERSION: "0.13.10"
+  BUN_VERSION: "1.4.4"
 
 jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          version: ${{ env.UV_VERSION }}
           python-version: "3.13"
           enable-cache: true
-      - run: uv sync --all-groups --frozen
+      - run: uv sync --all-groups --locked
       - run: uv run just style yaml python skills-lock agents i18n
 
   render:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0 # Copier renders from the git history (vcs_ref HEAD)
-      - uses: astral-sh/setup-uv@v10.4.0
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
+          version: ${{ env.UV_VERSION }}
           python-version: "3.13"
           enable-cache: true
-      - run: uv sync --all-groups --frozen
+      - run: uv sync --all-groups --locked
       - run: uv run just test
 
   generated:
@@ -61,15 +70,19 @@ jobs:
       POSTGRES_HOST: localhost
       POSTGRES_PASSWORD: postgres
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
-      - uses: astral-sh/setup-uv@v10.4.0
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
+          version: ${{ env.UV_VERSION }}
           python-version: "3.13"
           enable-cache: true
-      - uses: oven-sh/setup-bun@v2
-      - run: uv sync --all-groups --frozen
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: uv sync --all-groups --locked
       - run: uv run just test-generated
 
   security:
@@ -77,31 +90,36 @@ jobs:
     # pinned commits and content digests, content scan before install.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
       - name: Scan the history for secrets
         run: |
           docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1 \
             git /repo --redact --no-banner --exit-code 1
-      - uses: astral-sh/setup-uv@v10.4.0
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
+          version: ${{ env.UV_VERSION }}
           python-version: "3.13"
           enable-cache: true
-      - run: uv sync --all-groups --frozen
+      - run: uv sync --all-groups --locked
       - run: uv run just skills skills-check skills-scan
 
   docs:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          version: ${{ env.UV_VERSION }}
           python-version: "3.13"
           enable-cache: true
-      - run: uv sync --all-groups --frozen
+      - run: uv sync --all-groups --locked
       - run: uv run just docs
-      - uses: actions/upload-pages-artifact@v5
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         if: github.ref == 'refs/heads/main'
         with:
           path: site
@@ -118,4 +136,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v5
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

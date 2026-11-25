@@ -6,7 +6,7 @@
 #
 # Same images, same settings and the same validations as production (ENVIRONMENT=production),
 # with three differences: random secrets generated locally, plain HTTP on localhost, and the
-# ports published directly instead of behind Traefik with TLS. Not a deployment.
+# ports published directly on 127.0.0.1 instead of behind Traefik with TLS. Not a deployment.
 
 services:
 {%- if include_traefik_service %}
@@ -28,8 +28,9 @@ services:
 {%- if enable_oauth %}
       - PUBLIC_API_URL=http://localhost:{{ backend_port }}
 {%- endif %}
+    # Published on the loopback interface only: the rehearsal is not reachable from the network.
     ports:
-      - "{{ backend_port }}:{{ backend_port }}"
+      - "127.0.0.1:{{ backend_port }}:{{ backend_port }}"
 {%- for worker in (["celery_worker", "celery_beat"] if use_celery else []) + (["taskiq_worker", "taskiq_scheduler"] if use_taskiq else []) + (["arq_worker"] if use_arq else []) %}
 
   {{ worker }}:
@@ -57,6 +58,6 @@ services:
       args:
         - VITE_API_URL=http://localhost:{{ backend_port }}
     ports:
-      - "{{ frontend_port }}:80"
+      - "127.0.0.1:{{ frontend_port }}:80"
 {%- endif %}
 {%- endif %}

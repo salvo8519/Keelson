@@ -15,18 +15,20 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v10.2.0
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
-          version: "latest"
+          version: "{{ uv_version }}"
 
       - name: Set up Python
         run: uv python install {{ python_version }}
 
       - name: Install dependencies
-        run: uv sync --directory backend --dev
+        run: uv sync --locked --directory backend --dev
 
       - name: Run ruff check
         run: uv run --directory backend ruff check app tests cli
@@ -69,18 +71,20 @@ jobs:
 {%- endif %}
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v10.2.0
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
-          version: "latest"
+          version: "{{ uv_version }}"
 
       - name: Set up Python
         run: uv python install {{ python_version }}
 
       - name: Install dependencies
-        run: uv sync --directory backend --dev
+        run: uv sync --locked --directory backend --dev
 
       - name: Run tests
         run: uv run --directory backend pytest tests/ -v --cov=app --cov-report=xml
@@ -96,7 +100,7 @@ jobs:
 {%- endif %}
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v7
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           files: ./backend/coverage.xml
           fail_ci_if_error: false
@@ -108,10 +112,14 @@ jobs:
     # suite needs a running stack and is not part of this job.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "{{ bun_version }}"
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -136,42 +144,38 @@ jobs:
     # must be generated from it. See the documentation, Reference > API.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # the target branch, without a token kept for a later fetch
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v10.2.0
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          version: "{{ uv_version }}"
 
       - name: Set up Python
         run: uv python install {{ python_version }}
 
       - name: Install backend dependencies
-        run: uv sync --directory backend
+        run: uv sync --locked --directory backend
 
       - name: The contract matches the code
         run: make openapi-check
 
-      - name: Find the contract of the target branch
-        id: base
-        if: github.event_name == 'pull_request'
-        run: |
-          git fetch --depth=1 origin "${{ '{{' }} github.base_ref {{ '}}' }}"
-          if git cat-file -e "origin/${{ '{{' }} github.base_ref {{ '}}' }}:openapi/openapi.json" 2>/dev/null; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "The target branch has no contract yet: nothing to compare."
-          fi
-
+      # Keelson: the same pinned, checksum-verified oasdiff as the GitLab pipeline. The branch
+      # name goes through the environment, never into the script text.
       - name: No breaking change against the target branch
-        if: steps.base.outputs.exists == 'true'
-        uses: oasdiff/oasdiff-action/breaking@v0
-        with:
-          base: "origin/${{ '{{' }} github.base_ref {{ '}}' }}:openapi/openapi.json"
-          revision: "HEAD:openapi/openapi.json"
-          fail-on: ERR
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ '{{' }} github.base_ref {{ '}}' }}
+        run: sh scripts/openapi-breaking.sh "origin/$BASE_REF"
 {%- if use_frontend %}
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "{{ bun_version }}"
 
       - name: The frontend client is generated from the contract
         working-directory: frontend
@@ -190,16 +194,20 @@ jobs:
     # from the code; the build is strict (broken links fail) and translations must be current.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v10.2.0
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          version: "{{ uv_version }}"
 
       - name: Set up Python
         run: uv python install {{ python_version }}
 
       - name: Install backend dependencies
-        run: uv sync --directory backend
+        run: uv sync --locked --directory backend
 
       - name: Check translations
         run: make docs-check
@@ -209,7 +217,7 @@ jobs:
 
       - name: Upload the site
         if: github.event_name == 'push'
-        uses: actions/upload-pages-artifact@v5
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: site
 
@@ -227,29 +235,26 @@ jobs:
       url: ${{ '{{' }} steps.deployment.outputs.page_url {{ '}}' }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v5
-
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
   security:
     name: Security Scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0 # the secret scan reads the whole history
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v10.2.0
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
-          version: "latest"
+          version: "{{ uv_version }}"
 
       - name: Set up Python
         run: uv python install {{ python_version }}
 
       - name: Install dependencies
-        run: uv sync --directory backend --dev
-
-      - name: Install pip-audit
-        run: uv pip install pip-audit
+        run: uv sync --locked --directory backend --dev
 
       - name: Run pip-audit
         run: uv run pip-audit --require-hashes=false --progress-spinner=off
@@ -270,8 +275,9 @@ jobs:
 {%- if use_frontend %}
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "{{ bun_version }}"
       # Keelson: known vulnerabilities in the frontend dependencies.
       - name: Audit the frontend dependencies
         working-directory: frontend
@@ -283,7 +289,7 @@ jobs:
       # Keelson: a software bill of materials (CycloneDX) for every build of the default branch.
       - name: Software bill of materials
         if: github.event_name == 'push'
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@dfcb83b97731532d72be422cbc51ee64adb6fd56 # v0.24.4
         with:
           path: .
           format: cyclonedx-json
@@ -296,13 +302,15 @@ jobs:
     needs: [lint, test]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Build Docker image
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ./backend
           push: false
@@ -312,7 +320,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: {{ project_slug }}:latest
           format: table

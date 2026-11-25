@@ -7,6 +7,7 @@ The questions Copier asks, with their default. Answers are recorded in `.copier-
 | `project_name` | `my_project` | snake_case: Python package and CLI name |
 | `project_description` | `An enterprise FastAPI service` | One line |
 | `author_name`, `author_email` | `Your Name`, `you@example.com` | |
+| `security_contact` | `author_email`, empty while it is an `example.com` address | Address for vulnerability reports in `SECURITY.md`; empty: private security advisories only |
 | `timezone` | `UTC` | IANA timezone for schedulers and logs |
 | `repository_url` | `https://github.com/your-org/<project>` | HTTPS URL of the repository: documentation site and edit links |
 | `brand_name` | from `project_name` | Product name in the UI and the API reference |

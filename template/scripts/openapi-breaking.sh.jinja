@@ -1,0 +1,30 @@
+#!/usr/bin/env sh
+# Keelson: fail when openapi/openapi.json breaks the contract of a base revision.
+#
+#   scripts/openapi-breaking.sh origin/main
+#
+# Used by both CI providers. oasdiff is downloaded at a pinned release and checked against the
+# checksums published with it before it runs. Needs curl, git, tar and sha256sum.
+set -eu
+
+OASDIFF_VERSION="{{ oasdiff_version }}"
+base="${1:?usage: scripts/openapi-breaking.sh <base revision>}"
+
+if ! git cat-file -e "$base:openapi/openapi.json" 2>/dev/null; then
+    echo "The base revision has no contract yet: nothing to compare."
+    exit 0
+fi
+
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+url="https://github.com/oasdiff/oasdiff/releases/download/v$OASDIFF_VERSION"
+archive="oasdiff_${OASDIFF_VERSION}_linux_amd64.tar.gz"
+(
+    cd "$work"
+    curl -fsSLO "$url/$archive"
+    curl -fsSLO "$url/checksums.txt"
+    grep " $archive\$" checksums.txt | sha256sum --check --strict -
+    tar -xzf "$archive" oasdiff
+)
+git show "$base:openapi/openapi.json" > "$work/base-openapi.json"
+"$work/oasdiff" breaking "$work/base-openapi.json" openapi/openapi.json --fail-on ERR

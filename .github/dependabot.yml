@@ -1,0 +1,27 @@
+# Version updates for the repository's own dependencies: the actions of the pipeline (pinned
+# to commit SHAs), the Python tooling (uv.lock) and the frontend of the template
+# (template/frontend/bun.lock). The template's own pins (action SHAs in .jinja workflows,
+# uv_version, bun_version and oasdiff_version in copier.yml) are not visible to Dependabot:
+# update them by hand, see CONTRIBUTING.md, Pinned versions.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+
+  - package-ecosystem: bun
+    directory: /template/frontend
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
