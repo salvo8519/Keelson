@@ -23,6 +23,8 @@ from app.core.exceptions import (
 from app.core.security import (
     DUMMY_HASH,
 {%- if enable_email %}
+    address_digest,
+    create_email_change_token,
     create_magic_link_token,
     create_password_reset_token,
 {%- endif %}
@@ -58,6 +60,24 @@ from app.services.organization import OrganizationService
 from app.schemas.conversation_share import AdminUserList, AdminUserRead
 
 logger = logging.getLogger(__name__)
+
+
+def _claiming_address(user: User, update_data: dict[str, Any]) -> dict[str, Any]:
+    """Keelstone: the update of an account whose user just proved control of its address.
+
+    A password reset or a sign-in link reaches whoever controls the address. When the address
+    was never confirmed, the account may have been opened or moved onto it by someone else
+    (an unconfirmed change, made before confirmation was required): the external identities
+    of the account are removed with it, so their holder cannot sign in again by single sign-on
+    into the account the owner of the address now uses. The address is confirmed from now on.
+    """
+    claimed = {**update_data, "email_verified": True}
+{%- if enable_oauth %}
+    if not user.email_verified and user.oauth_provider is not None:
+        logger.warning("external_identity_removed", extra={"user_id": str(user.id)})
+        claimed |= {"oauth_provider": None, "oauth_id": None}
+{%- endif %}
+    return claimed
 
 
 def _ending_sessions(update_data: dict[str, Any], *, always: bool = False) -> dict[str, Any]:
@@ -324,7 +344,7 @@ class UserService:
             return await user_repo.update(
                 self.db,
                 db_user=by_email,
-                update_data={"oauth_provider": provider, "oauth_id": provider_id},
+                update_data={"oauth_provider": provider, "oauth_id": provider_id, "email_verified": True},
             )
 
         user = await user_repo.create(
@@ -334,6 +354,8 @@ class UserService:
             full_name=full_name,
             oauth_provider=provider,
             oauth_id=provider_id,
+            # The sign-in accepted the address as verified (app/core/oidc.py).
+            email_verified=True,
         )
 {%- if enable_teams %}
         org_service = OrganizationService(self.db)
@@ -385,6 +407,9 @@ class UserService:
             update_data["hashed_password"] = get_password_hash(update_data.pop("password"))
         if update_data.get("role") is not None:
             update_data["is_app_admin"] = update_data["role"] == UserRole.ADMIN
+        # Keelstone: an address set by an administrator is not confirmed by its owner.
+        if update_data.get("email") not in (None, user.email):
+            update_data["email_verified"] = False
 
         return await user_repo.update(self.db, db_user=user, update_data=_ending_sessions(update_data))
 
@@ -393,15 +418,8 @@ class UserService:
         return await user_repo.update(self.db, db_user=user, update_data=_ending_sessions({}, always=True))
 
     async def update_me(self, user: User, user_in: UserUpdateMe) -> User:
-        """Update the caller's own profile; an email already in use is refused."""
+        """Update the caller's own profile (the address changes through request_email_change)."""
         update_data = user_in.model_dump(exclude_unset=True)
-        new_email = update_data.get("email")
-        if new_email and new_email != user.email:
-            existing = await user_repo.get_by_email(self.db, new_email)
-            if existing:
-                raise AlreadyExistsError(
-                    message="Email already registered", details={"email": new_email}
-                )
         return await user_repo.update(self.db, db_user=user, update_data=update_data)
 
     async def change_password(self, user: User, current_password: str, new_password: str) -> None:
@@ -484,7 +502,9 @@ class UserService:
         await user_repo.update(
             self.db,
             db_user=user,
-            update_data=_ending_sessions({"hashed_password": get_password_hash(new_password)}),
+            update_data=_claiming_address(
+                user, _ending_sessions({"hashed_password": get_password_hash(new_password)})
+            ),
         )
 {%- if enable_session_management and use_jwt %}
         # Revoke any active sessions so a previously-issued refresh token cannot
@@ -531,7 +551,53 @@ class UserService:
         await user_repo.update(
             self.db,
             db_user=user,
-            update_data={"magic_link_epoch": user.magic_link_epoch + 1},
+            update_data=_claiming_address(user, {"magic_link_epoch": user.magic_link_epoch + 1}),
         )
         return user
+
+    async def request_email_change(self, user: User, new_email: str) -> None:
+        """Keelstone: send a confirmation link to ``new_email``; the address does not change yet.
+
+        An address in use by another account is refused, as before; the link is checked again
+        when it is followed.
+        """
+        if new_email == user.email:
+            raise BadRequestError(message="This is already the address of the account")
+        # The caller's session sees the accounts of their organizations only; an address is
+        # taken by any account, so it is looked up by a declared system read.
+        async with system_session("email change: address in use") as system_db:
+            taken = await user_repo.get_by_email(system_db, new_email) is not None
+        if taken:
+            raise AlreadyExistsError(message="Email already registered", details={"email": new_email})
+        token = create_email_change_token(user, new_email)
+        try:
+            await get_email_service().send_email_change(
+                to=new_email,
+                name=user.full_name or new_email,
+                confirm_url=f"{settings.FRONTEND_URL.rstrip('/')}/confirm-email?token={token}",
+                language=user.locale,
+            )
+        except Exception:
+            logger.exception("email_change_email_failed", extra={"user_id": str(user.id)})
+
+    async def confirm_email_change(self, token: str) -> User:
+        """Keelstone: make the address of a change link the account's address, once."""
+        payload = verify_special_token(token, expected_type="email_change") or {}
+        try:
+            user_id = UUID(str(payload["sub"]))
+            new_email = str(payload["email"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise AuthenticationError(message="Confirmation link is invalid or has expired") from exc
+        user = await self.get_by_id(user_id)
+        if not user.is_active:
+            raise AuthenticationError(message="Account is disabled")
+        # Single use and bound to the session version: the address it replaces must still be
+        # in force, and a sign-out from every device voids outstanding links.
+        if payload.get("ver") != user.token_epoch or payload.get("cur") != address_digest(user.email):
+            raise AuthenticationError(message="Confirmation link is invalid or has expired")
+        if await user_repo.get_by_email(self.db, new_email) is not None:
+            raise AlreadyExistsError(message="Email already registered", details={"email": new_email})
+        return await user_repo.update(
+            self.db, db_user=user, update_data={"email": new_email, "email_verified": True}
+        )
 {%- endif %}

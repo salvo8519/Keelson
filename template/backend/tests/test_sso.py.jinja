@@ -324,6 +324,7 @@ async def test_an_account_without_password_or_identity_is_linked_by_a_verified_a
     assert repo.update.call_args.kwargs["update_data"] == {
         "oauth_provider": "entra",
         "oauth_id": "oid-1",
+        "email_verified": True,
     }
 
 

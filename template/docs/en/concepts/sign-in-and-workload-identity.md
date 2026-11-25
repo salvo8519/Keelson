@@ -17,6 +17,26 @@ and its owner receives an e-mail with links to sign in and to reset the password
 afterwards with the password just chosen still tells a known address from a new one: closing
 that needs e-mail verification before the first sign-in.
 
+## E-mail addresses
+
+An account records whether its user proved control of its address (`email_verified`): by
+following a link sent to it (a confirmation, a password reset, a sign-in link) or by signing in
+with a provider that verified it. A user changes the address in two steps:
+`POST /api/v1/users/me/email` sends a confirmation link to the new address, and the address
+changes only when the link is followed (`POST /api/v1/auth/email/confirm`). `PATCH
+/api/v1/users/me` does not change it. The link is valid for one hour and once: it names the
+address it replaces, so it stops working when the address changes, and it is void after a
+password change or a sign-out from every device. An address already used by another account
+is refused when the change is requested and again when it is confirmed. An address set by a
+platform administrator is not confirmed.
+
+Single sign-on relies on this: an account is never left on an address its user does not
+control, waiting for the owner of that address to use it. For accounts whose address was
+never confirmed, a password reset or a sign-in link to the address also removes the external
+identity of the account, so its holder cannot sign in to it again. Accounts created before
+this check start unconfirmed: a user who signs in through a provider and resets the password
+signs in with the password afterwards.
+
 ## The browser session
 
 In the browser, the access and refresh tokens are HttpOnly cookies set by the API: no script
@@ -54,12 +74,29 @@ session issued before, by:
 - a deactivation (a reactivated account does not get its old sessions back);
 - `POST /api/v1/auth/logout-all`, signing out of every device.
 
+A sign-in starts a session, with an id (`sid`) that every refresh token of the session
+carries. A refresh rotates the token: the client receives a new refresh token, and the one it
+presented is recorded in Redis as exchanged. A token exchanged once and presented again means
+that someone else holds a copy, so the whole session ends (reuse detection, RFC 9700, section
+4.14.2) and every token of it is refused, the latest one included. Tabs of one browser share the
+refresh cookie and may renew together: a token presented again within 10 seconds of its
+exchange (`REUSE_GRACE`) is renewed once more, in the same session. Refresh tokens issued before
+sessions had an id are refused: their users sign in again once.
+
 Signing out (`POST /api/v1/auth/session/logout` in the browser, `POST /api/v1/auth/logout`
-with the refresh token for programs) ends that session only: the id of its refresh token is
-kept in Redis until the token would have expired, and a refresh with it is refused. The access
-token of that session is not checked against the list: it expires on its own, which is why
-`ACCESS_TOKEN_EXPIRE_MINUTES` may not exceed 60 in staging and production. A WebSocket already
-open is not closed when its session ends; the next handshake is refused.
+with the refresh token for programs) ends that session only, with every refresh token it
+rotated through: the session id is kept in Redis for the lifetime of a refresh token, and a
+refresh in that session is refused. A token copied before a rotation therefore ends with the
+session. The access tokens of the session are not checked against the list: they expire on
+their own, which is why `ACCESS_TOKEN_EXPIRE_MINUTES` may not exceed 60 in staging and
+production. When Redis does not answer, a refresh fails rather than renew a session that may
+have ended.
+
+A WebSocket checks its session again before every turn of a chat: a connection whose session
+version changed since the handshake, or whose user was deactivated, is closed (code 4001).
+
+The session version only grows: the database refuses an update that lowers `token_epoch` (a
+trigger, `app/db/tenancy.py`), so no write can bring back the sessions it ended.
 
 Refreshing a session is limited per user (20 every 15 minutes by default, category `refresh`),
 not per address: users behind one network address do not share a limit with each other or with
@@ -67,8 +104,16 @@ failed sign-ins. An invalid refresh token counts against the per-address limit o
 routes.
 
 An access token issued by a platform administrator to act as a user (impersonation) names the
-administrator in the `act` claim. While it is used, every log record carries
-`acting_admin_id`, and every audit entry records it in its details.
+administrator and their session version in the `act` claim. While it is used, every log record
+carries `acting_admin_id`, and every audit entry records it in its details. Every request, every
+WebSocket handshake and every turn of a chat checks the administrator as well: the token stops
+working when the administrator loses the platform role, is deactivated or signs out of every
+device.
+
+Requests authenticated by a cookie are accepted from the origins in `CORS_ORIGINS` only. When
+the browser sends an `Origin` header, it decides alone: `Origin: null` (a sandboxed frame, a
+redirect across sites) and an empty value are refused, whatever the `Referer` says. The
+`Referer` is read only when no `Origin` was sent.
 
 ## Single sign-on
 

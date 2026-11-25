@@ -278,7 +278,7 @@ BillingSvc = Annotated[BillingService, Depends(get_billing_service)]
 {%- if use_jwt %}
 from app.core.exceptions import AuthenticationError, AuthorizationError, NotFoundError
 from app.core.logging import acting_admin_var
-from app.core.security import ACCESS, read_session_token
+from app.core.security import ACCESS, SessionClaims, read_session_token
 from app.db.models.user import User, UserRole
 from app.core.session_cookies import ACCESS_COOKIE, require_trusted_origin, trusted_origin
 
@@ -366,6 +366,9 @@ async def get_current_user(
     if not claims.is_current_for(user):
         raise AuthenticationError(message="Invalid or expired token")
     if claims.actor_id:
+        # Keelstone: an impersonation lasts as long as its administrator's rights and sessions.
+        if not await actor_still_current(claims):
+            raise AuthenticationError(message="Invalid or expired token")
         acting_admin_var.set(claims.actor_id)
         request.state.acting_admin_id = claims.actor_id
 
@@ -728,7 +731,11 @@ async def get_current_user_ws(
         if not claims.is_current_for(user):
             raise WebSocketException(code=4001, reason="Invalid or expired token")
         if claims.actor_id:
+            if not await actor_still_current(claims):
+                raise WebSocketException(code=4001, reason="Invalid or expired token")
             acting_admin_var.set(claims.actor_id)
+        # Keelstone: the route checks the session again before every turn (session_still_current).
+        websocket.state.session_claims = claims
 
         # Eagerly load all columns, then detach from session to avoid
         # "instance not bound to a Session" errors after the context manager exits
@@ -742,11 +749,15 @@ CurrentUserWS = Annotated[User, Depends(get_current_user_ws)]
 {%- if not use_delegated_auth %}
 
 
-async def session_still_current(user: User, version: int) -> bool:
+async def session_still_current(
+    user: User, version: int, claims: SessionClaims | None = None
+) -> bool:
     """Keelstone: whether the session a WebSocket was opened with is still the user's.
 
     A connection outlives its handshake: a password change, a deactivation or "sign out
-    everywhere" must also stop the turns of chats already open.
+    everywhere" must also stop the turns of chats already open. ``claims`` are those of the
+    handshake: when they name an administrator (an impersonation), the administrator must
+    still be current too (``actor_still_current``).
     """
     from app.repositories import user_repo
 
@@ -754,7 +765,34 @@ async def session_still_current(user: User, version: int) -> bool:
     # not depend on the connection's principal reaching this task.
     async with system_session("websocket: session still current") as db:
         current = await user_repo.get_by_id(db, user.id)
-    return current is not None and bool(current.is_active) and current.token_epoch == version
+    if current is None or not current.is_active or current.token_epoch != version:
+        return False
+    return claims is None or not claims.actor_id or await actor_still_current(claims)
+
+
+async def actor_still_current(claims: SessionClaims) -> bool:
+    """Keelstone: whether the administrator named by an impersonation token may still act.
+
+    The administrator must exist, be active, still be a platform administrator (the admin role
+    and the is_app_admin flag, ``User.has_role``) and be in the session version the token was
+    issued in: a demotion, a deactivation or a sign-out from every device ends the
+    impersonations they started.
+    """
+    from app.repositories import user_repo
+
+    try:
+        actor_id = UUID(str(claims.actor_id))
+    except ValueError:
+        return False
+    # The administrator need not share an organization with the user: a declared system read.
+    async with system_session("impersonation: administrator still current") as db:
+        actor = await user_repo.get_by_id(db, actor_id)
+    return (
+        actor is not None
+        and bool(actor.is_active)
+        and actor.has_role(UserRole.ADMIN)
+        and actor.token_epoch == claims.actor_version
+    )
 {%- endif %}
 {%- endif %}
 

@@ -23,6 +23,16 @@ from app.core.session_cookies import ACCESS_COOKIE, set_session_cookies
 from app.core.user_content import avatar_response
 from app.db.models.user import UserRole
 from app.schemas.user import UpdatePassword, UserCreate, UserRead, UserUpdate, UserUpdateMe
+{%- if enable_email %}
+from app.schemas.user import EmailChangeAccepted, EmailChangeRequest
+{%- endif %}
+{%- if enable_email and enable_rate_limiting %}
+from app.services.rate_limit import RateLimitCategory, make_anonymous_rate_limit_dep
+
+# Keelstone: a change request sends an e-mail to an address the caller chooses; limited like the
+# other routes that send one (per address, the sign-in rule).
+EmailRateLimit = make_anonymous_rate_limit_dep(RateLimitCategory.AUTH)
+{%- endif %}
 
 router = APIRouter()
 
@@ -45,9 +55,35 @@ async def update_current_user(
 
     \f
     Keelstone: only profile fields. Upstream accepted ``UserUpdate`` here, so a user could set a
-    new password without the current one and change their own account status.
+    new password without the current one, change their own account status and move the
+    account onto an address they do not control (``POST /users/me/email`` confirms it first).
     """
     return await user_service.update_me(current_user, user_in)
+
+
+{%- if enable_email %}
+
+
+@router.post(
+    "/me/email",
+    response_model=EmailChangeAccepted,
+    status_code=status.HTTP_202_ACCEPTED,
+{%- if enable_rate_limiting %}
+    dependencies=[EmailRateLimit],
+{%- endif %}
+)
+async def request_email_change(
+    body: EmailChangeRequest,
+    current_user: CurrentUser,
+    user_service: UserSvc,
+) -> Any:
+    """Change the current user's e-mail address: a confirmation link is sent to the new one.
+
+    The address changes when the link is followed (``POST /auth/email/confirm``).
+    """
+    await user_service.request_email_change(current_user, body.email)
+    return EmailChangeAccepted()
+{%- endif %}
 
 
 @router.patch("/me/password", status_code=status.HTTP_204_NO_CONTENT, response_model=None)

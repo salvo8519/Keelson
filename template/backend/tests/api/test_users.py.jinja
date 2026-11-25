@@ -165,12 +165,12 @@ async def test_update_current_user(auth_client: AsyncClient, mock_user_service: 
 @pytest.mark.anyio
 @pytest.mark.parametrize(
     "field",
-    [{"password": "new-password-123"}, {"is_active": False}, {"role": "admin"}],
+    [{"password": "new-password-123"}, {"is_active": False}, {"role": "admin"}, {"email": "new@example.com"}],
 )
 async def test_update_current_user_ignores_protected_fields(
     auth_client: AsyncClient, mock_user_service: MagicMock, field: dict
 ):
-    """Keelstone: password, status and role cannot change through PATCH /users/me."""
+    """Keelstone: password, status, role and address cannot change through PATCH /users/me."""
     response = await auth_client.patch(f"{settings.API_V1_STR}/users/me", json=field)
     assert response.status_code == 200
     mock_user_service.update.assert_not_called()

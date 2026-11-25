@@ -35,7 +35,7 @@ def test_turn_options_are_those_the_deployment_offers(frame: dict[str, Any], pro
 
 
 def _session(*, current: bool):
-    async def still_current(user: Any, version: int) -> bool:
+    async def still_current(user: Any, version: int, claims: Any = None) -> bool:
         return current
 
     return still_current

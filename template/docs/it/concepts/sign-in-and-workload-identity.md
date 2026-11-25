@@ -1,4 +1,4 @@
-<!-- i18n source: concepts/sign-in-and-workload-identity.md source_hash: e75708bcb48c -->
+<!-- i18n source: concepts/sign-in-and-workload-identity.md source_hash: 2e67893978ad -->
 # Accesso e identità dei workload
 
 Le persone accedono con una password o tramite il provider di identità della propria azienda.
@@ -19,6 +19,26 @@ indirizzo nuovo e per uno che ha già un account. Per un indirizzo noto non vien
 e il suo titolare riceve un'e-mail con i link per accedere e per reimpostare la password. Un
 accesso successivo con la password appena scelta distingue ancora un indirizzo noto da uno
 nuovo: per chiudere anche questo serve la verifica dell'e-mail prima del primo accesso.
+
+## Indirizzi e-mail
+
+Un account registra se il suo utente ha dimostrato di controllare il proprio indirizzo
+(`email_verified`): seguendo un link inviato a quell'indirizzo (una conferma, un reset della
+password, un link di accesso) oppure accedendo con un provider che lo ha verificato. Un utente
+cambia l'indirizzo in due passi: `POST /api/v1/users/me/email` invia un link di conferma al
+nuovo indirizzo, e l'indirizzo cambia solo quando il link viene seguito
+(`POST /api/v1/auth/email/confirm`). `PATCH /api/v1/users/me` non lo cambia. Il link vale
+un'ora e una sola volta: indica l'indirizzo che sostituisce, quindi smette di funzionare quando
+l'indirizzo cambia, e decade dopo un cambio di password o un'uscita da tutti i dispositivi. Un
+indirizzo già usato da un altro account viene rifiutato quando si chiede il cambio e di nuovo
+alla conferma. Un indirizzo impostato da un amministratore della piattaforma non è confermato.
+
+Il single sign-on si basa su questo: un account non resta mai su un indirizzo che il suo utente
+non controlla, in attesa che il titolare di quell'indirizzo lo usi. Per gli account il cui
+indirizzo non è mai stato confermato, un reset della password o un link di accesso inviato
+all'indirizzo rimuove anche l'identità esterna dell'account, così chi la possiede non può più
+accedervi. Gli account creati prima di questo controllo partono non confermati: un utente che
+accede tramite un provider e reimposta la password accede poi con la password.
 
 ## La sessione nel browser
 
@@ -59,12 +79,33 @@ incrementata, chiudendo ogni sessione emessa prima, da:
 - una disattivazione (un account riattivato non riottiene le vecchie sessioni);
 - `POST /api/v1/auth/logout-all`, l'uscita da tutti i dispositivi.
 
+Un accesso apre una sessione, con un id (`sid`) che ogni token di refresh della sessione porta
+con sé. Un refresh ruota il token: il client riceve un nuovo token di refresh, e quello
+presentato viene registrato in Redis come già scambiato. Un token scambiato una volta e
+presentato di nuovo significa che qualcun altro ne ha una copia, quindi l'intera sessione si
+chiude (rilevamento del riuso, RFC 9700, sezione 4.14.2) e ogni suo token viene rifiutato,
+compreso l'ultimo. Le schede di uno stesso browser condividono il cookie di refresh e possono
+rinnovare insieme: un token presentato di nuovo entro 10 secondi dal suo scambio
+(`REUSE_GRACE`) viene rinnovato ancora una volta, nella stessa sessione. I token di refresh
+emessi prima che le sessioni avessero un id vengono rifiutati: i loro utenti accedono di nuovo
+una volta.
+
 L'uscita (`POST /api/v1/auth/session/logout` nel browser, `POST /api/v1/auth/logout` con il
-token di refresh per i programmi) chiude solo quella sessione: l'id del suo token di refresh
-resta in Redis fino alla scadenza del token, e un refresh con esso viene rifiutato. Il token di
-accesso di quella sessione non è confrontato con l'elenco: scade da solo, ed è per questo che
-`ACCESS_TOKEN_EXPIRE_MINUTES` non può superare 60 in staging e in produzione. Una WebSocket già
-aperta non viene chiusa quando la sua sessione termina; l'apertura successiva viene rifiutata.
+token di refresh per i programmi) chiude solo quella sessione, con tutti i token di refresh per
+cui è passata con le rotazioni: l'id della sessione resta in Redis per la durata di un token di
+refresh, e un refresh in quella sessione viene rifiutato. Un token copiato prima di una
+rotazione si chiude quindi con la sessione. I token di accesso della sessione non sono
+confrontati con l'elenco: scadono da soli, ed è per questo che `ACCESS_TOKEN_EXPIRE_MINUTES` non
+può superare 60 in staging e in produzione. Quando Redis non risponde, un refresh fallisce
+invece di rinnovare una sessione che potrebbe essere chiusa.
+
+Una WebSocket verifica di nuovo la sua sessione prima di ogni turno di una chat: una connessione
+la cui versione di sessione è cambiata dall'apertura, o il cui utente è stato disattivato, viene
+chiusa (codice 4001).
+
+La versione di sessione cresce soltanto: il database rifiuta un aggiornamento che abbassa
+`token_epoch` (un trigger, `app/db/tenancy.py`), così nessuna scrittura può riportare in vita le
+sessioni che ha chiuso.
 
 Il rinnovo di una sessione è limitato per utente (20 ogni 15 minuti per impostazione
 predefinita, categoria `refresh`), non per indirizzo: gli utenti dietro uno stesso indirizzo di
@@ -72,8 +113,16 @@ rete non condividono un limite tra loro né con gli accessi falliti. Un token di
 valido conta nel limite per indirizzo delle route di accesso.
 
 Un token di accesso emesso da un amministratore della piattaforma per agire come un utente
-(impersonazione) indica l'amministratore nel claim `act`. Mentre viene usato, ogni record di
-log riporta `acting_admin_id` e ogni voce del registro di audit lo registra nei dettagli.
+(impersonazione) indica l'amministratore e la sua versione di sessione nel claim `act`. Mentre
+viene usato, ogni record di log riporta `acting_admin_id` e ogni voce del registro di audit lo
+registra nei dettagli. Ogni richiesta, ogni apertura di WebSocket e ogni turno di una chat
+verificano anche l'amministratore: il token smette di funzionare quando l'amministratore perde
+il ruolo di piattaforma, viene disattivato o esce da tutti i dispositivi.
+
+Le richieste autenticate da un cookie sono accettate solo dalle origini in `CORS_ORIGINS`.
+Quando il browser invia l'intestazione `Origin`, decide da sola: `Origin: null` (un frame in
+sandbox, un redirect tra siti) e un valore vuoto vengono rifiutati, qualunque cosa dica il
+`Referer`. Il `Referer` viene letto solo quando non è stata inviata alcuna `Origin`.
 
 ## Single sign-on
 

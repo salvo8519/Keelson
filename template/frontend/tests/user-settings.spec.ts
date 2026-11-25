@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test"
 import { firstSuperuser, firstSuperuserPassword } from "./config.ts"
+import { waitForEmailHtml } from "./utils/mailpit"
 import { createUser } from "./utils/privateApi.ts"
 import { randomEmail, randomPassword } from "./utils/random"
 import { logInUser, logOutUser } from "./utils/user"
@@ -65,7 +66,7 @@ test.describe("Edit user profile", () => {
 test.describe("Edit user email", () => {
   test.use({ storageState: { cookies: [], origins: [] } })
 
-  test("Edit user email with a valid email", async ({ page }) => {
+  test("Edit user email with a valid email", async ({ page, request }) => {
     const email = randomEmail()
     const password = randomPassword()
     const updatedEmail = randomEmail()
@@ -79,7 +80,25 @@ test.describe("Edit user email", () => {
     await page.getByLabel("Email").fill(updatedEmail)
     await page.getByRole("button", { name: "Save" }).click()
 
-    await expect(page.getByText("User updated successfully")).toBeVisible()
+    // The address changes only once the link sent to it is followed.
+    await expect(
+      page.getByText("Check the new address for a confirmation link"),
+    ).toBeVisible()
+    await expect(
+      page.locator("form").getByText(email, { exact: true }),
+    ).toBeVisible()
+
+    const emailHtml = await waitForEmailHtml({
+      request,
+      query: `to:${updatedEmail}`,
+    })
+    const confirmUrl = emailHtml.match(/\/confirm-email\?token=[^"]+/)?.[0]
+    expect(confirmUrl).toBeTruthy()
+    await page.goto(confirmUrl!)
+    await page.getByRole("button", { name: "Confirm email address" }).click()
+    await expect(page.getByText("Email address confirmed")).toBeVisible()
+
+    await page.goto("/settings")
     await expect(
       page.locator("form").getByText(updatedEmail, { exact: true }),
     ).toBeVisible()

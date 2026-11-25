@@ -37,13 +37,15 @@ These are defined in `app/api/deps.py` and used throughout the route layer:
 | `/auth/login` | POST | Y | Y | Y | Returns JWT tokens |
 | `/auth/register` | POST | Y | Y | Y | Creates new user account |
 | `/auth/refresh` | POST | Y | Y | -- | Requires valid refresh token |
+| `/auth/email/confirm` | POST | Y | Y | Y | Confirms a new e-mail address with the token of the link sent to it |
 
 ### Users
 
 | Endpoint | Method | Admin | User | Notes |
 |----------|--------|-------|------|-------|
 | `/users/me` | GET | Y | Y | Own profile |
-| `/users/me` | PATCH | Y | Y | Own profile; non-admins cannot change role |
+| `/users/me` | PATCH | Y | Y | Own profile fields; not the password, role, status or e-mail address |
+| `/users/me/email` | POST | Y | Y | Sends a confirmation link to a new address; the address changes once it is confirmed |
 | `/users/me/avatar` | POST | Y | Y | Upload own avatar image |
 | `/users/avatar/{user_id}` | GET | Y | Y | Public avatar access |
 | `/users` | GET | Y | -- | List all users (admin only) |

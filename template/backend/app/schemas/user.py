@@ -96,11 +96,12 @@ class UserUpdate(BaseSchema):
 class UserUpdateMe(BaseSchema):
     """Fields a user may change on their own profile (Keelstone, from the official template).
 
-    Password, role and account status are excluded: the password changes through
-    ``UpdatePassword``, which requires the current one; role and status are for administrators.
+    Password, role, account status and e-mail address are excluded: the password changes
+    through ``UpdatePassword``, which requires the current one; the address through
+    ``EmailChangeRequest``, confirmed by a link sent to it; role and status are for
+    administrators.
     """
 
-    email: EmailStr | None = Field(default=None, max_length=255)
     full_name: str | None = Field(default=None, max_length=255)
     onboarding_completed_at: datetime | None = Field(
         default=None,
@@ -110,15 +111,27 @@ class UserUpdateMe(BaseSchema):
         default=None, description="Preferred language, one of the supported languages."
     )
 
-    @field_validator("email")
-    @classmethod
-    def normalize_email(cls, v: str | None) -> str | None:
-        return v.lower() if v is not None else None
-
     @field_validator("locale")
     @classmethod
     def supported_locale(cls, v: str | None) -> str | None:
         return _supported_locale(v)
+
+
+class EmailChangeRequest(BaseSchema):
+    """Keelstone: a new e-mail address for the caller's account, pending until confirmed."""
+
+    email: EmailStr = Field(max_length=255)
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, v: str) -> str:
+        return v.lower()
+
+
+class EmailChangeAccepted(BaseSchema):
+    """The answer to an e-mail change request: nothing changes until the link is followed."""
+
+    message: str = "Check the new address for a confirmation link. The address changes once it is confirmed."
 
 
 class UpdatePassword(BaseSchema):

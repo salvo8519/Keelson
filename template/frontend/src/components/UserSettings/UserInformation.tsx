@@ -49,11 +49,31 @@ const UserInformation = () => {
     setEditMode(!editMode)
   }
 
+  // The profile fields change at once; a new email address only once the link sent to it is
+  // followed (/confirm-email), so the form shows the address in force until then.
   const mutation = useMutation({
-    mutationFn: (data: UserUpdateMe) =>
-      UsersService.updateCurrentUser({ body: data }),
-    onSuccess: () => {
-      showSuccessToast(t("User updated successfully"))
+    mutationFn: async ({
+      profile,
+      email,
+    }: {
+      profile: UserUpdateMe
+      email?: string
+    }) => {
+      if (Object.keys(profile).length > 0) {
+        await UsersService.updateCurrentUser({ body: profile })
+      }
+      if (email) {
+        await UsersService.requestEmailChange({ body: { email } })
+      }
+      return { emailRequested: !!email }
+    },
+    onSuccess: ({ emailRequested }) => {
+      showSuccessToast(
+        emailRequested
+          ? t("Check the new address for a confirmation link")
+          : t("User updated successfully"),
+      )
+      form.reset({ ...form.getValues(), email: currentUser?.email })
       toggleEditMode()
     },
     onError: handleError.bind(showErrorToast),
@@ -63,17 +83,15 @@ const UserInformation = () => {
   })
 
   const onSubmit = (data: FormData) => {
-    const updateData: UserUpdateMe = {}
+    const profile: UserUpdateMe = {}
 
     // only include fields that have changed
     if (data.full_name !== currentUser?.full_name) {
-      updateData.full_name = data.full_name
+      profile.full_name = data.full_name
     }
-    if (data.email !== currentUser?.email) {
-      updateData.email = data.email
-    }
+    const email = data.email !== currentUser?.email ? data.email : undefined
 
-    mutation.mutate(updateData)
+    mutation.mutate({ profile, email })
   }
 
   const onCancel = () => {

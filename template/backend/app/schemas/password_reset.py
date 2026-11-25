@@ -42,3 +42,9 @@ class MagicLinkVerifyRequest(BaseSchema):
     """Step 2 — user clicked email link, exchange token for session."""
 
     token: str = Field(..., min_length=10)
+
+
+class EmailChangeConfirm(BaseSchema):
+    """Keelstone: the token of the link sent to a new e-mail address."""
+
+    token: str = Field(..., min_length=10)

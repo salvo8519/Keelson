@@ -114,6 +114,9 @@ msgstr "La collezione appartiene già a una knowledge base"
 msgid "Collection not found"
 msgstr "Collezione non trovata"
 
+msgid "Confirmation link is invalid or has expired"
+msgstr "Il link di conferma non è valido o è scaduto"
+
 msgid "Conflict"
 msgstr "Conflitto"
 
@@ -414,6 +417,9 @@ msgstr "Questo documento non conserva il file originale: sincronizza di nuovo la
 
 msgid "This invitation was sent to a different email address."
 msgstr "Questo invito è stato inviato a un altro indirizzo email."
+
+msgid "This is already the address of the account"
+msgstr "Questo è già l'indirizzo dell'account"
 
 msgid "This key has already been rotated"
 msgstr "Questa chiave è già stata ruotata"

@@ -77,9 +77,15 @@ def _origin(value: str | None) -> str | None:
 
 
 def trusted_origin(origin: str | None, referer: str | None = None) -> bool:
-    """The request comes from one of the frontends allowed by CORS_ORIGINS."""
-    allowed = {_origin(entry) for entry in settings.CORS_ORIGINS}
-    return (_origin(origin) or _origin(referer)) in allowed - {None}
+    """The request comes from one of the frontends allowed by CORS_ORIGINS.
+
+    A present Origin header decides alone, "null" (an opaque origin: a sandboxed frame, a
+    redirect across sites) and an empty value included; the Referer is read only when the
+    browser sent no Origin, never as a second chance for a refused one.
+    """
+    allowed = {_origin(entry) for entry in settings.CORS_ORIGINS} - {None}
+    source = origin if origin is not None else referer
+    return _origin(source) in allowed
 
 
 def require_trusted_origin(request: Request) -> None:

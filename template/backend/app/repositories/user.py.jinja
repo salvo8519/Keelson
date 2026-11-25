@@ -71,6 +71,7 @@ async def create(
     is_active: bool = True,
     role: str = "user",
     is_app_admin: bool = False,
+    email_verified: bool = False,
 {%- if enable_oauth %}
     oauth_provider: str | None = None,
     oauth_id: str | None = None,
@@ -90,6 +91,7 @@ async def create(
         is_active=is_active,
         role=role,
         is_app_admin=is_app_admin,
+        email_verified=email_verified,
 {%- if enable_oauth %}
         oauth_provider=oauth_provider,
         oauth_id=oauth_id,

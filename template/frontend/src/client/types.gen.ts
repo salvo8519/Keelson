@@ -898,6 +898,42 @@ export type DemoConversationSummary = {
 };
 
 /**
+ * EmailChangeAccepted
+ *
+ * The answer to an e-mail change request: nothing changes until the link is followed.
+ */
+export type EmailChangeAccepted = {
+    /**
+     * Message
+     */
+    message?: string;
+};
+
+/**
+ * EmailChangeConfirm
+ *
+ * Keelstone: the token of the link sent to a new e-mail address.
+ */
+export type EmailChangeConfirm = {
+    /**
+     * Token
+     */
+    token: string;
+};
+
+/**
+ * EmailChangeRequest
+ *
+ * Keelstone: a new e-mail address for the caller's account, pending until confirmed.
+ */
+export type EmailChangeRequest = {
+    /**
+     * Email
+     */
+    email: string;
+};
+
+/**
  * FileInfo
  *
  * Full file metadata.
@@ -2941,14 +2977,12 @@ export type UserUpdate = {
  *
  * Fields a user may change on their own profile (Keelstone, from the official template).
  *
- * Password, role and account status are excluded: the password changes through
- * ``UpdatePassword``, which requires the current one; role and status are for administrators.
+ * Password, role, account status and e-mail address are excluded: the password changes
+ * through ``UpdatePassword``, which requires the current one; the address through
+ * ``EmailChangeRequest``, confirmed by a link sent to it; role and status are for
+ * administrators.
  */
 export type UserUpdateMe = {
-    /**
-     * Email
-     */
-    email?: string | null;
     /**
      * Full Name
      */
@@ -3305,6 +3339,31 @@ export type authConfirmPasswordResetResponses = {
 
 export type authConfirmPasswordResetResponse = authConfirmPasswordResetResponses[keyof authConfirmPasswordResetResponses];
 
+export type authConfirmEmailChangeData = {
+    body: EmailChangeConfirm;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/email/confirm';
+};
+
+export type authConfirmEmailChangeErrors = {
+    /**
+     * Validation Error
+     */
+    422: HTTPValidationError;
+};
+
+export type authConfirmEmailChangeError = authConfirmEmailChangeErrors[keyof authConfirmEmailChangeErrors];
+
+export type authConfirmEmailChangeResponses = {
+    /**
+     * Successful Response
+     */
+    200: UserRead;
+};
+
+export type authConfirmEmailChangeResponse = authConfirmEmailChangeResponses[keyof authConfirmEmailChangeResponses];
+
 export type authRequestMagicLinkData = {
     body: MagicLinkRequest;
     path?: never;
@@ -3411,6 +3470,31 @@ export type usersUpdateCurrentUserResponses = {
 };
 
 export type usersUpdateCurrentUserResponse = usersUpdateCurrentUserResponses[keyof usersUpdateCurrentUserResponses];
+
+export type usersRequestEmailChangeData = {
+    body: EmailChangeRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/users/me/email';
+};
+
+export type usersRequestEmailChangeErrors = {
+    /**
+     * Validation Error
+     */
+    422: HTTPValidationError;
+};
+
+export type usersRequestEmailChangeError = usersRequestEmailChangeErrors[keyof usersRequestEmailChangeErrors];
+
+export type usersRequestEmailChangeResponses = {
+    /**
+     * Successful Response
+     */
+    202: EmailChangeAccepted;
+};
+
+export type usersRequestEmailChangeResponse = usersRequestEmailChangeResponses[keyof usersRequestEmailChangeResponses];
 
 export type usersUpdateCurrentUserPasswordData = {
     body: UpdatePassword;

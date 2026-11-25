@@ -1,0 +1,38 @@
+{%- if enable_teams and use_postgresql %}
+"""confirmed e-mail addresses (Keelstone)
+
+Revision ID: k0010_email_verified
+Revises: k0009_session_version_grows
+Create Date: 2026-11-25T00:00:00+00:00
+
+Adds users.email_verified: the user proved control of the address in force (a confirmation
+link, a password reset or sign-in link, a provider that verified it). Existing accounts start
+unconfirmed: their next password reset or sign-in link confirms the address, and removes the
+external identities of an account whose address was never confirmed (app/services/user.py).
+Row level security is applied again to users: the application login may change neither the
+address nor this column (FROZEN_COLUMNS).
+"""
+
+import sqlalchemy as sa
+from alembic import op
+
+from app.db.tenancy import segregation_statements
+
+revision = "k0010_email_verified"
+down_revision = "k0009_session_version_grows"
+branch_labels = None
+depends_on = None
+
+
+def upgrade() -> None:
+    op.add_column(
+        "users", sa.Column("email_verified", sa.Boolean(), nullable=False, server_default=sa.false())
+    )
+    op.execute("SET LOCAL check_function_bodies = off")
+    for statement in segregation_statements({"users"}):
+        op.execute(statement)
+
+
+def downgrade() -> None:
+    op.drop_column("users", "email_verified")
+{%- endif %}

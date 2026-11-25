@@ -225,7 +225,7 @@ async def test_an_impersonation_token_names_the_administrator(client: AsyncClien
     assert response.status_code == 200, response.text
     claims = jwt.decode(response.json()["access_token"], options={"verify_signature": False})
     assert claims["sub"] == str(user.id)
-    assert claims["act"] == {"sub": str(admin.id)}
+    assert claims["act"] == {"sub": str(admin.id), "ver": admin.token_epoch}
 
 
 async def test_actions_and_logs_under_impersonation_name_the_administrator(
@@ -235,8 +235,9 @@ async def test_actions_and_logs_under_impersonation_name_the_administrator(
     from app.core.logging import ContextFilter
     from app.core.security import create_access_token
 
-    admin_id = uuid4()
-    token = create_access_token(str(user.id), version=user.token_epoch, actor=admin_id)
+    admin = _user(email="root@example.com", role="admin", is_app_admin=True)
+    admin_id = admin.id
+    token = create_access_token(str(user.id), version=user.token_epoch, actor=admin)
     seen: dict[str, object] = {}
 
     @app.get("/_test/impersonation")
@@ -250,9 +251,10 @@ async def test_actions_and_logs_under_impersonation_name_the_administrator(
         return {}
 
     try:
-        response = await client.get(
-            "/_test/impersonation", headers={"Authorization": f"Bearer {token}"}
-        )
+        with patch.object(deps, "actor_still_current", AsyncMock(return_value=True)):
+            response = await client.get(
+                "/_test/impersonation", headers={"Authorization": f"Bearer {token}"}
+            )
     finally:
         app.router.routes.pop()
 
@@ -296,3 +298,55 @@ async def test_registering_a_known_address_tells_its_owner_and_creates_nothing()
     create.assert_not_awaited()
     email.send_account_exists.assert_awaited_once()
     assert email.send_account_exists.await_args.kwargs["language"] == "it"
+
+
+# --- Refresh token rotation (app/core/revoked_tokens.py) ----------------------------------
+
+
+def _refresh_claims(session_id: str | None = None):
+    from app.core.security import REFRESH, create_refresh_token, read_session_token
+
+    claims = read_session_token(create_refresh_token(uuid4(), version=0, session_id=session_id), REFRESH)
+    assert claims is not None
+    return claims
+
+
+async def test_a_rotation_keeps_the_session_and_gives_a_new_token_id() -> None:
+    first = _refresh_claims()
+    rotated = _refresh_claims(first.session_id)
+
+    assert first.session_id and rotated.session_id == first.session_id
+    assert rotated.token_id != first.token_id
+
+
+async def test_a_token_exchanged_again_after_the_grace_window_ends_its_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.core import revoked_tokens
+    from tests.fakes import MemoryRedis
+
+    store, now = MemoryRedis(), 1_000_000.0
+    monkeypatch.setattr(revoked_tokens, "clock", lambda: now)
+    first = _refresh_claims()
+    sibling = _refresh_claims(first.session_id)
+    other_session = _refresh_claims()
+
+    assert await revoked_tokens.rotate(store, first)
+    now += revoked_tokens.REUSE_GRACE.total_seconds()
+    assert await revoked_tokens.rotate(store, first), "a concurrent renewal within the window"
+    now += 1
+    assert not await revoked_tokens.rotate(store, first), "a reuse after the window"
+
+    assert await revoked_tokens.is_revoked(store, sibling)
+    assert not await revoked_tokens.is_revoked(store, other_session)
+
+
+async def test_a_token_without_ids_counts_as_revoked() -> None:
+    from dataclasses import replace
+
+    from app.core import revoked_tokens
+    from tests.fakes import MemoryRedis
+
+    claims = _refresh_claims()
+    for legacy in (replace(claims, session_id=None), replace(claims, token_id=None)):
+        assert await revoked_tokens.is_revoked(MemoryRedis(), legacy)

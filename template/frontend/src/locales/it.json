@@ -145,5 +145,10 @@
   "or": "oppure",
   "Welcome back.": "Bentornato.",
   "Hello, {{name}}": "Ciao, {{name}}",
-  "Version {{version}}": "Versione {{version}}"
+  "Version {{version}}": "Versione {{version}}",
+  "Check the new address for a confirmation link": "Controlla il nuovo indirizzo: ti abbiamo inviato un link di conferma",
+  "Confirm email address": "Conferma l'indirizzo email",
+  "Email address confirmed": "Indirizzo email confermato",
+  "Your account now uses this email address.": "Il tuo account ora usa questo indirizzo email.",
+  "Confirm to make this the email address of your account.": "Conferma per rendere questo l'indirizzo email del tuo account."
 }
