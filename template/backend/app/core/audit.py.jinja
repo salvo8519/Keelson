@@ -17,6 +17,7 @@ from uuid import UUID
 
 from sqlalchemy import insert
 
+from app.core.logging import without_secrets
 from app.db.models.audit_log import AppAdminAuditLog
 
 
@@ -39,7 +40,8 @@ async def record_audit(
             organization_id=organization_id,
             target_type=target_type,
             target_id=str(target_id) if target_id is not None else None,
-            details=details,
+            # Keelson: a request body may carry a password or a token; the audit never keeps it.
+            details=without_secrets(details),
             ip_address=ip_address,
         )
     )

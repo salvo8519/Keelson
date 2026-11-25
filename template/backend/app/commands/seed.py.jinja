@@ -15,7 +15,7 @@ import click
 from app.commands import command, info, success, warning
 {%- if use_jwt %}
 from app.db.session import system_session
-from app.schemas.user import UserCreate
+from app.schemas.user import UserRegister
 from app.services.user import UserService
 {%- endif %}
 
@@ -103,7 +103,7 @@ def seed(
                     info(f"Creating {count} sample users...")
                     for _ in range(count):
                         await user_svc.register(
-                            UserCreate(
+                            UserRegister(
                                 email=random_email(),
                                 password="password123",
                                 full_name=random_name(),

@@ -94,9 +94,11 @@ class User(TimestampMixin, SQLModel, table=True):
 
     def has_role(self, required_role: UserRole) -> bool:
         """Check if user has the required role or higher."""
-        if self.role == UserRole.ADMIN.value:
+        # Keelson: a platform administrator has the admin role and the is_app_admin flag, the
+        # column the application login cannot change (app/db/tenancy.py, FROZEN_COLUMNS).
+        if self.role == UserRole.ADMIN.value and self.is_app_admin:
             return True
-        return self.role == required_role.value
+        return self.role == required_role.value and required_role != UserRole.ADMIN
 
     def __repr__(self) -> str:
         return f"<User(id={self.id}, email={self.email}, role={self.role})>"
@@ -189,9 +191,11 @@ class User(Base, TimestampMixin):
 
         Admin role has access to everything.
         """
-        if self.role == UserRole.ADMIN.value:
+        # Keelson: a platform administrator has the admin role and the is_app_admin flag, the
+        # column the application login cannot change (app/db/tenancy.py, FROZEN_COLUMNS).
+        if self.role == UserRole.ADMIN.value and self.is_app_admin:
             return True
-        return self.role == required_role.value
+        return self.role == required_role.value and required_role != UserRole.ADMIN
 
     def __repr__(self) -> str:
         return f"<User(id={self.id}, email={self.email}, role={self.role})>"

@@ -43,7 +43,7 @@ from app.repositories import session_repo, user_repo
 {%- else %}
 from app.repositories import user_repo
 {%- endif %}
-from app.schemas.user import UserCreate, UserRead, UserUpdate, UserUpdateMe
+from app.schemas.user import UserCreate, UserRead, UserRegister, UserUpdate, UserUpdateMe
 from app.services.file_storage import get_file_storage
 {%- if enable_memory %}
 from app.services.user_memory import forget_user_memory
@@ -142,7 +142,15 @@ class UserService:
         ]
         return AdminUserList(items=items, total=total)
 
-    async def register(self, user_in: UserCreate) -> User:
+    async def register(self, user_in: UserRegister) -> User:
+        """Self-registration: a plain user (the first one excepted, see ``_create``)."""
+        return await self._create(user_in, UserRole.USER)
+
+    async def create(self, user_in: UserCreate) -> User:
+        """An account created by a platform administrator, with the role they chose."""
+        return await self._create(user_in, user_in.role)
+
+    async def _create(self, user_in: UserRegister | UserCreate, role: UserRole) -> User:
         """Create a local password account.
 
         The first user to register is auto-promoted to app-admin — no separate
@@ -166,8 +174,9 @@ class UserService:
             email=user_in.email,
             hashed_password=hashed_password,
             full_name=user_in.full_name,
-            role=UserRole.ADMIN.value if is_first_user else user_in.role.value,
-            is_app_admin=is_first_user,
+            role=UserRole.ADMIN.value if is_first_user else role.value,
+            # The role and the flag are written together (User.has_role needs both).
+            is_app_admin=is_first_user or role == UserRole.ADMIN,
         )
 {%- if enable_teams %}
         org_service = OrganizationService(self.db)
@@ -338,6 +347,8 @@ class UserService:
         update_data = user_in.model_dump(exclude_unset=True)
         if "password" in update_data:
             update_data["hashed_password"] = get_password_hash(update_data.pop("password"))
+        if update_data.get("role") is not None:
+            update_data["is_app_admin"] = update_data["role"] == UserRole.ADMIN
 
         return await user_repo.update(self.db, db_user=user, update_data=update_data)
 

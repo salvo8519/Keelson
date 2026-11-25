@@ -67,7 +67,7 @@ from app.core.session_cookies import (
     set_session_cookies,
 )
 from app.schemas.token import RefreshTokenRequest, Token
-from app.schemas.user import UserCreate, UserRead
+from app.schemas.user import UserRead, UserRegister
 {%- else %}
 from app.schemas.user import UserRead
 {%- endif %}
@@ -132,7 +132,7 @@ async def login(
 {%- endif %}
 )
 async def register(
-    user_in: UserCreate,
+    user_in: UserRegister,
     user_service: AuthUserSvc,
 ) -> Any:
     """Register a new user."""

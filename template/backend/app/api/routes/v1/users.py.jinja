@@ -76,7 +76,7 @@ async def create_user(
     _: CurrentAdmin,
 ) -> Any:
     """Create a user (administrators). The user gets a personal organization."""
-    return await user_service.register(user_in)
+    return await user_service.create(user_in)
 
 
 @router.post("/me/avatar", response_model=UserRead)

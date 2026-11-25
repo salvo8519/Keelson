@@ -9,6 +9,7 @@ import json
 import logging
 import re
 import sys
+from collections.abc import Callable
 from contextvars import ContextVar
 from datetime import UTC, datetime
 from typing import Any, ClassVar
@@ -86,17 +87,26 @@ SENSITIVE_FIELD = re.compile(
 )
 
 
-def scrub(value: Any, name: str = "") -> Any:
-    """``extra=`` values as they may be written: secrets by name dropped, text redacted."""
+def _walk(value: Any, name: str, text: Callable[[str], str]) -> Any:
     if name and SENSITIVE_FIELD.search(name):
         return "[REDACTED]"
     if isinstance(value, str):
-        return PiiRedactionFilter._redact(value)
+        return text(value)
     if isinstance(value, dict):
-        return {k: scrub(v, str(k)) for k, v in value.items()}
+        return {k: _walk(v, str(k), text) for k, v in value.items()}
     if isinstance(value, (list, tuple, set)):
-        return [scrub(v) for v in value]
+        return [_walk(v, "", text) for v in value]
     return value
+
+
+def scrub(value: Any, name: str = "") -> Any:
+    """``extra=`` values as they may be written: secrets by name dropped, text redacted."""
+    return _walk(value, name, PiiRedactionFilter._redact)
+
+
+def without_secrets(value: Any) -> Any:
+    """Values of fields named like secrets dropped, the rest kept (audit details)."""
+    return _walk(value, "", lambda text: text)
 
 
 class ContextFilter(logging.Filter):

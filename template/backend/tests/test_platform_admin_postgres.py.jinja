@@ -1,0 +1,63 @@
+{%- if enable_teams and use_postgresql %}
+"""Platform administration cannot be obtained by registering (Keelson).
+
+Upstream registered users with ``UserCreate``, the administrators' schema, so a request with
+``"role": "admin"`` created an administrator of the whole platform. Administration now needs
+the admin role and the ``is_app_admin`` flag, written together and only by administrators.
+"""
+
+import pytest
+
+from app.db.models.user import User, UserRole
+from app.repositories import user_repo
+from app.schemas.user import UserCreate, UserRegister, UserUpdate
+from app.services.user import UserService
+from tests.postgres import require_postgres, segregated_database
+
+pytestmark = pytest.mark.anyio
+
+
+def test_the_registration_schema_has_no_role_and_no_status() -> None:
+    sent = {"email": "Eve@Example.com", "password": "password123", "role": "admin", "is_active": True}
+    registered = UserRegister.model_validate(sent)
+    assert registered.model_dump() == {"email": "eve@example.com", "password": "password123", "full_name": None}
+
+
+@pytest.mark.parametrize(("role", "flag", "admin"), [("admin", True, True), ("admin", False, False), ("user", True, False)])
+def test_administration_needs_the_role_and_the_flag(role: str, flag: bool, admin: bool) -> None:
+    assert User(email="x@example.com", role=role, is_app_admin=flag).has_role(UserRole.ADMIN) is admin
+
+
+def test_a_plain_user_does_not_pass_an_admin_check() -> None:
+    user = User(email="x@example.com", role="user", is_app_admin=False)
+    assert user.has_role(UserRole.USER)
+    assert not user.has_role(UserRole.ADMIN)
+
+
+@pytest.fixture
+async def db():
+    await require_postgres("platform administration")
+    async with segregated_database() as database, database.system() as session:
+        yield session
+
+
+async def test_registering_with_an_admin_role_creates_a_plain_user(db) -> None:
+    service = UserService(db)
+    first = await service.register(UserRegister(email="owner@example.com", password="password123"))
+    assert first.has_role(UserRole.ADMIN), "the first account still administers the platform"
+    payload = {"email": "eve@example.com", "password": "password123", "role": "admin"}
+    eve = await service.register(UserRegister.model_validate(payload))
+    assert (eve.role, eve.is_app_admin) == ("user", False)
+    assert not eve.has_role(UserRole.ADMIN)
+
+
+async def test_administrators_grant_and_revoke_the_role_and_the_flag_together(db) -> None:
+    service = UserService(db)
+    await service.register(UserRegister(email="owner@example.com", password="password123"))
+    created = await service.create(UserCreate(email="ops@example.com", password="password123", role=UserRole.ADMIN))
+    assert created.has_role(UserRole.ADMIN)
+    demoted = await service.update(created.id, UserUpdate(role=UserRole.USER))
+    assert (demoted.role, demoted.is_app_admin) == ("user", False)
+    promoted = await user_repo.set_platform_admin(db, demoted, admin=True)
+    assert (promoted.role, promoted.is_app_admin) == ("admin", True)
+{%- endif %}

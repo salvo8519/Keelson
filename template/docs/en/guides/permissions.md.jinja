@@ -11,8 +11,12 @@ Two roles are defined in `app/db/models/user.py`:
   profile, view their own conversations, upload files to chat, and search
   the knowledge base.
 
-Admins implicitly have all user permissions. The `User.has_role()` method
-returns `True` for any role if the user is an admin.
+A platform administrator has the `admin` role and the `is_app_admin` flag; `User.has_role()`
+requires both, and administrators have every user permission. The two are written together
+by `user_repo.set_platform_admin` (the first account, `FIRST_ADMIN_EMAIL`,
+`cmd create-app-admin`) or by an administrator through `/users`. Self-registration takes
+`UserRegister` (e-mail, password, name) and always creates a plain user; the application
+login cannot change `role` or `is_app_admin` in the database (column privileges).
 
 ## Dependency Aliases
 

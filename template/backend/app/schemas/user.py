@@ -41,8 +41,24 @@ class UserBase(BaseSchema):
         return v.lower()
 
 
+class UserRegister(BaseSchema):
+    """Self-registration (Keelson, from the official template): no role, no status.
+
+    Upstream registered with ``UserCreate``, so anyone could send ``"role": "admin"``.
+    """
+
+    email: EmailStr = Field(max_length=255)
+    password: str = Field(min_length=8, max_length=128)
+    full_name: str | None = Field(default=None, max_length=255)
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, v: str) -> str:
+        return v.lower()
+
+
 class UserCreate(UserBase):
-    """Schema for creating a user."""
+    """Schema for creating a user (administrators)."""
 
     password: str = Field(min_length=8, max_length=128)
     role: UserRole = UserRole.USER

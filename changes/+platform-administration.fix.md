@@ -1,0 +1,1 @@
+Self-registration can no longer create a platform administrator, administration requires both the admin role and the administrator flag, and the audit log no longer stores passwords set by administrators.

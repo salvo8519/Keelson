@@ -31,16 +31,12 @@ async def _run(email: str, revoke: bool) -> None:
             if not getattr(user, "is_app_admin", False):
                 warning(f"{email} is not an app admin — nothing to revoke.")
                 return
-            user.is_app_admin = False
-            await db.flush()
-            await db.refresh(user)
+            await user_repo.set_platform_admin(db, user, admin=False)
             success(f"App-admin privileges revoked for {email}.")
         else:
             if getattr(user, "is_app_admin", False):
                 warning(f"{email} is already an app admin.")
                 return
-            user.is_app_admin = True
-            await db.flush()
-            await db.refresh(user)
+            await user_repo.set_platform_admin(db, user, admin=True)
             success(f"App-admin privileges granted to {email}.")
 

@@ -99,6 +99,8 @@ from app.services.channels import register_adapter as _slack_register
 from app.services.channels.slack import SlackAdapter
 {%- endif %}
 {%- if enable_seed_admin %}
+from app.db.models.user import UserRole
+from app.db.session import system_session
 from app.repositories import user_repo
 {%- endif %}
 {%- if enable_admin_panel and not admin_env_disabled %}
@@ -273,11 +275,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[{% if enable_redis or enable_
     _first_admin = getattr(settings, "FIRST_ADMIN_EMAIL", "")
     if _first_admin:
         try:
-            async with get_db_context() as _db:
+            # Keelson: a system session; the application login sees no user without a principal,
+            # so the promotion silently did nothing.
+            async with system_session("startup: FIRST_ADMIN_EMAIL promotion") as _db:
                 _u = await user_repo.get_by_email(_db, _first_admin)
-                if _u and not getattr(_u, "is_app_admin", False):
-                    _u.is_app_admin = True
-                    await _db.flush()
+                if _u and not _u.has_role(UserRole.ADMIN):
+                    await user_repo.set_platform_admin(_db, _u, admin=True)
                     logger.info("Auto-promoted %s to app-admin (FIRST_ADMIN_EMAIL)", _first_admin)
         except Exception as _e:
             logger.warning("FIRST_ADMIN_EMAIL promotion failed: %s", _e)

@@ -7,7 +7,7 @@ from uuid import UUID
 from sqlalchemy import delete as sql_delete, func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models.user import User
+from app.db.models.user import User, UserRole
 {%- if use_ai %}
 from app.db.models.conversation import Conversation
 {%- endif %}
@@ -121,6 +121,16 @@ async def update(
     await db.flush()
     await db.refresh(db_user)
     return db_user
+
+
+async def set_platform_admin(db: AsyncSession, user: User, admin: bool) -> User:
+    """Keelson: grant or revoke platform administration. The role and the flag are written
+    together, because ``User.has_role`` requires both."""
+    user.role = UserRole.ADMIN.value if admin else UserRole.USER.value
+    user.is_app_admin = admin
+    await db.flush()
+    await db.refresh(user)
+    return user
 
 
 async def update_avatar(db: AsyncSession, user_id: UUID, avatar_url: str) -> User:
