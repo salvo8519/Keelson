@@ -38,6 +38,8 @@ Password hashing (pwdlib):
 - `get_password_hash(password)` — Argon2id
 - `verify_password(plain, hashed)`; at sign-in `verify_and_update_password` also upgrades bcrypt hashes
 - NEVER store plain passwords; never log them (tests/test_log_trap.py)
+- A model's `__repr__` never includes a secret column (hashes, tokens, keys, encrypted
+  credentials): representations reach logs and tracebacks unredacted (tests/test_model_repr.py)
 
 API keys:
 - `secrets.compare_digest()` for constant-time comparison

@@ -701,8 +701,11 @@ async def test_any_password_creates_a_working_application_login(world: World) ->
 
     user, password = f"keelstone_login_{uuid.uuid4().hex[:8]}", "p'w$$; DROP TABLE users; --$$x"
     async with world.db.system() as session:
+        connection = await session.connection()
         for statement in login_statements(user, password):
-            await session.execute(text(statement))
+            # As the migration runs them: to the driver, since a SCRAM verifier holds ":" that
+            # text() would read as bind parameters.
+            await connection.exec_driver_sql(statement)
         await session.commit()
     try:
         connection = await asyncpg.connect(

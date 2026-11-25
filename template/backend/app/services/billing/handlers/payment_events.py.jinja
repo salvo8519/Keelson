@@ -23,7 +23,7 @@ async def handle_checkout_completed(db: AsyncSession, event: stripe.Event) -> No
         org_id = uuid.UUID(session.metadata.get("org_id", ""))
         price_id = uuid.UUID(session.metadata.get("price_id", ""))
     except (ValueError, KeyError):
-        logger.error("checkout_completed_invalid_metadata", extra={"session_id": session.id})
+        logger.error("checkout_completed_invalid_metadata", extra={"checkout_session_id": session.id})
         return
 
     price = await plan_repo.get_price_by_id(db, price_id)
@@ -41,7 +41,7 @@ async def handle_checkout_completed(db: AsyncSession, event: stripe.Event) -> No
         stripe_payment_intent_id=session.payment_intent or session.id,
     )
 {%- else %}
-    logger.info("checkout_completed_payment", extra={"session_id": session.id})
+    logger.info("checkout_completed_payment", extra={"checkout_session_id": session.id})
 {%- endif %}
 
 

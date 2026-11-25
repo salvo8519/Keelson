@@ -209,6 +209,18 @@ def test_default_project_compose_stacks_are_valid(render: Render) -> None:
         assert password not in json.dumps([redis["command"], redis["healthcheck"]]), name
         app = resolved[name]["services"]["app"]
         assert app["environment"]["FORWARDED_ALLOW_IPS"] == proxy_subnet, name
+        # The bootstrap checks the Garage secrets the garage service runs with, and the API
+        # waits for it: weak or published values stop the stack.
+        services = resolved[name]["services"]
+        garage, bootstrap = (
+            services["garage"]["environment"],
+            services["garage-init"]["environment"],
+        )
+        for secret in ("GARAGE_RPC_SECRET", "GARAGE_ADMIN_TOKEN"):
+            assert bootstrap[secret] == garage[secret], (name, secret)
+        assert bootstrap["ENVIRONMENT"] == "production", name
+        waits_for = app["depends_on"]["garage-init"]["condition"]
+        assert waits_for == "service_completed_successfully", name
         assert "--forwarded-allow-ips" not in " ".join(app["command"]), name
     incomplete = project / ".env.incomplete"
     incomplete.write_text(

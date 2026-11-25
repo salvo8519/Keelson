@@ -19,6 +19,20 @@ group is for and which are required vs optional.
 | `BACKEND_URL` | optional | `http://localhost:{{ backend_port }}` | Used by frontend BFF + email link generation |
 | `FRONTEND_URL` | optional | `http://localhost:{{ frontend_port }}` | Used by password-reset / magic-link emails |
 
+## Secrets in staging and production
+
+With `ENVIRONMENT` set to `staging` or `production` the application refuses weak secrets
+and names them. Each secret it checks needs at least 32 characters, 8 of them different, and
+must not be a stand-in, a value of `garage/development.env`, or be made mostly of well-known
+words, the project name, runs of neighbouring characters, one repeated piece or doubled
+characters; `SECRET_KEY` and each `DATA_ENCRYPTION_KEYS` entry need 32 characters in every
+environment. Access key ids (`S3_ACCESS_KEY`, `S3_RAG_ACCESS_KEY`), whose format the storage
+service fixes, need at least 16 characters. The rule refuses typed and published values;
+it does not measure randomness. Generate every secret with `openssl rand -hex 32`. Details:
+`docs/en/guides/configuration.md`, "Secrets in staging and production". `POSTGRES_PASSWORD` and
+`POSTGRES_APP_PASSWORD` are also stored in PostgreSQL: set new values in the database first
+(same guide, "Changing the database passwords"), then in `backend/.env`.
+
 ## Auth & secrets
 
 | Variable | Required | Default | Description |
@@ -184,8 +198,8 @@ Documents and chat files are stored objects (see `docs/en/concepts/document-stor
 | `S3_ADDRESSING_STYLE` | optional | `auto` | `path` for Garage, MinIO and Ceph |
 | `S3_PRESIGNED_DOWNLOADS` | optional | `false` | Redirect S3 downloads to a presigned URL after the database check |
 | `S3_PRESIGN_TTL_SECONDS` | optional | `300` | Lifetime of a presigned URL (30 to 3600 seconds) |
-| `GARAGE_RPC_SECRET` | Compose production | — | Secret of the Garage service (`openssl rand -hex 32`) |
-| `GARAGE_ADMIN_TOKEN` | Compose production | — | Administration token of Garage, used by `cmd garage-bootstrap` |
+| `GARAGE_RPC_SECRET` | Compose production | — | Secret of the Garage service (`openssl rand -hex 32`); `cmd garage-bootstrap` refuses a weak one in staging and production |
+| `GARAGE_ADMIN_TOKEN` | Compose production | — | Administration token of Garage, used by `cmd garage-bootstrap`, which refuses a weak one in staging and production |
 {%- endif %}
 
 {%- if use_frontend %}

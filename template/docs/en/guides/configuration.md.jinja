@@ -26,6 +26,82 @@ openssl rand -hex 32
 # Paste the output as SECRET_KEY in .env
 ```
 
+## Secrets in staging and production
+
+With `ENVIRONMENT` set to `staging` or `production` the application refuses to start when a
+secret is weak, and names the settings to change. The secrets checked are those of
+`SECRETS_WHEN_DEPLOYED`, those of `OPTIONAL_SECRETS_WHEN_DEPLOYED` when they are set, and each
+`DATA_ENCRYPTION_KEYS` entry (`app/core/config.py`). A secret must:
+
+- have at least 32 characters, 8 of them different (access key ids such as `S3_ACCESS_KEY`,
+  whose format the storage service fixes, need at least 16 characters);
+- not be a stand-in (`change-me...`, `CHANGE_ME`, `..._xxx`) or a value published with the
+  project (`garage/development.env`), in any case or separator;
+- not be made, for 30% or more, of well-known words (`password`, `secret`, `admin`, `test`,
+  `demo`, `your`, `replace`, `insecure` and the others of `WELL_KNOWN_SECRET_WORDS`), published
+  values or the project name
+  (`{{ project_slug }}`, when it has 6 letters or digits or more), also when letters are
+  replaced by look-alike digits or symbols (`P@ssw0rd`, `s3cr3t`, `adm1n`);
+- not be made mostly of runs of neighbouring characters (`0123456789abcdef`,
+  `qwertyuiopasdfgh`, `1q2w3e4r`), of one repeated piece (`changeit-changeit`) or of doubled
+  characters (`aabbccdd`).
+
+A word that occurs by chance inside a random key covers a small share of it: keys issued by
+providers (Stripe, AWS) and generated values are accepted.
+
+`SECRET_KEY` and each `DATA_ENCRYPTION_KEYS` entry need 32 characters in every environment.
+{%- if enable_file_storage %}
+`cmd garage-bootstrap` applies the same rule to `GARAGE_ADMIN_TOKEN` and `GARAGE_RPC_SECRET`,
+and the API does not start until it succeeds.
+{%- endif %}
+
+The rule refuses typed, copied and published values; it does not measure randomness, and a
+value that passes may still be guessable. Generate every secret with `openssl rand -hex 32`.
+
+### Changing the database passwords
+
+`POSTGRES_PASSWORD` and `POSTGRES_APP_PASSWORD` are also stored in PostgreSQL: the first when
+the database volume was initialised, the second by the migrations. Changing them in
+`backend/.env` alone breaks the connection. Both must be printable ASCII, without a space at
+either end, and different from each other: asyncpg and libpq prepare other characters
+differently, and one of the two drivers could not sign in.
+
+The steps, in this order:
+
+1. Generate two values with `openssl rand -hex 32`.
+2. Set them in the database, with the current values still in `backend/.env` (below).
+3. Write them to `POSTGRES_PASSWORD` and `POSTGRES_APP_PASSWORD` in `backend/.env`.
+4. Restart the stack. Between steps 2 and 4 the running services keep their open connections,
+   but a new connection with the old password fails: plan a short outage.
+{%- if enable_teams and use_postgresql %}
+
+```bash
+# Asks for each new value twice and echoes none of them. Run it with ENVIRONMENT=development
+# if the current values are refused in production.
+docker compose --env-file backend/.env -f docker-compose.prod.yml run --rm -e ENVIRONMENT=development \
+  app {{ project_slug }} cmd rotate-database-passwords
+```
+
+The command takes the new values from the prompt or from `NEW_POSTGRES_PASSWORD` and
+`NEW_POSTGRES_APP_PASSWORD`, never from options. Prefer the prompt: a value written on a
+command line (`-e NEW_POSTGRES_PASSWORD=...` included) stays in the shell history and shows in
+the process list. For an unattended run, put both variables in a file readable by its owner
+only and pass it with `--env-file`. The command sends PostgreSQL only the SCRAM-SHA-256
+verifier of each password, computed on the client, so the passwords reach neither the server
+log nor `pg_stat_statements`. PostgreSQL stores such a verifier as SCRAM even when
+`password_encryption` is `md5`; a connection pooler that authenticates its clients with `md5`
+(PgBouncer with an `auth_file` of md5 hashes, for example) must be checked before the change.
+
+Or, without the application, with `psql` as the owner login (`\password` also computes the
+verifier on the client):
+{%- endif %}
+
+```bash
+# POSTGRES_USER and POSTGRES_DB as the db container has them (postgres and {{ project_slug }} by default)
+docker compose --env-file backend/.env -f docker-compose.prod.yml exec db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+# then: \password <POSTGRES_USER>  and  \password <POSTGRES_APP_USER>  (the values are not echoed)
+```
+
 ## Project Settings
 
 | Variable | Default | Description |
@@ -53,8 +129,8 @@ openssl rand -hex 32
 | `REFRESH_TOKEN_EXPIRE_MINUTES` | `10080` | Refresh token lifetime (7 days) |
 | `ALGORITHM` | `HS256` | JWT signing algorithm: `HS256`, `HS384` or `HS512` |
 
-Production validation: `SECRET_KEY` must be at least 32 characters and cannot
-use the default value in `ENVIRONMENT=production`.
+Validation: `SECRET_KEY` must be at least 32 characters; in staging and production it
+must also satisfy the rule of [Secrets in staging and production](#secrets-in-staging-and-production).
 {%- endif %}
 
 {%- if use_api_key %}
@@ -66,8 +142,8 @@ use the default value in `ENVIRONMENT=production`.
 | `API_KEY` | `change-me-in-production` | Shared API key for programmatic access |
 | `API_KEY_HEADER` | `X-API-Key` | HTTP header name for API key |
 
-Production validation: `API_KEY` cannot use the default value in
-`ENVIRONMENT=production`.
+Validation: in staging and production `API_KEY` must satisfy the rule of
+[Secrets in staging and production](#secrets-in-staging-and-production).
 {%- endif %}
 
 {%- if enable_oauth_google %}
