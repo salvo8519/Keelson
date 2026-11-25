@@ -45,7 +45,7 @@ without a frontend do not include it.
 | `issuer` | The provider's issuer URL; its metadata is read from `/.well-known/openid-configuration` |
 | `client_id`, `client_secret` | The application registered with the provider |
 | `scopes` | Default `openid email profile` |
-| `trust_email` | `true` for a company directory (Entra ID, Keycloak) that vouches for its addresses |
+| `trust_email` | `true` for a company directory (Entra ID, Keycloak) that vouches for its addresses; requires `email_domains` |
 | `email_domains` | Optional: only these domains may sign in with this provider |
 
 Register `<PUBLIC_API_URL>/api/v1/oauth/<name>/callback` as the redirect URI with the provider.
@@ -58,7 +58,8 @@ OIDC_PROVIDERS='[
    "email_domains": ["example.com"]},
   {"name": "keycloak", "label": "Company account",
    "issuer": "https://sso.example.com/realms/<realm>",
-   "client_id": "...", "client_secret": "...", "trust_email": true}
+   "client_id": "...", "client_secret": "...", "trust_email": true,
+   "email_domains": ["example.com"]}
 ]'
 ```
 
@@ -69,10 +70,12 @@ How a sign-in works:
 1. The button sends the user to the provider (authorization code flow with PKCE).
 2. The provider sends the user back. The ID token is verified: signature with the provider's
    published keys, issuer, audience, expiry and nonce.
-3. The user is found by the provider's identity or, the first time, by e-mail address. An
-   address is accepted only if the provider marks it as verified, or the provider is a trusted
-   directory: otherwise anyone could open an account at a provider with someone else's
-   address and sign in as them. A new user gets a personal organization.
+3. The user is found by the provider's identity. The first time, an address must be verified
+   by the provider (or come from a trusted directory, for its own domains). If no account has
+   that address, one is created with a personal organization. An existing account is linked
+   only when it has no password, no other identity and no platform role, and the token says
+   the address is verified; otherwise the sign-in is refused and the user signs in with their
+   password. Accounts are never taken over through an address someone else registered.
 4. The browser returns to the frontend with a code valid once, for one minute, and stored only
    as a hash. The frontend exchanges it for the session tokens. Tokens never appear in a URL,
    where browser history, proxies and server logs would keep them.

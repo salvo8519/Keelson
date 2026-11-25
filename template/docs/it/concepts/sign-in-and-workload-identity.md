@@ -1,4 +1,4 @@
-<!-- i18n source: concepts/sign-in-and-workload-identity.md source_hash: 0bd858e2b152 -->
+<!-- i18n source: concepts/sign-in-and-workload-identity.md source_hash: 333cc419aafa -->
 # Accesso e identità dei workload
 
 Le persone accedono con una password o tramite il provider di identità della propria azienda.
@@ -50,7 +50,7 @@ generati senza frontend non lo includono.
 | `issuer` | URL dell'issuer del provider; i metadati sono letti da `/.well-known/openid-configuration` |
 | `client_id`, `client_secret` | L'applicazione registrata presso il provider |
 | `scopes` | Predefinito `openid email profile` |
-| `trust_email` | `true` per una directory aziendale (Entra ID, Keycloak) che garantisce i propri indirizzi |
+| `trust_email` | `true` per una directory aziendale (Entra ID, Keycloak) che garantisce i propri indirizzi; richiede `email_domains` |
 | `email_domains` | Facoltativo: solo questi domini possono accedere con questo provider |
 
 Registrare presso il provider `<PUBLIC_API_URL>/api/v1/oauth/<name>/callback` come URI di
@@ -64,7 +64,8 @@ OIDC_PROVIDERS='[
    "email_domains": ["example.com"]},
   {"name": "keycloak", "label": "Account aziendale",
    "issuer": "https://sso.example.com/realms/<realm>",
-   "client_id": "...", "client_secret": "...", "trust_email": true}
+   "client_id": "...", "client_secret": "...", "trust_email": true,
+   "email_domains": ["example.com"]}
 ]'
 ```
 
@@ -75,11 +76,13 @@ Come funziona un accesso:
 1. Il pulsante porta l'utente al provider (flusso authorization code con PKCE).
 2. Il provider riporta indietro l'utente. L'ID token viene verificato: firma con le chiavi
    pubblicate dal provider, issuer, audience, scadenza e nonce.
-3. L'utente viene trovato tramite l'identità del provider o, la prima volta, tramite
-   l'indirizzo e-mail. Un indirizzo è accettato solo se il provider lo indica come verificato,
-   o se il provider è una directory affidabile: altrimenti chiunque potrebbe aprire un account
-   presso un provider con l'indirizzo di un altro e accedere al suo posto. Un nuovo utente
-   riceve un'organizzazione personale.
+3. L'utente viene trovato tramite l'identità del provider. La prima volta, l'indirizzo deve
+   essere verificato dal provider (o provenire da una directory affidabile, per i suoi domini).
+   Se nessun account ha quell'indirizzo, ne viene creato uno con un'organizzazione personale.
+   Un account esistente viene collegato solo se non ha password, né un'altra identità, né un
+   ruolo di piattaforma, e il token dichiara l'indirizzo verificato; altrimenti l'accesso è
+   rifiutato e l'utente accede con la propria password. Un account non viene mai preso tramite
+   un indirizzo registrato da qualcun altro.
 4. Il browser torna al frontend con un codice valido una sola volta, per un minuto, e salvato
    solo come hash. Il frontend lo scambia con i token di sessione. I token non compaiono mai in
    un URL, dove la cronologia del browser, i proxy e i log del server li conserverebbero.

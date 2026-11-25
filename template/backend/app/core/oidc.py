@@ -7,10 +7,12 @@ ID, Keycloak, Okta, Auth0 or a company's own issuer. They differ only in configu
     OIDC_PROVIDERS=[
       {"name": "entra", "label": "Microsoft",
        "issuer": "https://login.microsoftonline.com/<tenant-id>/v2.0",
-       "client_id": "...", "client_secret": "...", "trust_email": true},
+       "client_id": "...", "client_secret": "...", "trust_email": true,
+       "email_domains": ["example.com"]},
       {"name": "keycloak", "label": "Company account",
        "issuer": "https://sso.example.com/realms/<realm>",
-       "client_id": "...", "client_secret": "...", "trust_email": true}
+       "client_id": "...", "client_secret": "...", "trust_email": true,
+       "email_domains": ["example.com"]}
     ]
 
 This module holds what can be decided without the network: the provider settings and the
@@ -23,7 +25,7 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 GOOGLE_ISSUER = "https://accounts.google.com"
 LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
@@ -44,7 +46,8 @@ class OidcProvider(BaseModel):
     # A company directory (Entra ID, Keycloak) vouches for its addresses: accept the e-mail
     # address as verified. Public providers must say so in the token (email_verified).
     trust_email: bool = False
-    # Only addresses of these domains may sign in with this provider; empty allows any.
+    # Only addresses of these domains may sign in with this provider; empty allows any. Required
+    # with trust_email: a directory is trusted for its own domains, not for every address.
     email_domains: list[str] = Field(default_factory=list)
 
     @field_validator("issuer")
@@ -60,6 +63,12 @@ class OidcProvider(BaseModel):
     @classmethod
     def lower_domains(cls, value: list[str]) -> list[str]:
         return [domain.strip().lower().lstrip("@") for domain in value if domain.strip()]
+
+    @model_validator(mode="after")
+    def trusted_for_its_domains(self) -> "OidcProvider":
+        if self.trust_email and not self.email_domains:
+            raise ValueError("trust_email needs email_domains: the domains the directory owns")
+        return self
 
     @property
     def discovery_url(self) -> str:
@@ -101,6 +110,8 @@ class Identity:
     subject: str
     email: str
     name: str | None
+    # The token itself says the address is verified (not only the provider's configuration).
+    email_verified: bool = False
 
 
 def verified_identity(provider: OidcProvider, claims: dict[str, Any]) -> Identity:
@@ -114,11 +125,12 @@ def verified_identity(provider: OidcProvider, claims: dict[str, Any]) -> Identit
         email = candidate if "@" in candidate else ""
     if not subject or not email:
         raise SignInRefused("no_email", "the ID token has no e-mail address")
-    verified = claims.get("email_verified") in (True, "true") or provider.trust_email
+    claimed = claims.get("email_verified") in (True, "true")
+    verified = claimed or provider.trust_email
     if not verified:
         raise SignInRefused("email_unverified", "the e-mail address is not verified")
     domain = email.rsplit("@", 1)[-1]
     if provider.email_domains and domain not in provider.email_domains:
         raise SignInRefused("domain_not_allowed", "the e-mail domain is not allowed")
     name = str(claims.get("name") or "").strip() or None
-    return Identity(subject=subject, email=email, name=name)
+    return Identity(subject=subject, email=email, name=name, email_verified=claimed)

@@ -42,6 +42,9 @@ const SSO_ERRORS: Record<string, string> = {
   no_email: N_("The provider did not share your e-mail address."),
   email_unverified: N_("The provider has not verified your e-mail address."),
   domain_not_allowed: N_("Sign-in is not allowed for your e-mail domain."),
+  account_exists: N_(
+    "An account with this e-mail address already exists. Sign in with your password.",
+  ),
 }
 
 export const ssoErrorMessage = (code: string): string =>

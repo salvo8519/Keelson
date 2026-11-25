@@ -12,6 +12,9 @@ from starlette.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+{%- if enable_oauth %}
+from app.core.oidc import SignInRefused
+{%- endif %}
 from app.core.exceptions import (
     AlreadyExistsError,
     AuthenticationError,
@@ -248,12 +251,16 @@ class UserService:
         provider_id: str,
         email: str,
         full_name: str | None = None,
+        email_verified: bool = False,
     ) -> User:
-        """Email-matched existing accounts get the OAuth identity attached rather than creating a duplicate.
+        """The user of a provider identity, created at the first sign-in.
 
-        Keelson: the caller passes an address the provider has verified, or one from a
-        directory configured as trusted (app/core/oidc.py), since a match signs in the existing
-        account. An account linked to another identity keeps that link.
+        Keelson: upstream attached the identity to any account with the same address, so an
+        account opened with someone else's address (registration does not verify it) received
+        that person's sign-ins, and a directory trusted for its addresses could sign in as any
+        local user. An existing account is now linked only when it has no password, no other
+        identity and no platform role, and the token itself says the address is verified;
+        otherwise the sign-in is refused (the user signs in with their password).
         """
         existing = await user_repo.get_by_oauth(self.db, provider, provider_id)
         if existing:
@@ -261,13 +268,19 @@ class UserService:
 
         by_email = await user_repo.get_by_email(self.db, email)
         if by_email is not None:
-            if by_email.oauth_provider is None:
-                by_email = await user_repo.update(
-                    self.db,
-                    db_user=by_email,
-                    update_data={"oauth_provider": provider, "oauth_id": provider_id},
-                )
-            return by_email
+            linkable = (
+                email_verified
+                and not by_email.hashed_password
+                and by_email.oauth_provider is None
+                and not getattr(by_email, "is_app_admin", False)
+            )
+            if not linkable:
+                raise SignInRefused("account_exists", "an account with this address exists")
+            return await user_repo.update(
+                self.db,
+                db_user=by_email,
+                update_data={"oauth_provider": provider, "oauth_id": provider_id},
+            )
 
         user = await user_repo.create(
             self.db,

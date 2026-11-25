@@ -125,7 +125,11 @@ async def test_the_callback_sends_a_one_time_code_never_the_tokens(
     code = parse_qs(target.query)["code"][0]
     assert "token" not in target.query
     users.get_or_create_oauth_user.assert_awaited_once_with(
-        provider="entra", provider_id="oid-1", email="ada@example.com", full_name=None
+        provider="entra",
+        provider_id="oid-1",
+        email="ada@example.com",
+        full_name=None,
+        email_verified=False,
     )
     key, user_id = mock_redis.set.call_args.args[:2]
     assert key == "oauth:code:" + hashlib.sha256(code.encode()).hexdigest()
@@ -169,24 +173,78 @@ async def test_the_code_is_exchanged_once_for_session_cookies(
     assert second.status_code == 401
 
 
+def _account(**fields: object) -> SimpleNamespace:
+    base = {
+        "id": uuid4(),
+        "hashed_password": None,
+        "oauth_provider": None,
+        "oauth_id": None,
+        "is_app_admin": False,
+    }
+    return SimpleNamespace(**{**base, **fields})
+
+
 @pytest.mark.anyio
-async def test_an_account_linked_to_another_identity_keeps_its_link(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize(
+    ("account", "email_verified"),
+    [
+        (_account(hashed_password="$argon2id$x"), True),
+        (_account(oauth_provider="google", oauth_id="g-1"), True),
+        (_account(is_app_admin=True), True),
+        (_account(), False),
+    ],
+    ids=["has-a-password", "linked-elsewhere", "platform-admin", "address-not-verified-by-token"],
+)
+async def test_an_existing_account_is_not_taken_over_by_a_provider_identity(
+    monkeypatch: pytest.MonkeyPatch, account: SimpleNamespace, email_verified: bool
 ) -> None:
     from app.services import user as user_module
     from app.services.user import UserService
 
-    account = SimpleNamespace(id=uuid4(), oauth_provider="google", oauth_id="g-1")
     repo = MagicMock()
     repo.get_by_oauth = AsyncMock(return_value=None)
     repo.get_by_email = AsyncMock(return_value=account)
     repo.update = AsyncMock()
     monkeypatch.setattr(user_module, "user_repo", repo)
 
-    found = await UserService(MagicMock()).get_or_create_oauth_user(
-        provider="entra", provider_id="oid-1", email="ada@example.com"
+    with pytest.raises(SignInRefused) as refused:
+        await UserService(MagicMock()).get_or_create_oauth_user(
+            provider="entra",
+            provider_id="oid-1",
+            email="ada@example.com",
+            email_verified=email_verified,
+        )
+    assert refused.value.code == "account_exists"
+    repo.update.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_an_account_without_password_or_identity_is_linked_by_a_verified_address(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services import user as user_module
+    from app.services.user import UserService
+
+    account = _account()
+    repo = MagicMock()
+    repo.get_by_oauth = AsyncMock(return_value=None)
+    repo.get_by_email = AsyncMock(return_value=account)
+    repo.update = AsyncMock(return_value=account)
+    monkeypatch.setattr(user_module, "user_repo", repo)
+
+    await UserService(MagicMock()).get_or_create_oauth_user(
+        provider="entra", provider_id="oid-1", email="ada@example.com", email_verified=True
     )
 
-    assert found is account
-    repo.update.assert_not_awaited()
+    assert repo.update.call_args.kwargs["update_data"] == {
+        "oauth_provider": "entra",
+        "oauth_id": "oid-1",
+    }
+
+
+def test_a_trusted_directory_must_name_its_domains() -> None:
+    with pytest.raises(ValueError):
+        OidcProvider(
+            name="kc", label="KC", issuer="https://sso.example.com", client_id="c", trust_email=True
+        )
 {%- endif %}

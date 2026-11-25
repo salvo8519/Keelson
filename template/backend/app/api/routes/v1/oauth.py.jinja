@@ -81,12 +81,17 @@ async def provider_callback(
     except OAuthError:
         logger.warning("oauth_callback_failed", extra={"provider": name}, exc_info=True)
         return _to_login("failed")
-    user = await user_service.get_or_create_oauth_user(
-        provider=name,
-        provider_id=identity.subject,
-        email=identity.email,
-        full_name=identity.name,
-    )
+    try:
+        user = await user_service.get_or_create_oauth_user(
+            provider=name,
+            provider_id=identity.subject,
+            email=identity.email,
+            full_name=identity.name,
+            email_verified=identity.email_verified,
+        )
+    except SignInRefused as refused:
+        logger.info("oauth_sign_in_refused", extra={"provider": name, "reason": str(refused)})
+        return _to_login(refused.code)
     if not user.is_active:
         return _to_login("account_disabled")
     code = secrets.token_urlsafe(32)

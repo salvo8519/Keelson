@@ -1,0 +1,1 @@
+Single sign-on no longer links a provider identity to an existing account that has a password, another identity or administrator rights, which closed an account takeover through a provider that returns unverified or unowned e-mail addresses.
