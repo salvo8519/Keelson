@@ -113,6 +113,9 @@ def verify_idp_token(token: str) -> dict[str, Any] | None:
 # rotated before included (``app/core/revoked_tokens.py``). An access token issued for an
 # impersonation names the administrator and their session version in ``act`` (RFC 8693,
 # section 4.1): it stops working when the administrator loses the role or signs out everywhere.
+# Every token of a session also carries the time its user signed in (``auth_time``, as in
+# OpenID Connect), unchanged by rotations: a sensitive change can ask for a recent sign-in.
+# Impersonation tokens carry none, so they never count as a recent sign-in of the user.
 ACCESS = "access"
 REFRESH = "refresh"
 
@@ -128,13 +131,16 @@ def create_access_token(
     version: int,
     expires_delta: timedelta | None = None,
     actor: Any | None = None,
+    signed_in_at: int | None = None,
 ) -> str:
     """Create a JWT access token for the session ``version`` of the user ``subject``.
 
     ``actor`` is the administrator of an impersonation (a user): the token names them and the
-    session version they are in.
+    session version they are in. ``signed_in_at`` is the time the session started.
     """
     claims: dict[str, Any] = {"sub": str(subject), "type": ACCESS, "ver": version}
+    if signed_in_at is not None:
+        claims["auth_time"] = signed_in_at
     if actor is not None:
         claims["act"] = {"sub": str(actor.id), "ver": actor.token_epoch}
     lifetime = expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -147,10 +153,12 @@ def create_refresh_token(
     version: int,
     session_id: str | None = None,
     expires_delta: timedelta | None = None,
+    signed_in_at: int | None = None,
 ) -> str:
     """Create a JWT refresh token for the session ``version`` of the user ``subject``.
 
     ``session_id`` continues a session (a rotation); without it a new session starts.
+    ``signed_in_at`` is the time the session started.
     """
     claims: dict[str, Any] = {
         "sub": str(subject),
@@ -159,18 +167,28 @@ def create_refresh_token(
         "jti": secrets.token_urlsafe(16),
         "sid": session_id or secrets.token_urlsafe(16),
     }
+    if signed_in_at is not None:
+        claims["auth_time"] = signed_in_at
     lifetime = expires_delta or timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES)
     return _encode(claims, lifetime)
 
 
-def issue_session_tokens(user: Any, session_id: str | None = None) -> tuple[str, str]:
+def issue_session_tokens(
+    user: Any, session_id: str | None = None, signed_in_at: int | None = None
+) -> tuple[str, str]:
     """A new access and refresh token for ``user``, in its current session version.
 
-    ``session_id`` is given when a refresh token is rotated: the new one stays in its session.
+    Without ``session_id`` a session starts now (a sign-in). When a refresh token is rotated,
+    ``session_id`` and ``signed_in_at`` are those of the presented token: the new one stays in
+    its session, and a rotation never makes the sign-in look more recent.
     """
+    if session_id is None:
+        signed_in_at = int(datetime.now(UTC).timestamp())
     return (
-        create_access_token(user.id, version=user.token_epoch),
-        create_refresh_token(user.id, version=user.token_epoch, session_id=session_id),
+        create_access_token(user.id, version=user.token_epoch, signed_in_at=signed_in_at),
+        create_refresh_token(
+            user.id, version=user.token_epoch, session_id=session_id, signed_in_at=signed_in_at
+        ),
     )
 
 
@@ -185,6 +203,7 @@ class SessionClaims:
     expires_at: int
     actor_version: int | None = None
     session_id: str | None = None
+    signed_in_at: int | None = None
 
     def is_current_for(self, user: Any) -> bool:
         """The token belongs to an active user's current session."""
@@ -204,6 +223,7 @@ def read_session_token(token: str | None, token_type: str) -> SessionClaims | No
     act = payload.get("act")
     actor: dict[str, Any] = act if isinstance(act, dict) else {}
     actor_version = actor.get("ver")
+    auth_time = payload.get("auth_time")
     return SessionClaims(
         user_id=user_id,
         version=version if isinstance(version, int) else None,
@@ -212,6 +232,7 @@ def read_session_token(token: str | None, token_type: str) -> SessionClaims | No
         expires_at=int(payload.get("exp", 0)),
         actor_version=actor_version if isinstance(actor_version, int) else None,
         session_id=str(payload["sid"]) if payload.get("sid") else None,
+        signed_in_at=auth_time if isinstance(auth_time, int) and not isinstance(auth_time, bool) else None,
     )
 
 
@@ -249,6 +270,8 @@ EMAIL_CHANGE_TTL = timedelta(hours=1)
 def create_password_reset_token(
     subject: str | Any,
     current_password_hash: str | None,
+    *,
+    address: str,
     expires_delta: timedelta | None = None,
 ) -> str:
     """Single-use JWT for password reset.
@@ -257,6 +280,9 @@ def create_password_reset_token(
     refresh / magic-link tokens — a stolen reset token can't be used as an
     access token. The `pwe` claim binds it to the password in force at issue
     time, so redeeming it once invalidates it (see :func:`password_epoch`).
+
+    Keelstone: the ``cur`` claim binds it to the address it is sent to (:func:`address_digest`):
+    once the account's address changes, a link sent to the previous one no longer works.
     """
     expire = datetime.now(UTC) + (expires_delta or PASSWORD_RESET_TTL)
     to_encode = {
@@ -264,6 +290,7 @@ def create_password_reset_token(
         "sub": str(subject),
         "type": "password_reset",
         "pwe": password_epoch(current_password_hash),
+        "cur": address_digest(address),
     }
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
@@ -271,6 +298,8 @@ def create_password_reset_token(
 def create_magic_link_token(
     subject: str | Any,
     magic_link_epoch: int,
+    *,
+    address: str,
     expires_delta: timedelta | None = None,
 ) -> str:
     """Sign-in-by-email JWT. Short-lived (15 min default).
@@ -279,6 +308,9 @@ def create_magic_link_token(
     Redeeming a link bumps the epoch, so the link that was used — and every
     other link still outstanding for that user — stops validating. This is what
     makes the link single-use; a JWT cannot be revoked any other way.
+
+    Keelstone: the ``cur`` claim binds it to the address it is sent to, as a reset link; a
+    confirmed change of address also raises the epoch.
     """
     expire = datetime.now(UTC) + (expires_delta or MAGIC_LINK_TTL)
     to_encode = {
@@ -286,15 +318,18 @@ def create_magic_link_token(
         "sub": str(subject),
         "type": "magic_link",
         "mle": magic_link_epoch,
+        "cur": address_digest(address),
     }
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
 def address_digest(email: str) -> str:
-    """Short digest of an e-mail address, used to bind a change link to the address it replaces.
+    """Short digest of an e-mail address, used to bind a link to the address of the account.
 
-    As :func:`password_epoch` does for a reset: once the change is made the digest no longer
-    matches, so the link is single-use; the old address is not written into the link.
+    A link sent by e-mail (a reset, a sign-in link, an address change) names the address in
+    force when it was issued (``cur``): once the address changes the digest no longer matches,
+    so a link sent to a previous address stops working. The address is not written into the
+    link.
     """
     return hashlib.sha256(email.lower().encode("utf-8")).hexdigest()[:16]
 
@@ -302,8 +337,10 @@ def address_digest(email: str) -> str:
 def create_email_change_token(user: Any, new_email: str, expires_delta: timedelta | None = None) -> str:
     """Keelstone: the link that confirms ``new_email`` for ``user``, sent to the new address.
 
-    Bound to the user, the new address, the address in force (``cur``, single use) and the
-    session version (``ver``): a sign-out from every device or a password change voids it.
+    Bound to the user, the new address, the address in force (``cur``, single use), the
+    session version (``ver``: a sign-out from every device or a password change voids it) and
+    the magic-link epoch (``mle``), which every confirmed change raises: after a change from A
+    to B and back to A, a link issued while the address was A the first time is void.
     """
     expire = datetime.now(UTC) + (expires_delta or EMAIL_CHANGE_TTL)
     to_encode = {
@@ -313,12 +350,18 @@ def create_email_change_token(user: Any, new_email: str, expires_delta: timedelt
         "email": new_email,
         "cur": address_digest(user.email),
         "ver": user.token_epoch,
+        "mle": user.magic_link_epoch,
     }
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
+def names_current_address(payload: dict[str, Any], user: Any) -> bool:
+    """Keelstone: the link of ``payload`` was issued for the address ``user`` has now."""
+    return payload.get("cur") == address_digest(user.email)
+
+
 def verify_special_token(token: str, expected_type: str) -> dict[str, Any] | None:
-    """Verify a non-access JWT (password_reset, magic_link) and require a
+    """Verify a non-access JWT (password_reset, magic_link, email_change) and require a
     specific `type` claim. Returns payload on success, None otherwise.
     """
     payload = verify_token(token)

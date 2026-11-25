@@ -21,10 +21,12 @@ import useCustomToast from "@/hooks/useCustomToast"
 import { t } from "@/i18n"
 import { cn } from "@/lib/utils"
 import { handleError } from "@/utils"
+import { IdentityProof } from "./IdentityProof"
 
 const formSchema = z.object({
   full_name: z.string().max(30).optional(),
   email: z.email({ message: t("Invalid email address") }),
+  current_password: z.string().max(128).optional(),
 })
 
 type FormData = z.infer<typeof formSchema>
@@ -42,8 +44,13 @@ const UserInformation = () => {
     defaultValues: {
       full_name: currentUser?.full_name ?? undefined,
       email: currentUser?.email,
+      current_password: "",
     },
   })
+  // A new address needs the current password; an account of single sign-on only has none and
+  // needs a sign-in within the last 5 minutes instead.
+  const emailChanged = form.watch("email") !== currentUser?.email
+  const hasPassword = currentUser?.has_password ?? true
 
   const toggleEditMode = () => {
     setEditMode(!editMode)
@@ -55,15 +62,19 @@ const UserInformation = () => {
     mutationFn: async ({
       profile,
       email,
+      currentPassword,
     }: {
       profile: UserUpdateMe
       email?: string
+      currentPassword?: string
     }) => {
       if (Object.keys(profile).length > 0) {
         await UsersService.updateCurrentUser({ body: profile })
       }
       if (email) {
-        await UsersService.requestEmailChange({ body: { email } })
+        await UsersService.requestEmailChange({
+          body: { email, current_password: currentPassword || null },
+        })
       }
       return { emailRequested: !!email }
     },
@@ -73,11 +84,16 @@ const UserInformation = () => {
           ? t("Check the new address for a confirmation link")
           : t("User updated successfully"),
       )
-      form.reset({ ...form.getValues(), email: currentUser?.email })
+      form.reset({
+        ...form.getValues(),
+        email: currentUser?.email,
+        current_password: "",
+      })
       toggleEditMode()
     },
     onError: handleError.bind(showErrorToast),
     onSettled: () => {
+      form.resetField("current_password")
       queryClient.invalidateQueries()
     },
   })
@@ -91,7 +107,11 @@ const UserInformation = () => {
     }
     const email = data.email !== currentUser?.email ? data.email : undefined
 
-    mutation.mutate({ profile, email })
+    mutation.mutate({
+      profile,
+      email,
+      currentPassword: email ? data.current_password : undefined,
+    })
   }
 
   const onCancel = () => {
@@ -155,6 +175,19 @@ const UserInformation = () => {
               )
             }
           />
+
+          {editMode && emailChanged && (
+            <IdentityProof
+              control={form.control}
+              name="current_password"
+              hasPassword={hasPassword}
+              description={t("Required to change the email address.")}
+              signInAgainHint={t(
+                "Your account signs in through single sign-on: if you signed in more than 5 minutes ago, sign out and sign in again before changing the email address.",
+              )}
+              testId="email-current-password-input"
+            />
+          )}
 
           <div className="flex gap-3">
             {editMode ? (

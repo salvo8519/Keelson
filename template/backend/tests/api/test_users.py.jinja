@@ -74,7 +74,9 @@ def mock_user_service(mock_user: MockUser) -> MagicMock:
     service.get_multi = ServiceMock(return_value=[mock_user])
     service.update = ServiceMock(return_value=mock_user)
     service.update_me = ServiceMock(return_value=mock_user)
+    service.read_me = ServiceMock(return_value=mock_user)
     service.change_password = ServiceMock(return_value=None)
+    service.confirm_identity = ServiceMock(return_value=None)
     service.register = ServiceMock(return_value=mock_user)
     service.create = ServiceMock(return_value=mock_user)
     service.delete = ServiceMock(return_value=mock_user)
@@ -167,15 +169,15 @@ async def test_update_current_user(auth_client: AsyncClient, mock_user_service: 
     "field",
     [{"password": "new-password-123"}, {"is_active": False}, {"role": "admin"}, {"email": "new@example.com"}],
 )
-async def test_update_current_user_ignores_protected_fields(
+async def test_update_current_user_refuses_protected_fields(
     auth_client: AsyncClient, mock_user_service: MagicMock, field: dict
 ):
-    """Keelstone: password, status, role and address cannot change through PATCH /users/me."""
-    response = await auth_client.patch(f"{settings.API_V1_STR}/users/me", json=field)
-    assert response.status_code == 200
+    """Keelstone: password, status, role and address cannot change through PATCH /users/me; a
+    field outside the profile is refused (422), not silently ignored."""
+    response = await auth_client.patch(f"{settings.API_V1_STR}/users/me", json={"full_name": "Ada", **field})
+    assert response.status_code == 422
     mock_user_service.update.assert_not_called()
-    (_, sent), _ = mock_user_service.update_me.call_args
-    assert sent.model_dump(exclude_unset=True) == {}
+    mock_user_service.update_me.assert_not_called()
 
 
 @pytest.mark.anyio
@@ -197,9 +199,15 @@ async def test_change_password_requires_the_current_one(
 
 
 @pytest.mark.anyio
-async def test_delete_own_account(auth_client: AsyncClient, mock_user_service: MagicMock):
-    response = await auth_client.delete(f"{settings.API_V1_STR}/users/me")
+async def test_delete_own_account(
+    auth_client: AsyncClient, mock_user_service: MagicMock, mock_user: MockUser
+):
+    response = await auth_client.request(
+        "DELETE", f"{settings.API_V1_STR}/users/me", json={"current_password": "old-password-1"}
+    )
     assert response.status_code == 204
+    # Keelstone: the identity is proved again first (the database tests check the refusals).
+    mock_user_service.confirm_identity.assert_awaited_once_with(mock_user, "old-password-1", None)
     mock_user_service.delete.assert_awaited_once()
 
 

@@ -6,6 +6,7 @@ opened, or moved, onto someone else's address and wait there for its owner. The 
 through the application against a real database, under row level security.
 """
 
+import asyncio
 from collections.abc import AsyncIterator
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -16,7 +17,7 @@ from httpx import ASGITransport, AsyncClient
 
 from app.api.deps import get_redis
 from app.core.config import settings
-from app.core.security import create_password_reset_token, get_password_hash, issue_session_tokens
+from app.core.security import create_password_reset_token, get_password_hash, issue_session_tokens, verify_password
 from app.db.models.user import User
 from app.main import app
 from app.repositories import user_repo
@@ -38,14 +39,35 @@ async def database() -> AsyncIterator[SegregatedDatabase]:
         yield database
 
 
+MAILS = (
+    "send_email_change",
+    "send_email_change_requested",
+    "send_email_changed",
+    "send_account_exists",
+    "send_welcome",
+    "send_password_reset",
+    "send_magic_link",
+)
+
+
 @pytest.fixture
 def mailbox() -> AsyncIterator[MagicMock]:
     """Every e-mail the application sends, without sending it."""
     email = MagicMock()
-    for method in ("send_email_change", "send_account_exists", "send_welcome", "send_password_reset"):
+    for method in MAILS:
         setattr(email, method, AsyncMock())
     with patch("app.services.user.get_email_service", return_value=email):
         yield email
+
+
+def _sent_to(mailbox: MagicMock, address: str) -> list[str]:
+    """The e-mails sent to ``address``, by method name."""
+    return [
+        method
+        for method in MAILS
+        for call in getattr(mailbox, method).await_args_list
+        if call.kwargs["to"] == address
+    ]
 
 
 @pytest.fixture
@@ -78,15 +100,29 @@ def _bearer(user: User) -> dict[str, str]:
     return {"Authorization": f"Bearer {issue_session_tokens(user)[0]}"}
 
 
+def _fragment_token(url: str) -> str:
+    """The token of a link sent by e-mail: in the fragment, never in the query string."""
+    parsed = urlparse(url)
+    assert "token" not in parse_qs(parsed.query)
+    return parse_qs(parsed.fragment)["token"][0]
+
+
 def _link_token(mailbox: MagicMock) -> str:
-    url = mailbox.send_email_change.await_args.kwargs["confirm_url"]
-    return parse_qs(urlparse(url).query)["token"][0]
+    return _fragment_token(mailbox.send_email_change.await_args.kwargs["confirm_url"])
+
+
+async def _change(client: AsyncClient, mailbox: MagicMock, user: User, new_email: str) -> None:
+    """Request and confirm a change of address, as the user would."""
+    requested = await client.post(f"{API}/users/me/email", json={"current_password": PASSWORD, "email": new_email}, headers=_bearer(user))
+    assert requested.status_code == 202, requested.text
+    confirmed = await client.post(f"{API}/auth/email/confirm", json={"token": _link_token(mailbox)})
+    assert confirmed.status_code == 200, confirmed.text
 
 
 async def test_a_new_address_is_pending_until_its_link_is_followed(client, database, mailbox) -> None:
     ada = await _user(database, "ada@example.com")
 
-    requested = await client.post(f"{API}/users/me/email", json={"email": "ada@new.example"}, headers=_bearer(ada))
+    requested = await client.post(f"{API}/users/me/email", json={"current_password": PASSWORD, "email": "ada@new.example"}, headers=_bearer(ada))
 
     assert requested.status_code == 202, requested.text
     assert mailbox.send_email_change.await_args.kwargs["to"] == "ada@new.example"
@@ -103,18 +139,23 @@ async def test_a_new_address_is_pending_until_its_link_is_followed(client, datab
     assert again.status_code == 401
 
 
-async def test_the_profile_update_does_not_change_the_address(client, database) -> None:
+async def test_the_profile_update_refuses_an_address(client, database) -> None:
+    """An ignored field would answer 200 and leave the client believing the address changed."""
     ada = await _user(database, "ada@example.com")
 
-    response = await client.patch(f"{API}/users/me", json={"email": "ada@new.example"}, headers=_bearer(ada))
+    response = await client.patch(
+        f"{API}/users/me", json={"full_name": "Ada", "email": "ada@new.example"}, headers=_bearer(ada)
+    )
 
-    assert response.status_code == 200
-    assert (await _reload(database, ada.id)).email == "ada@example.com"
+    assert response.status_code == 422
+    after = await _reload(database, ada.id)
+    assert (after.email, after.full_name) == ("ada@example.com", None)
+    assert (await client.patch(f"{API}/users/me", json={"full_name": "Ada"}, headers=_bearer(ada))).status_code == 200
 
 
 async def test_a_link_to_an_address_taken_meanwhile_changes_nothing(client, database, mailbox) -> None:
     ada = await _user(database, "ada@example.com")
-    await client.post(f"{API}/users/me/email", json={"email": "bob@example.com"}, headers=_bearer(ada))
+    await client.post(f"{API}/users/me/email", json={"current_password": PASSWORD, "email": "bob@example.com"}, headers=_bearer(ada))
     await _user(database, "bob@example.com")
 
     confirmed = await client.post(f"{API}/auth/email/confirm", json={"token": _link_token(mailbox)})
@@ -125,7 +166,7 @@ async def test_a_link_to_an_address_taken_meanwhile_changes_nothing(client, data
 
 async def test_a_link_issued_before_a_sign_out_everywhere_is_void(client, database, mailbox) -> None:
     ada = await _user(database, "ada@example.com")
-    await client.post(f"{API}/users/me/email", json={"email": "ada@new.example"}, headers=_bearer(ada))
+    await client.post(f"{API}/users/me/email", json={"current_password": PASSWORD, "email": "ada@new.example"}, headers=_bearer(ada))
     await client.post(f"{API}/auth/logout-all", headers=_bearer(ada))
 
     confirmed = await client.post(f"{API}/auth/email/confirm", json={"token": _link_token(mailbox)})
@@ -135,18 +176,28 @@ async def test_a_link_issued_before_a_sign_out_everywhere_is_void(client, databa
 
 
 async def test_a_request_for_the_current_or_a_taken_address_sends_nothing(client, database, mailbox) -> None:
+    """Accepted like any other request, so the answer does not tell which addresses have an
+    account in any organization; nothing reaches the taken address."""
     ada = await _user(database, "ada@example.com")
-    await _user(database, "bob@example.com")
+    await _user(database, "bob@other.example")  # in another organization
+    free = await client.post(f"{API}/users/me/email", json={"current_password": PASSWORD, "email": "ada@new.example"}, headers=_bearer(ada))
+    mailbox.reset_mock()
 
-    same = await client.post(f"{API}/users/me/email", json={"email": "ADA@example.com"}, headers=_bearer(ada))
-    taken = await client.post(f"{API}/users/me/email", json={"email": "bob@example.com"}, headers=_bearer(ada))
+    same = await client.post(f"{API}/users/me/email", json={"current_password": PASSWORD, "email": "ADA@example.com"}, headers=_bearer(ada))
+    assert mailbox.mock_calls == [] and _sent_to(mailbox, "ada@example.com") == []
+    taken = await client.post(f"{API}/users/me/email", json={"current_password": PASSWORD, "email": "bob@other.example"}, headers=_bearer(ada))
 
-    assert (same.status_code, taken.status_code) == (400, 409)
+    assert free.status_code == same.status_code == taken.status_code == 202
+    assert free.json() == same.json() == taken.json()
     mailbox.send_email_change.assert_not_awaited()
+    assert _sent_to(mailbox, "bob@other.example") == []
+    # The account's own address is told of the request exactly as for a free address, so its
+    # inbox does not tell the two apart either.
+    assert _sent_to(mailbox, "ada@example.com") == ["send_email_change_requested"]
 
 
 async def test_a_change_request_needs_a_session(client, database, mailbox) -> None:
-    response = await client.post(f"{API}/users/me/email", json={"email": "ada@new.example"})
+    response = await client.post(f"{API}/users/me/email", json={"current_password": PASSWORD, "email": "ada@new.example"})
 
     assert response.status_code == 401
     mailbox.send_email_change.assert_not_awaited()
@@ -159,12 +210,12 @@ async def test_only_an_unexpired_change_link_of_an_active_account_confirms(clien
     from app.core.security import create_email_change_token
 
     ada = await _user(database, "ada@example.com")
-    reset_link = create_password_reset_token(str(ada.id), current_password_hash=None)
+    reset_link = create_password_reset_token(str(ada.id), current_password_hash=None, address=ada.email)
     expired = create_email_change_token(ada, "ada@new.example", expires_delta=timedelta(seconds=-1))
     for token in (reset_link, expired, "not-a-signed-link"):
         refused = await client.post(f"{API}/auth/email/confirm", json={"token": token})
         assert refused.status_code == 401, token
-    await client.post(f"{API}/users/me/email", json={"email": "ada@new.example"}, headers=_bearer(ada))
+    await client.post(f"{API}/users/me/email", json={"current_password": PASSWORD, "email": "ada@new.example"}, headers=_bearer(ada))
     async with database.system() as db:
         await user_repo.update(db, db_user=await user_repo.get_by_id(db, ada.id), update_data={"is_active": False})
         await db.commit()
@@ -178,14 +229,657 @@ async def test_only_an_unexpired_change_link_of_an_active_account_confirms(clien
 async def test_a_link_for_one_account_cannot_be_replayed_after_another_change(client, database, mailbox) -> None:
     """Two links outstanding: the first one followed voids the other (bound to the address)."""
     ada = await _user(database, "ada@example.com")
-    await client.post(f"{API}/users/me/email", json={"email": "ada@one.example"}, headers=_bearer(ada))
+    await client.post(f"{API}/users/me/email", json={"current_password": PASSWORD, "email": "ada@one.example"}, headers=_bearer(ada))
     first = _link_token(mailbox)
-    await client.post(f"{API}/users/me/email", json={"email": "ada@two.example"}, headers=_bearer(ada))
+    await client.post(f"{API}/users/me/email", json={"current_password": PASSWORD, "email": "ada@two.example"}, headers=_bearer(ada))
     second = _link_token(mailbox)
 
     assert (await client.post(f"{API}/auth/email/confirm", json={"token": second})).status_code == 200
     assert (await client.post(f"{API}/auth/email/confirm", json={"token": first})).status_code == 401
     assert (await _reload(database, ada.id)).email == "ada@two.example"
+
+
+# --- Re-authentication (M2) ----------------------------------------------------------------
+
+
+@pytest.mark.parametrize("proof", [{}, {"current_password": None}, {"current_password": "wrong-password-1"}])
+async def test_a_change_needs_the_current_password(client, database, mailbox, proof) -> None:
+    """A session alone (a stolen cookie, an unlocked computer) cannot move the account."""
+    ada = await _user(database, "ada@example.com")
+
+    refused = await client.post(f"{API}/users/me/email", json={"email": "ada@new.example", **proof}, headers=_bearer(ada))
+
+    assert refused.status_code == 400
+    assert mailbox.mock_calls == []
+{%- if enable_rate_limiting %}
+
+
+async def test_password_guesses_leave_the_sign_in_limit_alone(client, database, mailbox) -> None:
+    """Behind one network address (a company), a user who mistypes the current password does not
+    lock colleagues out of signing in: re-authentication has its own limits (``reauth``)."""
+    from app.services.rate_limit import DEFAULT_RATE_LIMITS, RateLimitCategory
+
+    ada = await _user(database, "ada@example.com")
+    await _user(database, "bob@example.com")
+    budget = DEFAULT_RATE_LIMITS[RateLimitCategory.REAUTH].per_user or 0
+    assert budget >= (DEFAULT_RATE_LIMITS[RateLimitCategory.AUTH].per_ip or 0)
+    for n in range(budget):
+        guess = await client.patch(
+            f"{API}/users/me/password",
+            json={"current_password": f"guess-{n:04d}", "new_password": "new-password-9"},
+            headers=_bearer(ada),
+        )
+        assert guess.status_code == 400, guess.text
+
+    right = await client.patch(
+        f"{API}/users/me/password",
+        json={"current_password": PASSWORD, "new_password": "new-password-9"},
+        headers=_bearer(ada),
+    )
+    colleague = await client.post(f"{API}/auth/login", data={"username": "bob@example.com", "password": PASSWORD})
+
+    assert right.status_code == 429
+    assert right.json()["details"]["category"] == RateLimitCategory.REAUTH
+    assert colleague.status_code == 200, colleague.text
+{%- endif %}
+
+
+{%- if enable_rate_limiting %}
+
+
+async def test_password_guesses_share_one_budget_across_routes(client, database, mailbox, deletions) -> None:
+    """Guessing on the password change route exhausts the guesses of the address change too,
+    from any client address: the right password is then refused on both routes."""
+    from app.services.rate_limit import DEFAULT_RATE_LIMITS, RateLimitCategory
+
+    ada = await _user(database, "ada@example.com")
+    budget = DEFAULT_RATE_LIMITS[RateLimitCategory.REAUTH].per_user or 0
+    assert budget > 0
+
+    def elsewhere(n: int) -> AsyncClient:
+        """A client from another address, so that the per-IP limit of the sign-in routes is not
+        what refuses."""
+        transport = ASGITransport(app=app, client=(f"10.0.0.{n}", 40000))
+        return AsyncClient(transport=transport, base_url="http://test")
+
+    for n in range(budget):
+        async with elsewhere(n + 10) as other:
+            wrong = await other.patch(
+                f"{API}/users/me/password",
+                json={"current_password": f"guess-{n:04d}", "new_password": "new-password-9"},
+                headers=_bearer(ada),
+            )
+        assert wrong.status_code == 400, wrong.text
+
+    async with elsewhere(1) as other:
+        change = await other.patch(
+            f"{API}/users/me/password",
+            json={"current_password": PASSWORD, "new_password": "new-password-9"},
+            headers=_bearer(ada),
+        )
+    async with elsewhere(2) as other:
+        move = await other.post(
+            f"{API}/users/me/email",
+            json={"email": "ada@new.example", "current_password": PASSWORD},
+            headers=_bearer(ada),
+        )
+    async with elsewhere(3) as other:
+        delete = await other.request(
+            "DELETE", f"{API}/users/me", json={"current_password": PASSWORD}, headers=_bearer(ada)
+        )
+
+    for refused in (change, move, delete):
+        assert refused.status_code == 429
+        assert refused.json()["details"]["category"] == RateLimitCategory.REAUTH
+    assert mailbox.mock_calls == []
+    deletions.assert_not_awaited()
+
+
+async def test_password_changes_are_limited_per_client_ip(client, database) -> None:
+    from app.services.rate_limit import DEFAULT_RATE_LIMITS, RateLimitCategory
+
+    per_ip = DEFAULT_RATE_LIMITS[RateLimitCategory.REAUTH].per_ip or 0
+    users = [await _user(database, f"user{n}@example.com") for n in range(per_ip + 1)]
+    answers = [
+        await client.patch(
+            f"{API}/users/me/password",
+            json={"current_password": "wrong-password-0", "new_password": "new-password-9"},
+            headers=_bearer(user),
+        )
+        for user in users
+    ]
+
+    assert [answer.status_code for answer in answers] == [400] * per_ip + [429]
+    assert answers[-1].json()["details"]["scope"] == "ip"
+    assert answers[-1].json()["details"]["category"] == RateLimitCategory.REAUTH
+{%- endif %}
+
+
+async def test_the_own_record_tells_whether_the_account_has_a_password(client, database) -> None:
+    """What the profile form needs to ask for the password or for a recent sign-in."""
+    ada = await _user(database, "ada@example.com")
+    sso = await _user(database, "sso@example.com", hashed_password=None)
+
+    mine = (await client.get(f"{API}/users/me", headers=_bearer(ada))).json()
+    theirs = (await client.get(f"{API}/users/me", headers=_bearer(sso))).json()
+
+    assert (mine["has_password"], theirs["has_password"]) == (True, False)
+    assert "hashed_password" not in mine
+
+
+async def test_the_own_record_does_not_read_the_password_hash(client, database) -> None:
+    """``has_password`` is tested in the database; the hash never leaves it, and the system read
+    is declared (and logged) for what it is."""
+    from app.services import user as user_service
+
+    ada = await _user(database, "ada@example.com")
+    reasons: list[str] = []
+    declared = user_service.system_session
+
+    def recording(reason: str) -> Any:
+        reasons.append(reason)
+        return declared(reason)
+
+    # Patched for the request only: the session of ``serving`` is restored when it ends.
+    with (
+        patch.object(user_service, "system_session", recording),
+        patch.object(user_repo, "get_password_hash", AsyncMock(side_effect=AssertionError("hash read"))),
+    ):
+        me = await client.get(f"{API}/users/me", headers=_bearer(ada))
+
+    assert me.status_code == 200, me.text
+    assert me.json()["has_password"] is True
+    assert reasons == ["own profile: whether the account has a password"]
+
+
+def _access_signed_in(user: User, seconds_ago: int) -> dict[str, str]:
+    """A bearer token of a session that started ``seconds_ago`` seconds ago."""
+    import time
+
+    from app.core.security import create_access_token
+
+    token = create_access_token(user.id, version=user.token_epoch, signed_in_at=int(time.time()) - seconds_ago)
+    return {"Authorization": f"Bearer {token}"}
+
+
+async def test_an_account_without_a_password_needs_a_recent_sign_in(client, database, mailbox) -> None:
+    from app.services.user import REAUTHENTICATION_WINDOW
+
+    window = int(REAUTHENTICATION_WINDOW.total_seconds())
+    sso = await _user(database, "sso@example.com", hashed_password=None)
+
+    stale = await client.post(f"{API}/users/me/email", json={"email": "sso@new.example"}, headers=_access_signed_in(sso, window + 5))
+    assert stale.status_code == 403
+    assert stale.json()["details"]["reason"] == "recent_sign_in_required"
+    assert mailbox.mock_calls == []
+
+    fresh = await client.post(f"{API}/users/me/email", json={"email": "sso@new.example"}, headers=_access_signed_in(sso, 10))
+    assert fresh.status_code == 202, fresh.text
+
+
+async def test_a_token_without_a_sign_in_time_is_not_a_recent_sign_in(client, database, mailbox) -> None:
+    """Impersonation tokens and tokens issued before the upgrade carry no ``auth_time``."""
+    from app.core.security import create_access_token
+
+    sso = await _user(database, "sso@example.com", hashed_password=None)
+    token = create_access_token(sso.id, version=sso.token_epoch)
+
+    refused = await client.post(
+        f"{API}/users/me/email", json={"email": "sso@new.example"}, headers={"Authorization": f"Bearer {token}"}
+    )
+
+    assert refused.status_code == 403
+    assert mailbox.mock_calls == []
+
+
+async def test_a_refresh_does_not_make_a_sign_in_recent(client, database, mailbox) -> None:
+    """A rotation keeps the sign-in time of the session: renewing does not count as signing in."""
+    import time
+
+    from app.core.security import REFRESH, create_refresh_token, read_session_token
+    from app.services.user import REAUTHENTICATION_WINDOW
+
+    sso = await _user(database, "sso@example.com", hashed_password=None)
+    long_ago = int(time.time() - REAUTHENTICATION_WINDOW.total_seconds() - 60)
+    old_refresh = create_refresh_token(sso.id, version=sso.token_epoch, signed_in_at=long_ago)
+
+    renewed = await client.post(f"{API}/auth/refresh", json={"refresh_token": old_refresh})
+    assert renewed.status_code == 200, renewed.text
+    tokens = renewed.json()
+    rotated = read_session_token(tokens["refresh_token"], REFRESH)
+    assert rotated is not None and rotated.signed_in_at == long_ago
+
+    refused = await client.post(
+        f"{API}/users/me/email",
+        json={"email": "sso@new.example"},
+        headers={"Authorization": f"Bearer {tokens['access_token']}"},
+    )
+    assert refused.status_code == 403
+    assert mailbox.mock_calls == []
+
+
+# --- Deleting the account (L4) ------------------------------------------------------------
+
+
+def _delete_me(client: AsyncClient, headers: dict[str, str], **proof: Any) -> Any:
+    return client.request("DELETE", f"{API}/users/me", json=proof or None, headers=headers)
+
+
+@pytest.fixture
+def deletions(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
+    """The deletions the route asks for. What a deletion removes is not the subject here: these
+    tests check who may ask for one."""
+    from app.services.user import UserService
+
+    deleted = AsyncMock()
+    monkeypatch.setattr(UserService, "delete", deleted)
+    return deleted
+
+
+@pytest.mark.parametrize("proof", [{}, {"current_password": None}, {"current_password": "wrong-password-1"}])
+async def test_deleting_the_account_needs_the_current_password(client, database, deletions, proof) -> None:
+    """A session alone (a stolen cookie, an unlocked computer) cannot delete the account."""
+    ada = await _user(database, "ada@example.com")
+
+    refused = await _delete_me(client, _bearer(ada), **proof)
+
+    assert refused.status_code == 400, refused.text
+    deletions.assert_not_awaited()
+    accepted = await _delete_me(client, _bearer(ada), current_password=PASSWORD)
+    assert accepted.status_code == 204, accepted.text
+    deletions.assert_awaited_once_with(ada.id)
+
+
+async def test_deleting_an_account_without_a_password_needs_a_recent_sign_in(client, database, deletions) -> None:
+    from app.services.user import REAUTHENTICATION_WINDOW
+
+    window = int(REAUTHENTICATION_WINDOW.total_seconds())
+    sso = await _user(database, "sso@example.com", hashed_password=None)
+
+    stale = await _delete_me(client, _access_signed_in(sso, window + 5))
+    assert stale.status_code == 403
+    assert stale.json()["details"]["reason"] == "recent_sign_in_required"
+    deletions.assert_not_awaited()
+
+    fresh = await _delete_me(client, _access_signed_in(sso, 10))
+    assert fresh.status_code == 204, fresh.text
+    deletions.assert_awaited_once_with(sso.id)
+{%- if enable_rate_limiting %}
+
+
+# --- The limiter's storage is down (L3) ----------------------------------------------------
+
+
+class _StorageDown:
+    """A rate limit storage whose backend does not answer."""
+
+    async def increment_and_check(self, key: str, limit: int, period_seconds: int) -> Any:
+        from app.services.rate_limit.storage import RateLimitStorageUnavailable
+
+        raise RateLimitStorageUnavailable("connection refused")
+
+
+@pytest.fixture
+def limiter_down(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
+    """The limiter cannot count; the returned mock records every password check."""
+    from app.services import user as user_service
+    from app.services.rate_limit import service as rate_limit_service
+
+    monkeypatch.setattr(rate_limit_service, "_storage", _StorageDown())
+    checks = MagicMock()
+    monkeypatch.setattr(user_service, "verify_password", checks.verify_password)
+    monkeypatch.setattr(user_service, "verify_and_update_password", checks.verify_and_update_password)
+    return checks
+
+
+async def test_password_routes_fail_closed_while_the_limiter_is_down(
+    client, database, mailbox, limiter_down, deletions
+) -> None:
+    """Without a limit, a password could be guessed at full speed: the routes that check one
+    answer 503 and check nothing until the limiter counts again."""
+    ada = await _user(database, "ada@example.com")
+    proof = {"current_password": PASSWORD}
+
+    answers = {
+        "login": await client.post(f"{API}/auth/login", data={"username": "ada@example.com", "password": PASSWORD}),
+        "password": await client.patch(
+            f"{API}/users/me/password", json={**proof, "new_password": "new-password-9"}, headers=_bearer(ada)
+        ),
+        "email": await client.post(f"{API}/users/me/email", json={**proof, "email": "ada@new.example"}, headers=_bearer(ada)),
+        "delete": await _delete_me(client, {**_bearer(ada), "Accept-Language": "it"}, **proof),
+    }
+
+    for route, answer in answers.items():
+        assert answer.status_code == 503, (route, answer.text)
+        assert answer.headers["content-type"].startswith("application/problem+json")
+        assert answer.json()["code"] == "RATE_LIMIT_UNAVAILABLE"
+        assert int(answer.headers["Retry-After"]) > 0
+    english = "Signing in and account changes are temporarily unavailable. Try again in a few minutes."
+    assert answers["login"].json()["detail"] == english
+    assert answers["delete"].json()["detail"] not in ("", english)
+    assert limiter_down.mock_calls == [], "no password was checked"
+    assert mailbox.mock_calls == []
+    deletions.assert_not_awaited()
+
+
+async def test_during_a_redis_outage_sessions_neither_renew_nor_end(client, database, limiter_down) -> None:
+    """The whole Redis is down: the limiter and the records of refresh tokens. A refresh passes
+    the limiter (category ``refresh`` fails open) and is refused by the token store; an access
+    token keeps working until it expires."""
+    from app.core.security import create_refresh_token
+    from tests.fakes import DownRedis
+
+    ada = await _user(database, "ada@example.com")
+    refresh = create_refresh_token(ada.id, version=ada.token_epoch)
+    app.dependency_overrides[get_redis] = DownRedis
+
+    renewed = await client.post(f"{API}/auth/refresh", json={"refresh_token": refresh})
+    me = await client.get(f"{API}/users/me", headers=_bearer(ada))
+
+    assert renewed.status_code == 503, renewed.text
+    assert renewed.json()["code"] == "SESSION_STORE_UNAVAILABLE"
+    assert int(renewed.headers["Retry-After"]) > 0
+    assert me.status_code == 200, me.text
+{%- endif %}
+
+
+# --- Notices to the address in force (M2) ---------------------------------------------------
+
+
+async def test_the_address_in_force_is_told_of_a_request_and_of_the_change(client, database, mailbox) -> None:
+    ada = await _user(database, "ada@example.com", full_name="Ada")
+
+    await client.post(f"{API}/users/me/email", json={"current_password": PASSWORD, "email": "ada@new.example"}, headers=_bearer(ada))
+
+    token = _link_token(mailbox)
+    requested = mailbox.send_email_change_requested.await_args.kwargs
+    assert (requested["to"], requested["new_email"]) == ("ada@example.com", "ada@new.example")
+    assert token not in str(requested), "the notice must not carry the confirmation"
+    mailbox.send_email_changed.assert_not_awaited()
+
+    assert (await client.post(f"{API}/auth/email/confirm", json={"token": token})).status_code == 200
+
+    changed = mailbox.send_email_changed.await_args.kwargs
+    assert (changed["to"], changed["new_email"]) == ("ada@example.com", "ada@new.example")
+    assert token not in str(changed)
+    assert _sent_to(mailbox, "ada@new.example") == ["send_email_change"]
+
+
+async def test_the_notices_carry_no_link_that_confirms() -> None:
+    """The templates of the notices: the new address, what to do, and no confirmation link."""
+    from app.services.email.templates import render_email
+
+    for language in ("en", "it"):
+        for key, context in (
+            ("email_change_requested", {"login_url": "https://app.example/login"}),
+            ("email_changed", {}),
+        ):
+            subject, html, text = render_email(
+                key, {"name": "Ada", "new_email": "ada@new.example", "app_name": "App", **context}, language
+            )
+            for part in (html, text):
+                assert "ada@new.example" in part and "[[" not in part
+                assert "confirm-email" not in part and "token" not in part
+            assert subject
+
+
+# --- E-mails leave after the request (issue #12) -------------------------------------------
+
+
+def _spied(events: list[str]) -> Any:
+    """The application, recording when the response starts (``events``)."""
+
+    async def spied(scope: Any, receive: Any, send: Any) -> None:
+        async def spy(message: Any) -> None:
+            if message["type"] == "http.response.start":
+                events.append("response")
+            await send(message)
+
+        await app(scope, receive, spy)
+
+    return spied
+
+
+@pytest.mark.parametrize(
+    ("path", "body", "mail"),
+    [
+        ("/users/me/email", {"email": "ada@new.example", "current_password": PASSWORD}, "send_email_change"),
+        ("/auth/password-reset/request", {"email": "ada@example.com"}, "send_password_reset"),
+        ("/auth/magic-link/request", {"email": "ada@example.com"}, "send_magic_link"),
+        ("/auth/register", {"email": "new@example.com", "password": PASSWORD}, "send_welcome"),
+        ("/auth/register", {"email": "ada@example.com", "password": PASSWORD}, "send_account_exists"),
+    ],
+)
+async def test_account_emails_are_sent_after_the_response(client, database, mailbox, path, body, mail) -> None:
+    """The request does not wait for the mail transport: the answer takes the same time
+    whether an address gets one e-mail, two or none."""
+    ada = await _user(database, "ada@example.com")
+    events: list[str] = []
+    for method in MAILS:
+        getattr(mailbox, method).side_effect = lambda *args, _m=method, **kwargs: events.append(_m)
+
+    async with AsyncClient(transport=ASGITransport(app=_spied(events)), base_url="http://test") as spied:
+        answer = await spied.post(f"{API}{path}", json=body, headers=_bearer(ada))
+
+    assert answer.status_code in (200, 202), answer.text
+    assert mail in events
+    assert events[0] == "response", events
+
+
+async def test_the_welcome_of_an_account_created_by_an_administrator_follows_the_response(
+    client, database, mailbox
+) -> None:
+    admin = await _user(database, "admin@example.com", role="admin", is_app_admin=True)
+    events: list[str] = []
+    mailbox.send_welcome.side_effect = lambda *args, **kwargs: events.append("send_welcome")
+
+    async with AsyncClient(transport=ASGITransport(app=_spied(events)), base_url="http://test") as spied:
+        created = await spied.post(
+            f"{API}/users", json={"email": "new@example.com", "password": PASSWORD}, headers=_bearer(admin)
+        )
+
+    assert created.status_code == 201, created.text
+    assert events == ["response", "send_welcome"]
+
+
+async def test_no_email_leaves_when_the_transaction_fails(client, database, mailbox, monkeypatch) -> None:
+    """A change that is not stored is not announced; a reset link whose request failed is not sent."""
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    ada = await _user(database, "ada@example.com")
+    await client.post(
+        f"{API}/users/me/email", json={"email": "ada@new.example", "current_password": PASSWORD}, headers=_bearer(ada)
+    )
+    token = _link_token(mailbox)
+    mailbox.reset_mock()
+
+    async def refused(self: AsyncSession) -> None:
+        raise RuntimeError("commit refused")
+
+    monkeypatch.setattr(AsyncSession, "commit", refused)
+    async with AsyncClient(
+        transport=ASGITransport(app=app, raise_app_exceptions=False), base_url="http://test"
+    ) as failing:
+        confirmed = await failing.post(f"{API}/auth/email/confirm", json={"token": token})
+        reset = await failing.post(f"{API}/auth/password-reset/request", json={"email": "ada@example.com"})
+        registered = await failing.post(f"{API}/auth/register", json={"email": "new@example.com", "password": PASSWORD})
+        known = await failing.post(f"{API}/auth/register", json={"email": "ada@example.com", "password": PASSWORD})
+    monkeypatch.undo()
+
+    assert (confirmed.status_code, reset.status_code, registered.status_code, known.status_code) == (500,) * 4
+    assert mailbox.mock_calls == [], "no welcome for an account that was not stored"
+    assert (await _reload(database, ada.id)).email == "ada@example.com"
+    async with database.system() as db:
+        assert await user_repo.get_by_email(db, "new@example.com") is None
+
+
+# --- Links sent to a previous address (M1) and replayed links (L1) -------------------------
+
+
+async def test_a_reset_link_sent_to_the_previous_address_is_void_after_a_change(client, database, mailbox) -> None:
+    ada = await _user(database, "ada@example.com")
+    assert (await client.post(f"{API}/auth/password-reset/request", json={"email": "ada@example.com"})).status_code == 200
+    old_link = _fragment_token(mailbox.send_password_reset.await_args.kwargs["reset_url"])
+
+    await _change(client, mailbox, ada, "ada@new.example")
+
+    reset = await client.post(
+        f"{API}/auth/password-reset/confirm", json={"token": old_link, "new_password": "taken-over-1"}
+    )
+    assert reset.status_code == 401
+    after = await _reload(database, ada.id)
+    assert after.email == "ada@new.example"
+    async with database.system() as db:
+        assert verify_password(PASSWORD, await user_repo.get_password_hash(db, ada.id) or "")
+
+
+async def test_a_sign_in_link_sent_to_the_previous_address_is_void_after_a_change(client, database, mailbox) -> None:
+    ada = await _user(database, "ada@example.com")
+    assert (await client.post(f"{API}/auth/magic-link/request", json={"email": "ada@example.com"})).status_code == 200
+    old_link = _fragment_token(mailbox.send_magic_link.await_args.kwargs["magic_url"])
+
+    await _change(client, mailbox, ada, "ada@new.example")
+
+    assert (await client.post(f"{API}/auth/magic-link/verify", json={"token": old_link})).status_code == 401
+
+
+async def test_links_sent_to_the_address_in_force_still_work(client, database, mailbox) -> None:
+    ada = await _user(database, "ada@example.com")
+    await _change(client, mailbox, ada, "ada@new.example")
+    await client.post(f"{API}/auth/magic-link/request", json={"email": "ada@new.example"})
+    link = _fragment_token(mailbox.send_magic_link.await_args.kwargs["magic_url"])
+
+    assert (await client.post(f"{API}/auth/magic-link/verify", json={"token": link})).status_code == 200
+
+
+async def test_a_change_link_cannot_be_replayed_after_a_round_trip(client, database, mailbox) -> None:
+    """A to B, then B back to A: the first link names A and the same session version again,
+    but every confirmed change raised the magic-link epoch it carries."""
+    ada = await _user(database, "ada@example.com")
+    await client.post(f"{API}/users/me/email", json={"current_password": PASSWORD, "email": "ada@b.example"}, headers=_bearer(ada))
+    to_b = _link_token(mailbox)
+    assert (await client.post(f"{API}/auth/email/confirm", json={"token": to_b})).status_code == 200
+    await _change(client, mailbox, ada, "ada@example.com")
+
+    replayed = await client.post(f"{API}/auth/email/confirm", json={"token": to_b})
+
+    assert replayed.status_code == 401
+    assert (await _reload(database, ada.id)).email == "ada@example.com"
+
+
+@pytest.fixture
+def slow_writes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every write of a user waits a moment first, so that two requests sent together have
+    both checked their link before either writes (what a busy server does now and then)."""
+    write = user_repo.update
+
+    async def slow(*args: Any, **kwargs: Any) -> User:
+        await asyncio.sleep(0.2)
+        return await write(*args, **kwargs)
+
+    monkeypatch.setattr(user_repo, "update", slow)
+
+
+async def test_one_link_redeemed_twice_at_once_signs_in_once(client, database, mailbox, slow_writes) -> None:
+    """The second redemption waits for the first (row lock) and then finds the link void."""
+    await _user(database, "ada@example.com")
+    await client.post(f"{API}/auth/magic-link/request", json={"email": "ada@example.com"})
+    link = _fragment_token(mailbox.send_magic_link.await_args.kwargs["magic_url"])
+
+    answers = await asyncio.gather(
+        *(client.post(f"{API}/auth/magic-link/verify", json={"token": link}) for _ in range(2))
+    )
+
+    assert sorted(answer.status_code for answer in answers) == [200, 401]
+
+
+async def test_two_change_links_confirmed_at_once_change_the_address_once(
+    client, database, mailbox, slow_writes
+) -> None:
+    ada = await _user(database, "ada@example.com")
+    links = []
+    for address in ("ada@one.example", "ada@two.example"):
+        await client.post(f"{API}/users/me/email", json={"current_password": PASSWORD, "email": address}, headers=_bearer(ada))
+        links.append(_link_token(mailbox))
+
+    answers = await asyncio.gather(
+        *(client.post(f"{API}/auth/email/confirm", json={"token": link}) for link in links)
+    )
+
+    assert sorted(answer.status_code for answer in answers) == [200, 401]
+    winner = next(answer for answer in answers if answer.status_code == 200).json()["email"]
+    assert (await _reload(database, ada.id)).email == winner
+    assert mailbox.send_email_changed.await_count == 1
+{%- if enable_rate_limiting %}
+
+
+# --- Rate limits of the change request -----------------------------------------------------
+
+
+async def test_change_requests_are_limited_per_user(client, database, mailbox) -> None:
+    from app.services.rate_limit import DEFAULT_RATE_LIMITS, RateLimitCategory
+
+    ada = await _user(database, "ada@example.com")
+    bob = await _user(database, "bob@example.com")
+    limit = DEFAULT_RATE_LIMITS[RateLimitCategory.EMAIL_CHANGE].per_user or 0
+    assert 0 < limit < (DEFAULT_RATE_LIMITS[RateLimitCategory.REAUTH].per_user or 0)
+
+    statuses = [
+        (await client.post(f"{API}/users/me/email", json={"current_password": PASSWORD, "email": f"ada@{n}.example"}, headers=_bearer(ada))).status_code
+        for n in range(limit + 1)
+    ]
+    other = await client.post(f"{API}/users/me/email", json={"current_password": PASSWORD, "email": "bob@new.example"}, headers=_bearer(bob))
+
+    assert statuses == [202] * limit + [429]
+    assert other.status_code == 202
+    assert mailbox.send_email_change.await_count == limit + 1
+
+
+async def test_change_requests_are_limited_per_client_ip(client, database, mailbox) -> None:
+    from app.services.rate_limit import DEFAULT_RATE_LIMITS, RateLimitCategory
+
+    per_ip = DEFAULT_RATE_LIMITS[RateLimitCategory.REAUTH].per_ip or 0
+    per_user = DEFAULT_RATE_LIMITS[RateLimitCategory.EMAIL_CHANGE].per_user or 0
+    users = [await _user(database, f"user{n}@example.com") for n in range(per_ip // per_user + 1)]
+    answers = []
+    for n in range(per_ip + 1):
+        user = users[n // per_user]
+        answers.append(
+            await client.post(f"{API}/users/me/email", json={"current_password": PASSWORD, "email": f"new{n}@example.com"}, headers=_bearer(user))
+        )
+
+    assert [answer.status_code for answer in answers] == [202] * per_ip + [429]
+    assert answers[-1].json()["details"]["scope"] == "ip"
+{%- endif %}
+{%- if enable_oauth %}
+
+
+async def test_a_sign_in_link_to_an_unconfirmed_address_removes_the_external_identities(
+    client, database, mailbox
+) -> None:
+    """The sign-in link side of the reset rule: whoever follows it controls the address."""
+    account = await _user(
+        database, VICTIM, hashed_password=None, oauth_provider="public", oauth_id="attacker-subject"
+    )
+    await client.post(f"{API}/auth/magic-link/request", json={"email": VICTIM})
+    link = _fragment_token(mailbox.send_magic_link.await_args.kwargs["magic_url"])
+
+    assert (await client.post(f"{API}/auth/magic-link/verify", json={"token": link})).status_code == 200
+
+    after = await _reload(database, account.id)
+    assert (after.oauth_provider, after.oauth_id, after.email_verified) == (None, None, True)
+    # The holder of the identity no longer reaches the account the owner of the address uses.
+    assert (await _sso_sign_in(database, "attacker@evil.example")).id != account.id
+
+
+async def test_a_sign_in_link_to_a_confirmed_address_keeps_the_identity(client, database, mailbox) -> None:
+    account = await _sso_sign_in(database, "ada@example.com")
+    await client.post(f"{API}/auth/magic-link/request", json={"email": "ada@example.com"})
+    link = _fragment_token(mailbox.send_magic_link.await_args.kwargs["magic_url"])
+
+    assert (await client.post(f"{API}/auth/magic-link/verify", json={"token": link})).status_code == 200
+    assert (await _reload(database, account.id)).oauth_id == "attacker-subject"
+{%- endif %}
 
 
 async def test_an_address_set_by_an_administrator_is_not_confirmed(database) -> None:
@@ -219,7 +913,7 @@ async def test_an_identity_cannot_wait_on_an_address_for_its_owner(client, datab
     """The proof of concept: change the address, the owner resets, sign in again by SSO."""
     attacker = await _sso_sign_in(database, "attacker@evil.example")
     await client.patch(f"{API}/users/me", json={"email": VICTIM}, headers=_bearer(attacker))
-    await client.post(f"{API}/users/me/email", json={"email": VICTIM}, headers=_bearer(attacker))
+    await client.post(f"{API}/users/me/email", json={"current_password": PASSWORD, "email": VICTIM}, headers=_bearer(attacker))
 
     registered = await client.post(f"{API}/auth/register", json={"email": VICTIM, "password": "victim-pass-1"})
     assert registered.status_code == 202
@@ -227,7 +921,7 @@ async def test_an_identity_cannot_wait_on_an_address_for_its_owner(client, datab
         victim = await user_repo.get_by_email(db, VICTIM)
         assert victim is not None
         stored = await user_repo.get_password_hash(db, victim.id)
-    token = create_password_reset_token(str(victim.id), current_password_hash=stored)
+    token = create_password_reset_token(str(victim.id), current_password_hash=stored, address=VICTIM)
     reset = await client.post(
         f"{API}/auth/password-reset/confirm", json={"token": token, "new_password": "victim-pass-2"}
     )
@@ -246,7 +940,7 @@ async def test_a_reset_of_an_unconfirmed_address_removes_the_external_identities
     account = await _user(
         database, VICTIM, hashed_password=None, oauth_provider="public", oauth_id="attacker-subject"
     )
-    token = create_password_reset_token(str(account.id), current_password_hash=None)
+    token = create_password_reset_token(str(account.id), current_password_hash=None, address=account.email)
 
     reset = await client.post(
         f"{API}/auth/password-reset/confirm", json={"token": token, "new_password": "victim-pass-2"}
@@ -261,7 +955,7 @@ async def test_a_reset_of_an_unconfirmed_address_removes_the_external_identities
 
 async def test_a_reset_of_a_confirmed_address_keeps_the_identity(client, database) -> None:
     account = await _sso_sign_in(database, "ada@example.com")
-    token = create_password_reset_token(str(account.id), current_password_hash=None)
+    token = create_password_reset_token(str(account.id), current_password_hash=None, address=account.email)
 
     reset = await client.post(
         f"{API}/auth/password-reset/confirm", json={"token": token, "new_password": "ada-pass-123"}

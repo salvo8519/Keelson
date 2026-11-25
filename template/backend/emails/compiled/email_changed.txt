@@ -1,0 +1,9 @@
+Subject: The email address of your [[app_name]] account was changed
+
+Hi [[name]],
+
+The email address of your [[app_name]] account is now [[new_email]]. This address no longer receives its messages, password reset links or sign-in links.
+
+If you did not make this change, contact the administrators of [[app_name]] at once: someone else may control your account.
+
+— The [[app_name]] Team

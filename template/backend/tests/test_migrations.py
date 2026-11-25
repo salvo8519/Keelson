@@ -146,7 +146,18 @@ class TestMigrations:
                     text("SELECT tgname FROM pg_trigger WHERE tgname = :name AND NOT tgisinternal"),
                     {"name": f"{POLICY_PREFIX}token_epoch_never_decreases"},
                 )
+                has_magic_links = connection.scalar(
+                    text(
+                        "SELECT count(*) FROM information_schema.columns "
+                        "WHERE table_name = 'users' AND column_name = 'magic_link_epoch'"
+                    )
+                )
+                magic_link_trigger = connection.scalar(
+                    text("SELECT tgname FROM pg_trigger WHERE tgname = :name AND NOT tgisinternal"),
+                    {"name": f"{POLICY_PREFIX}magic_link_epoch_never_decreases"},
+                )
         finally:
             engine.dispose()
         assert column == "false"
         assert trigger == f"{POLICY_PREFIX}token_epoch_never_decreases"
+        assert (magic_link_trigger is not None) == bool(has_magic_links)

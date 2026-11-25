@@ -5,6 +5,23 @@ export type ClientOptions = {
 };
 
 /**
+ * AccountDeletion
+ *
+ * Keelstone: the caller's proof of identity for deleting their own account.
+ *
+ * The current password when the account has one; an account without a password (single
+ * sign-on only) sends no body and needs a recent sign-in instead.
+ */
+export type AccountDeletion = {
+    /**
+     * Current Password
+     *
+     * The current password; required when the account has one.
+     */
+    current_password?: string | null;
+};
+
+/**
  * AdminConversationList
  *
  * Paginated list of conversations for admin.
@@ -900,7 +917,10 @@ export type DemoConversationSummary = {
 /**
  * EmailChangeAccepted
  *
- * The answer to an e-mail change request: nothing changes until the link is followed.
+ * The answer to every e-mail change request: nothing changes until the link is followed.
+ *
+ * The same body whether or not the address can be used, so it does not tell which addresses
+ * have an account.
  */
 export type EmailChangeAccepted = {
     /**
@@ -925,12 +945,21 @@ export type EmailChangeConfirm = {
  * EmailChangeRequest
  *
  * Keelstone: a new e-mail address for the caller's account, pending until confirmed.
+ *
+ * The caller proves their identity again: with the current password when the account has
+ * one; an account without a password (single sign-on only) needs a recent sign-in instead.
  */
 export type EmailChangeRequest = {
     /**
      * Email
      */
     email: string;
+    /**
+     * Current Password
+     *
+     * The current password; required when the account has one.
+     */
+    current_password?: string | null;
 };
 
 /**
@@ -2783,6 +2812,57 @@ export type UserCreate = {
 };
 
 /**
+ * UserMe
+ *
+ * Keelstone: the caller's own record, with what only its user needs to know.
+ */
+export type UserMe = {
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Updated At
+     */
+    updated_at?: string | null;
+    /**
+     * Email
+     */
+    email: string;
+    /**
+     * Full Name
+     */
+    full_name?: string | null;
+    /**
+     * Is Active
+     */
+    is_active?: boolean;
+    /**
+     * Id
+     */
+    id: string;
+    role?: UserRole;
+    /**
+     * Avatar Url
+     */
+    avatar_url?: string | null;
+    /**
+     * Onboarding Completed At
+     */
+    onboarding_completed_at?: string | null;
+    /**
+     * Locale
+     */
+    locale?: string | null;
+    /**
+     * Has Password
+     *
+     * The account has a password (accounts of single sign-on only have none).
+     */
+    has_password?: boolean;
+};
+
+/**
  * UserRead
  *
  * Schema for reading a user.
@@ -2980,7 +3060,8 @@ export type UserUpdate = {
  * Password, role, account status and e-mail address are excluded: the password changes
  * through ``UpdatePassword``, which requires the current one; the address through
  * ``EmailChangeRequest``, confirmed by a link sent to it; role and status are for
- * administrators.
+ * administrators. Any other field is refused (422) rather than ignored, so a client that
+ * still sends ``email`` learns that the address did not change.
  */
 export type UserUpdateMe = {
     /**
@@ -3415,11 +3496,23 @@ export type authVerifyMagicLinkResponses = {
 export type authVerifyMagicLinkResponse = authVerifyMagicLinkResponses[keyof authVerifyMagicLinkResponses];
 
 export type usersDeleteCurrentUserData = {
-    body?: never;
+    /**
+     * Body
+     */
+    body?: AccountDeletion | null;
     path?: never;
     query?: never;
     url: '/api/v1/users/me';
 };
+
+export type usersDeleteCurrentUserErrors = {
+    /**
+     * Validation Error
+     */
+    422: HTTPValidationError;
+};
+
+export type usersDeleteCurrentUserError = usersDeleteCurrentUserErrors[keyof usersDeleteCurrentUserErrors];
 
 export type usersDeleteCurrentUserResponses = {
     /**
@@ -3441,7 +3534,7 @@ export type usersReadCurrentUserResponses = {
     /**
      * Successful Response
      */
-    200: UserRead;
+    200: UserMe;
 };
 
 export type usersReadCurrentUserResponse = usersReadCurrentUserResponses[keyof usersReadCurrentUserResponses];

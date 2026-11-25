@@ -1,33 +1,24 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   createFileRoute,
+  Navigate,
   Link as RouterLink,
-  redirect,
 } from "@tanstack/react-router"
-import { z } from "zod"
 import { BRAND_NAME } from "@/brand"
 import { AuthService } from "@/client"
 import { AuthLayout } from "@/components/Common/AuthLayout"
 import { LoadingButton } from "@/components/ui/loading-button"
 import useCustomToast from "@/hooks/useCustomToast"
+import { useLinkToken } from "@/hooks/useLinkToken"
 import { t } from "@/i18n"
 import { handleError } from "@/utils"
 
 // Keelstone: the page of the link sent to a new email address. The address changes only when
 // the user confirms here; the request is a deliberate click, not a page load, so a mail scanner
-// that opens the link changes nothing.
-const searchSchema = z.object({
-  token: z.string().catch(""),
-})
-
+// that opens the link changes nothing. The token is read from the link and then removed from
+// the address bar (useLinkToken).
 export const Route = createFileRoute("/confirm-email")({
   component: ConfirmEmail,
-  validateSearch: searchSchema,
-  beforeLoad: ({ search }) => {
-    if (!search.token) {
-      throw redirect({ to: "/login" })
-    }
-  },
   head: () => ({
     meta: [
       {
@@ -38,7 +29,7 @@ export const Route = createFileRoute("/confirm-email")({
 })
 
 function ConfirmEmail() {
-  const { token } = Route.useSearch()
+  const token = useLinkToken()
   const queryClient = useQueryClient()
   const { showSuccessToast, showErrorToast } = useCustomToast()
 
@@ -50,6 +41,8 @@ function ConfirmEmail() {
     },
     onError: handleError.bind(showErrorToast),
   })
+
+  if (!token) return <Navigate to="/login" />
 
   return (
     <AuthLayout>

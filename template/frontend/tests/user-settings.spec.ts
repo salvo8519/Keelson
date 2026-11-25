@@ -78,6 +78,8 @@ test.describe("Edit user email", () => {
 
     await page.getByRole("button", { name: "Edit" }).click()
     await page.getByLabel("Email").fill(updatedEmail)
+    // The current password proves the change is made by the account's user.
+    await page.getByTestId("email-current-password-input").fill(password)
     await page.getByRole("button", { name: "Save" }).click()
 
     // The address changes only once the link sent to it is followed.
@@ -92,9 +94,10 @@ test.describe("Edit user email", () => {
       request,
       query: `to:${updatedEmail}`,
     })
-    const confirmUrl = emailHtml.match(/\/confirm-email\?token=[^"]+/)?.[0]
+    const confirmUrl = emailHtml.match(/\/confirm-email#token=[^"]+/)?.[0]
     expect(confirmUrl).toBeTruthy()
     await page.goto(confirmUrl!)
+    await expect(page).toHaveURL(/\/confirm-email$/)
     await page.getByRole("button", { name: "Confirm email address" }).click()
     await expect(page.getByText("Email address confirmed")).toBeVisible()
 
@@ -218,6 +221,47 @@ test.describe("Change password validation", () => {
     await expect(
       page.getByText("New password cannot be the same as the current one"),
     ).toBeVisible()
+  })
+})
+
+test.describe("Delete account", () => {
+  test.use({ storageState: { cookies: [], origins: [] } })
+
+  test("Deleting the account needs the current password", async ({ page }) => {
+    const email = randomEmail()
+    const password = randomPassword()
+
+    await createUser({ email, password })
+    await logInUser(page, email, password)
+    await page.goto("/settings")
+    await page.getByRole("tab", { name: "Danger zone" }).click()
+    await page.getByRole("button", { name: "Delete Account" }).click()
+
+    // A session alone does not delete the account.
+    await page
+      .getByTestId("delete-current-password-input")
+      .fill(randomPassword())
+    await page.getByRole("button", { name: "Delete", exact: true }).click()
+    await expect(page.getByText("Incorrect password")).toBeVisible()
+    // The typed password is not kept: not after an error, not after closing the dialog.
+    const field = page.getByTestId("delete-current-password-input")
+    await expect(field).toHaveValue("")
+    await field.fill(password)
+    await page.getByRole("button", { name: "Cancel" }).click()
+    await page.getByRole("button", { name: "Delete Account" }).click()
+    await expect(field).toHaveValue("")
+
+    await field.fill(password)
+    await page.getByRole("button", { name: "Delete", exact: true }).click()
+    await expect(
+      page.getByText("Your account has been successfully deleted"),
+    ).toBeVisible()
+
+    await page.goto("/login")
+    await page.getByTestId("email-input").fill(email)
+    await page.getByTestId("password-input").fill(password)
+    await page.getByRole("button", { name: "Log In" }).click()
+    await expect(page.getByText("Incorrect email or password")).toBeVisible()
   })
 })
 

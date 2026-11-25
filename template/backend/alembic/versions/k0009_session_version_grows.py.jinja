@@ -7,13 +7,14 @@ Create Date: 2026-11-25T00:00:00+00:00
 
 The application login may raise users.token_epoch (a user's own password change), so a policy
 cannot stop it from lowering the value again, which would bring back the sessions that were
-ended. A trigger refuses every decrease (app/db/tenancy.py, NON_DECREASING_COLUMNS). Row level
-security is applied again to users, which creates it.
+ended. A trigger refuses every decrease (app/db/tenancy.py, NON_DECREASING_COLUMNS), as for
+users.magic_link_epoch, which voids sign-in and address change links. Row level security is
+applied again to users, which creates the triggers.
 """
 
 from alembic import op
 
-from app.db.tenancy import POLICY_PREFIX, segregation_statements
+from app.db.tenancy import NON_DECREASING_COLUMNS, POLICY_PREFIX, segregation_statements
 
 revision = "k0009_session_version_grows"
 down_revision = "k0008_content_visibility"
@@ -28,5 +29,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute(f'DROP TRIGGER IF EXISTS {POLICY_PREFIX}token_epoch_never_decreases ON "users"')
+    for column in NON_DECREASING_COLUMNS["users"]:
+        op.execute(f'DROP TRIGGER IF EXISTS {POLICY_PREFIX}{column}_never_decreases ON "users"')
 {%- endif %}

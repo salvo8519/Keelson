@@ -111,6 +111,26 @@ class ExternalServiceError(AppException):
     status_code = 503
 
 
+class StoreUnavailableError(ExternalServiceError):
+    """Keelstone: a store that a security decision depends on does not answer (503).
+
+    The rate limiter's counters and the refresh token records live in Redis. Without them a
+    password check could not be limited and a session could not be checked or ended, so the
+    request is refused instead of decided blind. ``Retry-After`` tells clients when to try
+    again; the code names the store (``RATE_LIMIT_UNAVAILABLE``, ``SESSION_STORE_UNAVAILABLE``).
+    """
+
+    RETRY_AFTER_SECONDS = 30
+
+    def __init__(self, message: str, code: str, details: dict[str, Any] | None = None):
+        super().__init__(
+            message=message,
+            code=code,
+            details=details,
+            headers={"Retry-After": str(self.RETRY_AFTER_SECONDS)},
+        )
+
+
 class DatabaseError(AppException):
     """Database error (500)."""
 

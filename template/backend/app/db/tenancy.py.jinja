@@ -380,9 +380,10 @@ FROZEN_COLUMNS: dict[str, tuple[str, ...]] = {
 }
 
 # Columns that only grow (a trigger, for every login): lowering the session version would bring
-# back sessions that were ended.
+# back sessions that were ended, lowering the magic-link epoch the sign-in and address change
+# links it voided (the application login may write both on the user's own row).
 NON_DECREASING_COLUMNS: dict[str, tuple[str, ...]] = {
-    "users": ("token_epoch",),
+    "users": ("token_epoch", "magic_link_epoch"),
 }
 
 

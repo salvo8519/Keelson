@@ -22,6 +22,8 @@ class EmailKey(enum.StrEnum):
     WELCOME = "welcome"
     EMAIL_VERIFICATION = "email_verification"
     EMAIL_CHANGE = "email_change"
+    EMAIL_CHANGE_REQUESTED = "email_change_requested"
+    EMAIL_CHANGED = "email_changed"
     MAGIC_LINK = "magic_link"
     PASSWORD_RESET = "password_reset"  # noqa: S105 - a template key
     ACCOUNT_EXISTS = "account_exists"
@@ -50,6 +52,8 @@ _CATEGORIES: dict[EmailKey, EmailCategory] = {
     EmailKey.WELCOME: EmailCategory.TRANSACTIONAL,
     EmailKey.EMAIL_VERIFICATION: EmailCategory.TRANSACTIONAL,
     EmailKey.EMAIL_CHANGE: EmailCategory.TRANSACTIONAL,
+    EmailKey.EMAIL_CHANGE_REQUESTED: EmailCategory.TRANSACTIONAL,
+    EmailKey.EMAIL_CHANGED: EmailCategory.TRANSACTIONAL,
     EmailKey.MAGIC_LINK: EmailCategory.TRANSACTIONAL,
     EmailKey.PASSWORD_RESET: EmailCategory.TRANSACTIONAL,
     EmailKey.ACCOUNT_EXISTS: EmailCategory.TRANSACTIONAL,
@@ -67,6 +71,22 @@ _CATEGORIES: dict[EmailKey, EmailCategory] = {
 {%- endif %}
     EmailKey.NEWSLETTER_WELCOME: EmailCategory.MARKETING,
 }
+
+
+def frontend_link(path: str, token: str) -> str:
+    """Keelstone: the address of the frontend page ``path`` that receives ``token`` from an e-mail.
+
+    The token travels in the fragment (``#token=``), which browsers never send to a server: it
+    stays out of the access log of the frontend's web server and out of any Referer. The page
+    removes it from the address bar and the history as soon as it has read it
+    (``frontend/src/hooks/useLinkToken.ts``).
+    """
+    return f"{settings.FRONTEND_URL.rstrip('/')}{path}#token={token}"
+
+
+def frontend_page(path: str) -> str:
+    """Keelstone: the address of the frontend page ``path``, for the links of an e-mail."""
+    return f"{settings.FRONTEND_URL.rstrip('/')}{path}"
 
 
 def duration_text(duration: timedelta, language: str) -> str:
@@ -181,6 +201,31 @@ class EmailService:
             key=EmailKey.EMAIL_CHANGE,
             to=to,
             context={"name": name, "confirm_url": confirm_url, "expires_in": expires_in, "app_name": "{{ project_name }}"},
+            language=language,
+        )
+
+    async def send_email_change_requested(
+        self, *, to: str, name: str, new_email: str, login_url: str, language: str | None = None
+    ) -> SendResult:
+        """Keelstone: notice to the address in force that a change to ``new_email`` was asked.
+
+        It carries no link that confirms the change: the confirmation goes to the new address.
+        """
+        return await self.send(
+            key=EmailKey.EMAIL_CHANGE_REQUESTED,
+            to=to,
+            context={"name": name, "new_email": new_email, "login_url": login_url, "app_name": "{{ project_name }}"},
+            language=language,
+        )
+
+    async def send_email_changed(
+        self, *, to: str, name: str, new_email: str, language: str | None = None
+    ) -> SendResult:
+        """Keelstone: notice to the previous address that the account now uses ``new_email``."""
+        return await self.send(
+            key=EmailKey.EMAIL_CHANGED,
+            to=to,
+            context={"name": name, "new_email": new_email, "app_name": "{{ project_name }}"},
             language=language,
         )
 

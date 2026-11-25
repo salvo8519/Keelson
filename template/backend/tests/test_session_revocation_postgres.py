@@ -7,7 +7,6 @@ The requests run through the application, under row level security, so the chang
 user's own password change is shown to work with the application login.
 """
 
-import time
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -44,8 +43,12 @@ async def database() -> AsyncIterator[SegregatedDatabase]:
 
 
 @pytest.fixture
-async def client(database: SegregatedDatabase) -> AsyncIterator[AsyncClient]:
-    redis = MemoryRedis()
+def redis() -> MemoryRedis:
+    return MemoryRedis()
+
+
+@pytest.fixture
+async def client(database: SegregatedDatabase, redis: MemoryRedis) -> AsyncIterator[AsyncClient]:
     app.dependency_overrides[get_redis] = lambda: redis
     with serving(app, database):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -138,7 +141,9 @@ async def test_a_browser_keeps_its_own_session_after_changing_the_password(
 async def test_a_password_reset_ends_the_sessions(client, database) -> None:
     user = await _user(database, "ada@example.com")
     before = await _sign_in(client, "ada@example.com")
-    token = create_password_reset_token(str(user.id), current_password_hash=await _password_hash(database, user))
+    token = create_password_reset_token(
+        str(user.id), current_password_hash=await _password_hash(database, user), address=user.email
+    )
 
     reset = await client.post(
         f"{API}/auth/password-reset/confirm", json={"token": token, "new_password": NEW_PASSWORD}
@@ -265,9 +270,7 @@ async def test_a_browser_sign_out_ends_the_refresh_cookies_rotated_before(client
     assert (await client.post(f"{API}/auth/session/refresh", headers=old)).status_code == 401
 
 
-async def test_a_refresh_token_presented_again_after_rotation_ends_its_session(
-    client, database, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_a_refresh_token_presented_again_after_rotation_ends_its_session(client, database, redis) -> None:
     """Reuse detection: one of the two holders of the token is not the user."""
     from app.core import revoked_tokens
 
@@ -275,8 +278,7 @@ async def test_a_refresh_token_presented_again_after_rotation_ends_its_session(
     first = await _sign_in(client, "ada@example.com")
     other = await _sign_in(client, "ada@example.com")
     second = (await _refresh(client, first["refresh_token"])).json()
-    later = time.time() + revoked_tokens.REUSE_GRACE.total_seconds() + 1
-    monkeypatch.setattr(revoked_tokens, "clock", lambda: later)
+    redis.now += revoked_tokens.REUSE_GRACE.total_seconds() + 1
 
     replayed = await _refresh(client, first["refresh_token"])
 
@@ -312,9 +314,7 @@ async def test_a_refresh_token_without_a_session_id_is_refused(client, database)
     assert (await _refresh(client, legacy)).status_code == 401
 
 
-async def test_a_reused_refresh_token_ends_the_browser_session_too(
-    client, database, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_a_reused_refresh_token_ends_the_browser_session_too(client, database, redis) -> None:
     """Reuse detection through the refresh cookie (the path a stolen cookie takes)."""
     from app.core import revoked_tokens
 
@@ -325,8 +325,7 @@ async def test_a_reused_refresh_token_ends_the_browser_session_too(
     assert renewed.status_code == 204, renewed.text
     latest = renewed.cookies[REFRESH_COOKIE]
     client.cookies.clear()
-    later = time.time() + revoked_tokens.REUSE_GRACE.total_seconds() + 1
-    monkeypatch.setattr(revoked_tokens, "clock", lambda: later)
+    redis.now += revoked_tokens.REUSE_GRACE.total_seconds() + 1
 
     assert (await client.post(f"{API}/auth/session/refresh", headers=stolen)).status_code == 401
     current = {"Cookie": f"{REFRESH_COOKIE}={latest}", "Origin": TRUSTED}
@@ -414,6 +413,21 @@ async def test_an_impersonation_ends_when_the_administrator_signs_out_everywhere
     assert (await client.post(f"{API}/auth/logout-all", headers=_bearer(admin))).status_code == 204
 
     await _impersonation_refused(client, database, token)
+
+
+async def test_an_impersonation_token_issued_before_the_upgrade_is_refused(client, database) -> None:
+    """A token whose ``act`` claim does not carry the administrator's session version cannot be
+    checked against it: refused, while the same token with the version passes."""
+    import jwt
+
+    _, token = await _impersonation(client, database)
+    claims = jwt.decode(token["access_token"], settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+    assert isinstance(claims["act"].get("ver"), int)
+    del claims["act"]["ver"]
+    legacy = {"access_token": jwt.encode(claims, settings.SECRET_KEY, algorithm=settings.ALGORITHM)}
+
+    await _impersonation_refused(client, database, legacy)
+    assert (await client.get(f"{API}/auth/me", headers=_bearer(token))).status_code == 200
 
 
 # --- Avatars: visible to the members of a shared organization -----------------------------

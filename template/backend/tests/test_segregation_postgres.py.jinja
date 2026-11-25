@@ -422,15 +422,22 @@ async def test_a_user_cannot_grant_itself_privileges(world: World) -> None:
 
 
 async def test_a_user_cannot_revive_ended_sessions_or_change_the_address(world: World) -> None:
-    """The session version only grows, and the address changes only through its confirmation."""
+    """The session version (and the magic-link epoch, which voids e-mail links) only grows, and
+    the address changes only through its confirmation."""
     acting = _user(world, world.a2, world.org_a)
-    await _allowed(world, acting, "UPDATE users SET token_epoch = token_epoch + 2 WHERE id = :u", u=world.a2)
-    with acting_as(acting):
-        async with world.db.app() as session:
-            with pytest.raises(DBAPIError, match="token_epoch"):
-                await session.execute(
-                    text("UPDATE users SET token_epoch = token_epoch - 1 WHERE id = :u"), {"u": world.a2}
-                )
+{%- if enable_email %}
+    growing = ("token_epoch", "magic_link_epoch")
+{%- else %}
+    growing = ("token_epoch",)
+{%- endif %}
+    for column in growing:
+        await _allowed(world, acting, f"UPDATE users SET {column} = {column} + 2 WHERE id = :u", u=world.a2)
+        with acting_as(acting):
+            async with world.db.app() as session:
+                with pytest.raises(DBAPIError, match=column):
+                    await session.execute(
+                        text(f"UPDATE users SET {column} = {column} - 1 WHERE id = :u"), {"u": world.a2}
+                    )
     for change in ("email = 'someone@example.com'", "email_verified = true"):
         await _refused(world, acting, f"UPDATE users SET {change} WHERE id = :u", u=world.a2)
 

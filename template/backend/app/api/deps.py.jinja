@@ -17,7 +17,7 @@ from fastapi import Depends
 from fastapi import Header
 {%- endif %}
 {%- if use_jwt %}
-from fastapi import WebSocket, Cookie, WebSocketException
+from fastapi import BackgroundTasks, WebSocket, Cookie, WebSocketException
 from fastapi.security import OAuth2PasswordBearer
 {%- endif %}
 {%- if use_jwt or use_api_key %}
@@ -75,9 +75,13 @@ from app.services.conversation_share import ConversationShareService
 {%- if use_jwt %}
 
 
-def get_user_service(db: DBSession) -> UserService:
-    """Create UserService instance with database session."""
-    return UserService(db)
+def get_user_service(db: DBSession, background: BackgroundTasks) -> UserService:
+    """Create UserService instance with database session.
+
+    Keelstone: account e-mails are sent as background tasks, after the request's transaction
+    committed and the response was sent (``UserService._mail``).
+    """
+    return UserService(db, background)
 
 {%- if enable_session_management %}
 
@@ -105,9 +109,9 @@ async def get_system_db_session(request: Request) -> AsyncGenerator[AsyncSession
 SystemDBSession = Annotated[AsyncSession, Depends(get_system_db_session, scope="function")]
 
 
-def get_auth_user_service(db: SystemDBSession) -> UserService:
+def get_auth_user_service(db: SystemDBSession, background: BackgroundTasks) -> UserService:
     """Users looked up by e-mail or token, before authentication."""
-    return UserService(db)
+    return UserService(db, background)
 
 
 AuthUserSvc = Annotated[UserService, Depends(get_auth_user_service)]
@@ -322,6 +326,11 @@ async def get_current_user(
     )
     if not user.is_active:
         raise AuthenticationError(message="User account is disabled")
+    # Keelstone: this mode sets no ``request.state.session_claims``, so no request carries a
+    # sign-in time. ``UserService.confirm_identity`` would then refuse every account without a
+    # password (all of them here) with recent_sign_in_required: an address change or a deletion
+    # would be impossible. Before activating this mode, read the IdP token's ``auth_time`` into
+    # the session claims, or let the IdP re-authenticate the user (``max_age``) for these routes.
 
     return user
 {%- else %}
@@ -350,6 +359,8 @@ async def get_current_user(
     claims = read_session_token(token, ACCESS)
     if claims is None:
         raise AuthenticationError(message="Invalid or expired token")
+    # Keelstone: the claims of the request, for routes that ask for a recent sign-in.
+    request.state.session_claims = claims
 {%- if enable_teams and use_postgresql %}
     # Keelstone: the verified subject becomes the principal of the request before any query, so
     # the database applies its policies as this user (app/db/tenancy.py).
@@ -1132,8 +1143,10 @@ AdminSvc = Annotated[AdminService, Depends(get_admin_service)]
 {%- if enable_teams and use_postgresql and use_jwt %}
 
 
-def get_admin_user_service(db: AdminDBSession) -> UserService:
-    return UserService(db)
+def get_admin_user_service(db: AdminDBSession, background: BackgroundTasks) -> UserService:
+    # Keelstone: with the background tasks, the welcome e-mail of an account an administrator
+    # creates leaves after the commit, like every other account e-mail.
+    return UserService(db, background)
 
 
 AdminUserSvc = Annotated[UserService, Depends(get_admin_user_service)]
