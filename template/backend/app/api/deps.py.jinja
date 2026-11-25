@@ -739,6 +739,23 @@ async def get_current_user_ws(
 
 
 CurrentUserWS = Annotated[User, Depends(get_current_user_ws)]
+{%- if not use_delegated_auth %}
+
+
+async def session_still_current(user: User, version: int) -> bool:
+    """Keelson: whether the session a WebSocket was opened with is still the user's.
+
+    A connection outlives its handshake: a password change, a deactivation or "sign out
+    everywhere" must also stop the turns of chats already open.
+    """
+    from app.repositories import user_repo
+
+    # The user's own row, by the id the handshake verified: a declared system read, which does
+    # not depend on the connection's principal reaching this task.
+    async with system_session("websocket: session still current") as db:
+        current = await user_repo.get_by_id(db, user.id)
+    return current is not None and bool(current.is_active) and current.token_epoch == version
+{%- endif %}
 {%- endif %}
 
 {%- if use_api_key %}

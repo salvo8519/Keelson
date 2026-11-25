@@ -198,6 +198,19 @@ async def test_sign_out_everywhere_ends_every_session(client, database) -> None:
     await _assert_ended(client, phone)
 
 
+async def test_an_open_chat_notices_that_its_session_ended(client, database) -> None:
+    """The WebSocket route asks before every turn (app/api/routes/v1/agent.py)."""
+    from app.api.deps import session_still_current
+
+    user = await _user(database, "ada@example.com")
+    phone = await _sign_in(client, "ada@example.com")
+    assert await session_still_current(user, user.token_epoch)
+
+    await client.post(f"{API}/auth/logout-all", headers=_bearer(phone))
+
+    assert not await session_still_current(user, user.token_epoch)
+
+
 async def test_signing_in_again_does_not_end_the_other_sessions(client, database) -> None:
     await _user(database, "ada@example.com")
     first = await _sign_in(client, "ada@example.com")

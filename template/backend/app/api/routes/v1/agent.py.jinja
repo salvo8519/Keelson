@@ -23,7 +23,7 @@ from app.services.rate_limit.service import check_rate_limit
 {%- endif %}
 from app.services.agent_session import AgentSession
 {%- if websocket_auth_jwt %}
-from app.api.deps import CurrentUserWS
+from app.api.deps import CurrentUserWS{% if not use_delegated_auth %}, session_still_current{% endif %}
 {%- endif %}
 {%- if use_pydantic_deep and use_jwt %}
 from app.agents.pydantic_deep_assistant import PydanticDeepContext, get_agent
@@ -93,6 +93,10 @@ async def agent_websocket(
         user,
 {%- endif %}
     )
+{%- if websocket_auth_jwt and not use_delegated_auth %}
+    # The handshake checked the token against this session version.
+    session_version = user.token_epoch
+{%- endif %}
 
     try:
         while True:
@@ -101,6 +105,13 @@ async def agent_websocket(
             except WebSocketDisconnect:
                 break
             if data.get("message"):
+{%- if websocket_auth_jwt and not use_delegated_auth %}
+                # Keelson: a session ended since the handshake (password change, deactivation,
+                # sign out everywhere) ends the connection before the next turn.
+                if not await session_still_current(user, session_version):
+                    await websocket.close(code=4001, reason="Session ended")
+                    break
+{%- endif %}
                 # Keelson: a turn is checked before it starts: its options, then the quota.
                 problem = turn_options_problem(data)
 {%- if enable_rate_limiting and websocket_auth_jwt %}
