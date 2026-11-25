@@ -83,8 +83,22 @@ def _all(rule: str) -> list[Policy]:
     return [Policy("ALL", using=rule, check=rule)]
 
 
+def _writes(rule: str) -> list[Policy]:
+    return [
+        Policy("INSERT", check=rule),
+        Policy("UPDATE", using=rule, check=rule),
+        Policy("DELETE", using=rule),
+    ]
+
+
 _CONVERSATION_WRITERS = f"{S}.conversation_access(conversation_id) IN ('owner', 'edit')"
 _ORG_ADMIN = f"{S}.has_org_role(organization_id, ARRAY['owner', 'admin'])"
+# The rules of MemberService, in the database: an owner manages every membership; an admin
+# manages members and viewers only, and grants no role above them.
+_MEMBERSHIP_MANAGER = (
+    f"{S}.has_org_role(organization_id, ARRAY['owner'])"
+    f" OR ({S}.has_org_role(organization_id, ARRAY['admin']) AND role::text IN ('member', 'viewer'))"
+)
 _KB_VISIBLE = (
     f"(scope = 'personal' AND owner_user_id = {ME})"
     f" OR (scope = 'org' AND {S}.in_organization(organization_id))"
@@ -115,14 +129,16 @@ POLICIES: dict[str, list[Policy]] = {
     ],
     "organization_members": [
         Policy("SELECT", using=f"user_id = {ME} OR {S}.in_organization(organization_id)"),
-        # An organization's creator becomes its first owner; everyone else is added by an
-        # owner or admin, or through an invitation (system session).
+        # An organization's creator becomes its first owner, once: a creator removed later
+        # cannot add itself back. Everyone else is added by an owner or admin, or through an
+        # invitation (system session).
         Policy(
             "INSERT",
-            check=f"{_ORG_ADMIN} OR (user_id = {ME} AND {S}.created_organization(organization_id))",
+            check=f"{_MEMBERSHIP_MANAGER} OR (user_id = {ME} AND role::text = 'owner'"
+            f" AND {S}.created_organization(organization_id) AND NOT {S}.has_members(organization_id))",
         ),
-        Policy("UPDATE", using=_ORG_ADMIN, check=_ORG_ADMIN),
-        Policy("DELETE", using=f"{_ORG_ADMIN} OR user_id = {ME}"),
+        Policy("UPDATE", using=_MEMBERSHIP_MANAGER, check=_MEMBERSHIP_MANAGER),
+        Policy("DELETE", using=f"{_MEMBERSHIP_MANAGER} OR user_id = {ME}"),
     ],
     "invitations": _all(_ORG_ADMIN),
     "api_keys": _all(_ORG_ADMIN),
@@ -150,7 +166,12 @@ POLICIES: dict[str, list[Policy]] = {
             "INSERT",
             check=f"shared_by = {ME} AND {S}.conversation_access(conversation_id) = 'owner'",
         ),
-        Policy("UPDATE", using=f"shared_by = {ME}", check=f"shared_by = {ME}"),
+        # A share stays on a conversation its author owns: it cannot be moved to another one.
+        Policy(
+            "UPDATE",
+            using=f"shared_by = {ME}",
+            check=f"shared_by = {ME} AND {S}.conversation_access(conversation_id) = 'owner'",
+        ),
         Policy("DELETE", using=f"shared_by = {ME} OR shared_with = {ME}"),
     ],
     "messages": [
@@ -159,7 +180,14 @@ POLICIES: dict[str, list[Policy]] = {
         Policy("UPDATE", using=_CONVERSATION_WRITERS, check=_CONVERSATION_WRITERS),
         Policy("DELETE", using=f"{S}.conversation_access(conversation_id) = 'owner'"),
     ],
-    "tool_calls": _all("EXISTS (SELECT 1 FROM messages m WHERE m.id = message_id)"),
+    # Readable with the message, writable by who may write the conversation.
+    "tool_calls": [
+        Policy("SELECT", using="EXISTS (SELECT 1 FROM messages m WHERE m.id = message_id)"),
+        *_writes(
+            "EXISTS (SELECT 1 FROM messages m WHERE m.id = message_id"
+            f" AND {S}.conversation_access(m.conversation_id) IN ('owner', 'edit'))"
+        ),
+    ],
     "message_ratings": _all(
         f"user_id = {ME} AND EXISTS (SELECT 1 FROM messages m WHERE m.id = message_id)"
     ),
@@ -180,11 +208,22 @@ POLICIES: dict[str, list[Policy]] = {
         Policy("UPDATE", using=_KB_WRITABLE, check=_KB_WRITABLE),
         Policy("DELETE", using=_KB_WRITABLE),
     ],
-    "rag_documents": _all(
-        f"(organization_id IS NOT NULL AND {S}.in_organization(organization_id))"
-        " OR (knowledge_base_id IS NOT NULL"
-        " AND EXISTS (SELECT 1 FROM knowledge_bases k WHERE k.id = knowledge_base_id))"
-    ),
+    # Readable with a visible knowledge base, writable only with a writable one (the
+    # application's knowledge bases are visible to everyone, written by the system).
+    "rag_documents": [
+        Policy(
+            "SELECT",
+            using=f"(organization_id IS NOT NULL AND {S}.in_organization(organization_id))"
+            " OR (knowledge_base_id IS NOT NULL"
+            " AND EXISTS (SELECT 1 FROM knowledge_bases k WHERE k.id = knowledge_base_id))",
+        ),
+        *_writes(
+            f"(organization_id IS NOT NULL AND {S}.in_organization(organization_id))"
+            " OR (knowledge_base_id IS NOT NULL AND EXISTS (SELECT 1 FROM knowledge_bases k"
+            f" WHERE k.id = knowledge_base_id AND ((k.scope = 'personal' AND k.owner_user_id = {ME})"
+            f" OR (k.scope = 'org' AND {S}.in_organization(k.organization_id)))))"
+        ),
+    ],
     "sync_sources": _all(f"organization_id IS NOT NULL AND {S}.in_organization(organization_id)"),
     "sync_logs": _all(
         "sync_source_id IS NOT NULL AND EXISTS (SELECT 1 FROM sync_sources s WHERE s.id = sync_source_id)"
@@ -207,6 +246,16 @@ UNISOLATED_TABLES: dict[str, str] = {
     "subscription": "billing, updated by payment webhooks through the system session",
     "credit_transaction": "billing, updated by payment webhooks through the system session",
     "usage_event": "billing, written by metering through the system session",
+}
+
+# Columns the application login cannot change (column privileges: a policy sees the new row
+# only, not what changed). Who owns a row, where it lives and what it grants are set when the
+# row is created or by the platform administration, which uses the system session.
+FROZEN_COLUMNS: dict[str, tuple[str, ...]] = {
+    "users": ("role", "is_app_admin", "is_active", "oauth_provider", "oauth_id", "external_user_id"),
+    "conversations": ("user_id", "organization_id", "is_demo"),
+    "conversation_shares": ("shared_by",),
+    "organization_members": ("organization_id", "user_id"),
 }
 
 
@@ -242,6 +291,8 @@ def _functions(schema: str) -> list[str]:
             $$ SELECT EXISTS (SELECT 1 FROM organization_members mine
                 JOIN organization_members theirs ON theirs.organization_id = mine.organization_id
                 WHERE mine.user_id = {S}.current_user_id() AND theirs.user_id = other) $$""",
+        f"""CREATE OR REPLACE FUNCTION {S}.has_members(org uuid) RETURNS boolean {definer} AS
+            $$ SELECT EXISTS (SELECT 1 FROM organization_members m WHERE m.organization_id = org) $$""",
         f"""CREATE OR REPLACE FUNCTION {S}.created_organization(org uuid) RETURNS boolean {definer} AS
             $$ SELECT EXISTS (SELECT 1 FROM organizations o
                 WHERE o.id = org AND o.created_by_user_id = {S}.current_user_id()) $$""",
@@ -279,12 +330,14 @@ def role_statements(schema: str = "public") -> list[str]:
         # The owner may act as the group (tests and support sessions use SET ROLE).
         f'GRANT "{TENANT_ROLE}" TO CURRENT_USER',
         f'GRANT USAGE ON SCHEMA "{schema}" TO "{TENANT_ROLE}"',
-        f'GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA "{schema}" TO "{TENANT_ROLE}"',
         f'GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA "{schema}" TO "{TENANT_ROLE}"',
+        # Tables are granted one by one with their policies (table_statements). A table
+        # created later, by a migration or at run time (the pgvector store creates its own),
+        # stays closed to the application login until a migration segregates it.
         f'ALTER DEFAULT PRIVILEGES IN SCHEMA "{schema}" '
-        f'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO "{TENANT_ROLE}"',
+        f'REVOKE SELECT, INSERT, UPDATE, DELETE ON TABLES FROM "{TENANT_ROLE}"',
         f'ALTER DEFAULT PRIVILEGES IN SCHEMA "{schema}" '
-        f'GRANT USAGE, SELECT ON SEQUENCES TO "{TENANT_ROLE}"',
+        f'REVOKE USAGE, SELECT ON SEQUENCES FROM "{TENANT_ROLE}"',
     ]
 
 
@@ -305,18 +358,23 @@ def login_statements(user: str, password: str) -> list[str]:
     ]
 
 
-def table_statements(table: str, schema: str = "public") -> list[str]:
-    """Row level security on ``table`` with its current policies (closed when it has none)."""
-    statements = [
-        f'ALTER TABLE "{table}" ENABLE ROW LEVEL SECURITY',
-        f"""
+def _drop_policies(table: str, schema: str) -> str:
+    return f"""
         DO $$ DECLARE p record; BEGIN
             FOR p IN SELECT policyname FROM pg_policies
                      WHERE tablename = '{table}' AND schemaname = '{schema}' LOOP
                 EXECUTE format('DROP POLICY %I ON %I', p.policyname, '{table}');
             END LOOP;
         END $$
-        """,
+        """
+
+
+def table_statements(table: str, schema: str = "public") -> list[str]:
+    """Row level security on ``table`` with its current policies (closed when it has none)."""
+    statements = [
+        f'ALTER TABLE "{table}" ENABLE ROW LEVEL SECURITY',
+        f'GRANT SELECT, INSERT, UPDATE, DELETE ON "{table}" TO "{TENANT_ROLE}"',
+        _drop_policies(table, schema),
     ]
     for index, policy in enumerate(POLICIES.get(table, [])):
         clause = f'CREATE POLICY {POLICY_PREFIX}{policy.command.lower()}_{index} ON "{table}" '
@@ -326,7 +384,26 @@ def table_statements(table: str, schema: str = "public") -> list[str]:
         if policy.check:
             clause += f" WITH CHECK ({policy.check})"
         statements.append(_resolve(clause, schema))
+    if frozen := FROZEN_COLUMNS.get(table):
+        statements += _column_statements(table, frozen, schema)
     return statements
+
+
+def _column_statements(table: str, frozen: tuple[str, ...], schema: str) -> list[str]:
+    """UPDATE on every column but the frozen ones (a table-level grant covers them all)."""
+    excluded = ", ".join(f"'{column}'" for column in frozen)
+    return [
+        f'REVOKE UPDATE ON "{table}" FROM "{TENANT_ROLE}"',
+        f"""
+        DO $$ DECLARE cols text; BEGIN
+            SELECT string_agg(quote_ident(column_name), ', ') INTO cols
+              FROM information_schema.columns
+             WHERE table_schema = '{schema}' AND table_name = '{table}'
+               AND column_name NOT IN ({excluded});
+            EXECUTE format('GRANT UPDATE (%s) ON %I TO %I', cols, '{table}', '{TENANT_ROLE}');
+        END $$
+        """,
+    ]
 
 
 def segregation_statements(tables: set[str], schema: str = "public") -> list[str]:
@@ -347,8 +424,10 @@ def removal_statements(tables: set[str], schema: str = "public") -> list[str]:
     """Undo ``segregation_statements`` (migration downgrade); the roles are kept."""
     statements = []
     for table in sorted(tables - set(CLOSED_TABLES)):
-        statements += table_statements(table, schema)[1:2]  # drop the policies
+        statements.append(_drop_policies(table, schema))
         statements.append(f'ALTER TABLE "{table}" DISABLE ROW LEVEL SECURITY')
+        # Without its policies a table must not stay open to the application login.
+        statements.append(f'REVOKE ALL ON "{table}" FROM "{TENANT_ROLE}"')
     statements.append(f'DROP SCHEMA IF EXISTS "{security_schema(schema)}" CASCADE')
     return statements
 

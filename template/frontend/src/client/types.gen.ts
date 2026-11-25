@@ -789,10 +789,6 @@ export type ConversationUpdate = {
      */
     is_archived?: boolean | null;
     /**
-     * Is Demo
-     */
-    is_demo?: boolean | null;
-    /**
      * Active Knowledge Base Ids
      *
      * null=no change, []=RAG disabled, [id,...]=explicit KB selection

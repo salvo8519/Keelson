@@ -1,4 +1,4 @@
-<!-- i18n source: concepts/tenancy-and-api-keys.md source_hash: af992245e5e6 -->
+<!-- i18n source: concepts/tenancy-and-api-keys.md source_hash: 4bf30093bf56 -->
 # Tenancy e API key
 
 I progetti Keelson servono più organizzazioni con un solo deploy. Questa pagina spiega come
@@ -35,7 +35,15 @@ e ogni transazione del login applicativo lo scrive in impostazioni locali alla t
 - una conversazione è privata del suo autore, salvo condivisione; owner e admin di
   un'organizzazione vedono gli aggregati (uso dei tool, valutazioni), mai le chat dei membri;
 - i ruoli sono verificati anche nel database: solo owner e admin gestiscono API key, membri e
-  inviti;
+  inviti; un admin gestisce solo membri e viewer, il ruolo owner lo assegna un owner, e chi
+  crea un'organizzazione ne diventa owner una sola volta;
+- ciò che una riga concede non può essere riscritto dal login applicativo: i privilegi di
+  colonna mantengono come sono stati creati il ruolo e il flag di amministratore di un utente,
+  l'autore, l'organizzazione e il flag di demo pubblica di una conversazione, e l'autore di una
+  condivisione;
+- le tabelle sono aperte al login applicativo una alla volta, con le loro policy: una tabella
+  creata in seguito, da una migrazione o dallo store pgvector a run time, resta chiusa finché
+  una migrazione non la segrega;
 - l'audit log è in sola aggiunta per l'applicazione: una voce indica il proprio autore e
   l'applicazione non può leggerla, modificarla o cancellarla.
 

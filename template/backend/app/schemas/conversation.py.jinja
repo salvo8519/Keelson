@@ -155,13 +155,19 @@ class ConversationUpdate(BaseSchema):
 
     title: str | None = Field(default=None, max_length=255)
     is_archived: bool | None = None
-    is_demo: bool | None = None
 {%- if enable_teams and enable_rag and use_jwt %}
     active_knowledge_base_ids: list[UUID] | None = Field(
         default=None,
         description="null=no change, []=RAG disabled, [id,...]=explicit KB selection",
     )
 {%- endif %}
+
+
+class ConversationAdminUpdate(ConversationUpdate):
+    """Keelson: what only the platform administration changes. Kept out of
+    ConversationUpdate so that a user cannot publish a conversation as a public demo."""
+
+    is_demo: bool | None = None
 
 {%- if enable_teams and enable_rag and use_jwt %}
 

@@ -34,7 +34,14 @@ every transaction of the application login writes it into transaction-local sett
 - a conversation is private to its author unless shared; owners and administrators of an
   organization see aggregates (tool usage, ratings), never members' chats;
 - roles are checked in the database too: only owners and administrators manage API keys,
-  members and invitations;
+  members and invitations; an administrator manages members and viewers only, the owner role
+  is granted by an owner, and an organization's creator becomes its owner once;
+- what a row grants cannot be rewritten by the application login: column privileges keep a
+  user's role and administrator flag, a conversation's author, organization and public demo
+  flag, and the author of a share, as they were created;
+- tables are opened to the application login one by one, with their policies: a table created
+  later, by a migration or by the pgvector store at run time, stays closed until a migration
+  segregates it;
 - the audit log is append-only for the application: an entry names its own actor and cannot
   be read, changed or deleted by it.
 

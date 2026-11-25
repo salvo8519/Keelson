@@ -1,0 +1,1 @@
+Row level security closes privilege changes that the application login could make: a user can no longer grant itself platform administration, a conversation keeps its author and organization, shares cannot be moved, an administrator cannot grant the owner role, and tables created after the migration stay closed to the application.

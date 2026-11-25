@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.db.models  # noqa: F401  (registers every table on the metadata)
 from app.db.base import Base
-from app.db.tenancy import CLOSED_TABLES, POLICIES, UNISOLATED_TABLES, Principal
+from app.db.tenancy import CLOSED_TABLES, POLICIES, TENANT_ROLE, UNISOLATED_TABLES, Principal
 from tests.postgres import SegregatedDatabase, acting_as, require_postgres, segregated_database
 
 pytestmark = pytest.mark.anyio
@@ -109,6 +109,32 @@ async def _refused(world: World, principal: Principal, statement: str, **params:
                 assert "row-level security" in str(error) or "permission denied" in str(error)
                 return
             assert result.rowcount == 0, f"{statement} changed {result.rowcount} row(s)"
+
+
+async def _refused_insert(world: World, principal: Principal, table: str, **values: object) -> None:
+    """A row the principal may not create (the model's defaults fill the other columns)."""
+    with acting_as(principal):
+        async with world.db.app() as session:
+            with pytest.raises(DBAPIError, match=r"row-level security|permission denied"):
+                await _insert(session, table, **values)
+                await session.commit()
+
+
+async def _allowed(world: World, principal: Principal, statement: str, **params: object) -> None:
+    """The legitimate counterpart of an attack: the statement changes a row."""
+    with acting_as(principal):
+        async with world.db.app() as session:
+            result = await session.execute(text(statement), params)
+            await session.commit()
+    assert result.rowcount == 1, f"{statement} changed {result.rowcount} row(s)"
+
+
+async def _system(world: World, statement: str, **params: object) -> list:
+    async with world.db.system() as session:
+        result = await session.execute(text(statement), params)
+        rows = list(result) if result.returns_rows else []
+        await session.commit()
+    return rows
 
 
 def _user(world: World, user: uuid.UUID, org: uuid.UUID | None = None) -> Principal:
@@ -251,4 +277,94 @@ async def test_an_api_key_sees_its_organization_and_no_personal_data(world: Worl
             await session.commit()
     assert await _ids(world, service, "conversations") == {created}
     assert await _ids(world, Principal(organization_id=world.org_b, service=True), "conversations") == set()
+
+
+# --- Ownership and privileges cannot be rewritten ----------------------------------------
+
+
+async def test_a_share_cannot_be_moved_to_a_conversation_its_author_does_not_own(world: World) -> None:
+    owner = _user(world, world.a1, world.org_a)
+    # a1 shared conv_a1 with c; moving the share would give c a2's conversation.
+    await _refused(world, owner, "UPDATE conversation_shares SET conversation_id = :c", c=world.conv_a2)
+    await _refused(world, owner, "UPDATE conversation_shares SET shared_by = :u", u=world.a2)
+    assert await _ids(world, _user(world, world.c), "conversations") == {world.conv_a1}
+    await _allowed(world, owner, "UPDATE conversation_shares SET permission = 'edit'")
+
+
+async def test_a_conversation_keeps_its_owner_its_organization_and_its_visibility(world: World) -> None:
+    owner = _user(world, world.a1, world.org_a)
+    for change, params in (
+        ("user_id = :v", {"v": world.a2}),
+        ("organization_id = :v", {"v": world.org_b}),
+        ("is_demo = true", {}),
+    ):
+        await _refused(world, owner, f"UPDATE conversations SET {change} WHERE id = :c", c=world.conv_a1, **params)
+    await _allowed(world, owner, "UPDATE conversations SET title = 'renamed' WHERE id = :c", c=world.conv_a1)
+
+
+async def test_a_user_cannot_grant_itself_privileges(world: World) -> None:
+    acting = _user(world, world.a2, world.org_a)
+    for change in ("is_app_admin = true", "role = 'admin'", "is_active = true", "oauth_id = 'x'"):
+        await _refused(world, acting, f"UPDATE users SET {change} WHERE id = :u", u=world.a2)
+    await _allowed(world, acting, "UPDATE users SET full_name = 'A two' WHERE id = :u", u=world.a2)
+
+
+async def test_an_admin_manages_members_and_viewers_only(world: World) -> None:
+    await _system(world, "UPDATE organization_members SET role = 'admin' WHERE user_id = :u", u=world.a2)
+    admin = _user(world, world.a2, world.org_a)
+    await _refused(world, admin, "UPDATE organization_members SET role = 'owner' WHERE user_id = :u", u=world.a2)
+    await _refused(world, admin, "UPDATE organization_members SET role = 'member' WHERE user_id = :u", u=world.a1)
+    await _refused(world, admin, "DELETE FROM organization_members WHERE user_id = :u", u=world.a1)
+    for role in ("owner", "admin"):
+        await _refused_insert(world, admin, "organization_members", organization_id=world.org_a, user_id=world.c, role=role)
+    with acting_as(admin):
+        async with world.db.app() as session:
+            await _insert(session, "organization_members", organization_id=world.org_a, user_id=world.c, role="member")
+            await session.commit()
+    # The owner may promote, and hand over ownership.
+    owner = _user(world, world.a1, world.org_a)
+    await _allowed(world, owner, "UPDATE organization_members SET role = 'admin' WHERE user_id = :u", u=world.c)
+
+
+async def test_a_creator_becomes_owner_once_and_cannot_come_back(world: World) -> None:
+    creator = _user(world, world.c)
+    org = uuid.uuid4()
+    with acting_as(creator):
+        async with world.db.app() as session:
+            await _insert(session, "organizations", id=org, name="C", slug="org-c", created_by_user_id=world.c)
+            await _insert(session, "organization_members", organization_id=org, user_id=world.c, role="owner")
+            await session.commit()
+    # a1 created organization A; once removed, it cannot add itself back as owner.
+    await _system(world, "DELETE FROM organization_members WHERE user_id = :u AND organization_id = :o",
+                  u=world.a1, o=world.org_a)
+    await _refused_insert(world, _user(world, world.a1), "organization_members",
+                          organization_id=world.org_a, user_id=world.a1, role="owner")
+
+
+async def test_tool_calls_and_documents_are_written_only_with_write_access(world: World) -> None:
+    (message,) = [row[0] for row in await _system(world, "SELECT id FROM messages WHERE conversation_id = :c", c=world.conv_a1)]
+    # c can read conv_a1 (view share) but not write into it.
+    await _refused_insert(world, _user(world, world.c), "tool_calls",
+                          message_id=message, tool_call_id="t", tool_name="search")
+    (kb_app,) = [row[0] for row in await _system(world, "SELECT id FROM knowledge_bases WHERE name = 'kb_app'")]
+    await _refused_insert(world, _user(world, world.a2, world.org_a), "rag_documents",
+                          collection_name="kb_app", filename="x.txt", filetype="txt", knowledge_base_id=kb_app)
+
+
+async def test_tables_created_later_stay_closed_to_the_application(world: World) -> None:
+    """The pgvector store creates its tables at run time with the owner login."""
+    await _system(world, "CREATE TABLE vectors_late (id int, payload text)")
+    await _system(world, "INSERT INTO vectors_late VALUES (1, 'secret')")
+    with acting_as(_user(world, world.a1, world.org_a)):
+        async with world.db.app() as session:
+            with pytest.raises(DBAPIError, match="permission denied"):
+                await session.execute(text("SELECT * FROM vectors_late"))
+    open_tables = await _system(
+        world,
+        "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace"
+        " WHERE c.relkind IN ('r', 'p') AND n.nspname = current_schema()"
+        " AND NOT c.relrowsecurity AND has_table_privilege(:role, c.oid, 'SELECT')",
+        role=TENANT_ROLE,
+    )
+    assert open_tables == [], f"tables open to the application without row level security: {open_tables}"
 {%- endif %}
