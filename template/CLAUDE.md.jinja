@@ -16,7 +16,7 @@
 {%- if enable_rag %}, RAG ({{ vector_store }}){%- endif %}
 {%- if use_celery %}, Celery{%- endif %}
 {%- if use_taskiq %}, Taskiq{%- endif %}
-{%- if use_frontend %}, Next.js 15 (i18n){%- endif %}
+{%- if use_frontend %}, React (Vite, TanStack Router and Query, shadcn/ui; English and Italian){%- endif %}
 
 ## Commands
 
@@ -86,7 +86,7 @@ Path-scoped guidance lives in `.claude/rules/*` and loads automatically when you
 - `code-style.md` — formatting, naming, imports, type hints
 - `testing.md` — test structure, fixtures, async patterns
 {%- if use_frontend %}
-- `frontend.md` — Next.js 15 conventions
+- `frontend.md` — React frontend conventions
 {%- endif %}
 
 Longer-form docs: `docs/en/guides/architecture.md`, `docs/en/guides/adding_features.md`, `docs/en/guides/testing.md`, `docs/en/guides/patterns.md`.

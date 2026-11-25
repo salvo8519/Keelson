@@ -170,7 +170,7 @@ server {
         proxy_read_timeout 60s;
     }
 
-    # Next.js HMR WebSocket (development)
+    # Frontend development server WebSocket (hot reload)
     location /_next/webpack-hmr {
         proxy_pass http://frontend;
         proxy_http_version 1.1;

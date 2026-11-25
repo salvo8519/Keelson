@@ -126,17 +126,12 @@ backend/app/
 {%- if use_frontend %}
 
 frontend/src/
-├── app/
-│   ├── [locale]/         # next-intl routes (en/pl)
-{%- if enable_marketing_site %}
-│   │   ├── (marketing)/  # Public landing, pricing, FAQ, blog
-{%- endif %}
-│   │   └── (dashboard)/  # Authenticated app
-│   └── api/              # Server-side API proxies (forward auth cookies)
-├── components/           # React components (chat, marketing, ui primitives)
-├── hooks/                # useAuth, useChat, useConversations, …
-├── stores/               # Zustand stores
-└── lib/                  # api-client, server-api, utils
+├── routes/               # TanStack Router file routes (_layout/ = signed-in pages)
+├── components/           # Feature components; ui/ = shadcn/ui primitives
+├── client/               # API client generated from openapi/openapi.json (make client)
+├── hooks/                # useAuth, toasts
+├── lib/                  # session (tokens, active organization)
+└── locales/              # Italian translations (English is the source)
 {%- endif %}
 ```
 
@@ -300,9 +295,10 @@ bun run lint
 bun run build
 ```
 
-The frontend talks to the backend through Next.js API route handlers in `src/app/api/*` (server-side proxy that forwards auth cookies to the FastAPI backend), so HTTP traffic never leaves the frontend origin. The one exception is the chat WebSocket: the browser opens it straight against the backend at `NEXT_PUBLIC_WS_URL`, so that origin must be reachable from the browser and the backend port (or a proxy route to it) has to be exposed.
-
-i18n (PL + EN) ships out of the box via `next-intl`. Add a new locale by extending `messages/<lang>.json` and `src/i18n.ts`.
+The frontend is a static React build (Vite) served by nginx. It calls the API directly at
+`VITE_API_URL`, fixed at build time, with the generated client in `src/client/`; regenerate
+it with `make client` after a backend change. Text is translated with i18next: English in the
+code, Italian in `src/locales/it.json` (`bun run i18n:check`).
 {%- endif %}
 
 ---

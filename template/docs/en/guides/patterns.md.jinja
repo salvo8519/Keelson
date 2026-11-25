@@ -177,31 +177,34 @@ off to the ingestion pipeline.
 
 ## Frontend Patterns
 
-### Authentication (HTTP-only cookies)
+### Calling the API
+
+The client in `src/client/` is generated from the API contract (`make client`). Use its
+services with TanStack Query:
 
 ```typescript
-import { useAuth } from '@/hooks/use-auth';
+import { useQuery } from "@tanstack/react-query"
+import { ApiKeysService } from "@/client"
 
-function Component() {
-    const { user, isAuthenticated, login, logout } = useAuth();
-}
+const { data: keys } = useQuery({
+  queryKey: ["apiKeys"],
+  queryFn: async () => (await ApiKeysService.listApiKeys()).data,
+})
 ```
 
-### State Management (Zustand)
+### Session and organization
+
+Tokens and the active organization live in `src/lib/session.ts`; the client adds the
+`Authorization` and `X-Organization-Id` headers. Sign-in, single sign-on and sign-out go
+through `useAuth` (`src/hooks/useAuth.ts`).
+
+### Translated text
 
 ```typescript
-import { useAuthStore } from '@/stores/auth-store';
+import { t } from "@/i18n"
 
-const { user, setUser, logout } = useAuthStore();
+<h1>{t("API keys")}</h1>
 ```
 
-### WebSocket Chat
-
-```typescript
-import { useChat } from '@/hooks/use-chat';
-
-function ChatPage() {
-    const { messages, sendMessage, isStreaming } = useChat();
-}
-```
+Add the Italian text to `src/locales/it.json`; `bun run i18n:check` fails on a missing one.
 {%- endif %}

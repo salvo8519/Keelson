@@ -1,4 +1,4 @@
-<!-- i18n source: README.md source_hash: 2cc8bb23c937 -->
+<!-- i18n source: README.md source_hash: ac3ec895b525 -->
 <p align="center">
   <img src="docs/_shared/assets/brand/mark.svg" alt="Keelson" width="96">
 </p>
@@ -152,6 +152,10 @@ Keelson è in pre-release. Cosa non è ancora verificato, o non ancora costruito
 - Il single sign-on è testato con un provider simulato, non ancora con un tenant reale di
   Entra ID o Keycloak.
 - I test end-to-end nel browser (Playwright) del frontend non girano nella pipeline.
+- Il frontend copre accesso, organizzazioni, membri, API key e amministrazione. La chat
+  dell'agente e le knowledge base sono servite dalle API (REST e WebSocket) ma non hanno ancora
+  un'interfaccia; è pianificato il porting dei componenti di chat del frontend Next.js di
+  partenza.
 - La row level security si fida del principal che l'applicazione dichiara sulla propria
   connessione: un'SQL injection nel login applicativo potrebbe cambiarlo. Il codice usa solo
   parametri vincolati; un contesto firmato dall'applicazione e verificato nel database è un

@@ -146,6 +146,9 @@ Keelson is a pre-release. What is not yet verified, or not yet built:
 - Single sign-on is tested against a simulated provider, not yet against a live Entra ID or
   Keycloak tenant.
 - The end-to-end browser tests (Playwright) of the frontend are not run in the pipeline.
+- The frontend covers sign-in, organizations, members, API keys and administration. The agent
+  chat and the knowledge bases are served by the API (REST and WebSocket) but have no
+  interface yet; porting the chat components of the upstream Next.js frontend is planned.
 - Row level security trusts the principal the application states on its connection: SQL
   injected into the application login could change it. The code uses bound parameters only;
   a context signed by the application and verified in the database is a possible next step.
