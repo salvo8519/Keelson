@@ -1,5 +1,4 @@
 {%- if enable_teams %}
-import contextlib
 import logging
 from uuid import UUID
 
@@ -10,7 +9,7 @@ from app.core.exceptions import AlreadyExistsError, AuthorizationError, BadReque
 from app.db.models.organization import OrgRole, Organization, OrganizationMember
 from app.repositories import invitation_repo, member_repo, organization_repo
 from app.schemas.organization import OrganizationCreate, OrganizationRead, OrganizationUpdate
-from app.services.file_storage import get_file_storage
+from app.services.file_storage import AVATAR_MAX_BYTES, AVATAR_TYPES, avatar_folder, avatar_path, replace_avatar
 {%- if enable_billing and enable_credits_system %}
 from app.services.billing.credit_service import CreditService
 {%- endif %}
@@ -19,7 +18,6 @@ logger = logging.getLogger(__name__)
 
 
 class OrganizationService:
-    _ALLOWED_AVATAR_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
 
     def __init__(self, db: AsyncSession):
         self.db = db
@@ -129,7 +127,6 @@ class OrganizationService:
             self.db,
             org,
             name=data.name,
-            avatar_url=data.avatar_url,
             default_locale=data.default_locale,
         )
 
@@ -158,27 +155,21 @@ class OrganizationService:
             BadRequestError: If file type or size is invalid.
             AuthorizationError: If requester is not Owner or Admin.
         """
-        if content_type not in self._ALLOWED_AVATAR_TYPES:
+        if content_type not in AVATAR_TYPES:
             raise BadRequestError(message="Only JPEG, PNG, WebP, and GIF images are allowed")
-        if len(file_data) > 2 * 1024 * 1024:
+        if len(file_data) > AVATAR_MAX_BYTES:
             raise BadRequestError(message="Avatar image too large. Maximum 2MB.")
 
         org, membership = await self.get_for_user(org_id, requester_id)
         if membership.role not in (OrgRole.OWNER.value, OrgRole.ADMIN.value):
             raise AuthorizationError(message="Only Owner or Admin can update the org")
 
-        # Keelson: avatars stay on the local disk (MEDIA_DIR): the record holds their path,
-        # not a stored object. Documents and chat files are stored objects.
-        storage = get_file_storage("local")
-        if org.avatar_url:
-            with contextlib.suppress(Exception):
-                await storage.delete(org.avatar_url)
-        storage_path = await storage.save(f"avatars/orgs/{org_id}", filename, file_data)
-        return await organization_repo.update(self.db, org, avatar_url=storage_path)
+        folder = avatar_folder("organization", org_id)
+        path = await replace_avatar(folder, org.avatar_url, filename, file_data)
+        return await organization_repo.update(self.db, org, avatar_url=path)
 
-    def get_avatar_path(self, avatar_url: str) -> str | None:
-        full_path = get_file_storage("local").get_full_path(avatar_url)
-        return str(full_path) if full_path is not None else None
+    def get_avatar_path(self, org: Organization) -> str | None:
+        return avatar_path(avatar_folder("organization", org.id), org.avatar_url)
 
 
 {%- else %}

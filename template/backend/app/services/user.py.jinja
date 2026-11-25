@@ -1,4 +1,3 @@
-import contextlib
 import logging
 from typing import Any
 from uuid import UUID
@@ -44,7 +43,7 @@ from app.repositories import session_repo, user_repo
 from app.repositories import user_repo
 {%- endif %}
 from app.schemas.user import UserCreate, UserRead, UserRegister, UserUpdate, UserUpdateMe
-from app.services.file_storage import get_file_storage
+from app.services.file_storage import AVATAR_MAX_BYTES, AVATAR_TYPES, avatar_folder, avatar_path, replace_avatar
 {%- if enable_memory %}
 from app.services.user_memory import forget_user_memory
 {%- endif %}
@@ -379,27 +378,16 @@ class UserService:
     async def update_avatar(
         self, user_id: UUID, file_data: bytes, filename: str, content_type: str
     ) -> User:
-        ALLOWED_AVATAR_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
-        if content_type not in ALLOWED_AVATAR_TYPES:
+        if content_type not in AVATAR_TYPES:
             raise ValueError("Only JPEG, PNG, WebP, and GIF images are allowed")
-        if len(file_data) > 2 * 1024 * 1024:
+        if len(file_data) > AVATAR_MAX_BYTES:
             raise ValueError("Avatar image too large. Maximum 2MB.")
-
-        # Keelson: avatars stay on the local disk (MEDIA_DIR): the record holds their path,
-        # not a stored object. Documents and chat files are stored objects.
-        storage = get_file_storage("local")
-
         user = await self.get_by_id(user_id)
-        if user.avatar_url:
-            with contextlib.suppress(Exception):
-                await storage.delete(user.avatar_url)
+        path = await replace_avatar(avatar_folder("user", user_id), user.avatar_url, filename, file_data)
+        return await user_repo.update(self.db, db_user=user, update_data={"avatar_url": path})
 
-        storage_path = await storage.save(f"avatars/{user_id}", filename, file_data)
-        return await user_repo.update(self.db, db_user=user, update_data={"avatar_url": storage_path})
-
-    def get_avatar_path(self, avatar_url: str) -> str | None:
-        full_path = get_file_storage("local").get_full_path(avatar_url)
-        return str(full_path) if full_path is not None else None
+    def get_avatar_path(self, user: User) -> str | None:
+        return avatar_path(avatar_folder("user", user.id), user.avatar_url)
 
     async def delete(self, user_id: UUID) -> User:
         user = await user_repo.delete(self.db, user_id)

@@ -25,7 +25,7 @@ from collections.abc import AsyncIterable, AsyncIterator, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import lru_cache
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, BinaryIO, ClassVar, Literal, Protocol
 
 from app.core.config import settings
@@ -497,3 +497,47 @@ def get_file_storage(backend: StorageBackendName | str | None = None) -> BaseFil
     if name == "s3":
         return _s3_storage(s3_config())
     raise ValueError(f"Unknown storage backend: {name}")
+
+
+# --- Avatars (Keelson) ------------------------------------------------------------------------
+# Avatars stay on the local disk under a folder of their owner. The record keeps the path, so
+# a path is served or deleted only inside its owner's folder: a value written in the record by
+# anything but the upload (upstream let organization admins set ``avatar_url``) cannot reach
+# another owner's files.
+
+AVATAR_TYPES = frozenset({"image/jpeg", "image/png", "image/webp", "image/gif"})
+AVATAR_MAX_BYTES = 2 * 1024 * 1024
+
+
+def avatar_folder(owner: Literal["user", "organization"], owner_id: uuid.UUID) -> str:
+    return f"avatars/orgs/{owner_id}" if owner == "organization" else f"avatars/{owner_id}"
+
+
+def is_inside(folder: str, key: str | None) -> bool:
+    """True when ``key`` names a file below ``folder`` (relative, no ``..``)."""
+    if not key:
+        return False
+    path, base = PurePosixPath(key), PurePosixPath(folder)
+    return (
+        not path.is_absolute()
+        and ".." not in path.parts
+        and len(path.parts) > len(base.parts)
+        and path.parts[: len(base.parts)] == base.parts
+    )
+
+
+async def replace_avatar(folder: str, current: str | None, filename: str, data: bytes) -> str:
+    """Store a new avatar in ``folder`` and remove the previous one if it is the owner's."""
+    storage = get_file_storage("local")
+    if is_inside(folder, current):
+        with contextlib.suppress(Exception):
+            await storage.delete(current)  # type: ignore[arg-type]
+    return await storage.save(folder, filename, data)
+
+
+def avatar_path(folder: str, key: str | None) -> str | None:
+    """Full path of an avatar inside its owner's folder, or None."""
+    if not is_inside(folder, key):
+        return None
+    full_path = get_file_storage("local").get_full_path(key)  # type: ignore[arg-type]
+    return str(full_path) if full_path is not None else None

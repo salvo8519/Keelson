@@ -28,8 +28,9 @@ class OrganizationCreate(BaseSchema):
 
 
 class OrganizationUpdate(BaseSchema):
+    # Keelson: no avatar_url. The avatar is set by its upload only: upstream let an admin write
+    # any path here, then serve or delete it (another organization's files).
     name: str | None = Field(default=None, min_length=2, max_length=128)
-    avatar_url: str | None = Field(default=None, max_length=500)
     # Keelson: language for members who have not chosen one (app/core/i18n.py).
     default_locale: str | None = Field(default=None, max_length=8)
 

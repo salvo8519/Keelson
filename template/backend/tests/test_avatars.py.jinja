@@ -1,0 +1,68 @@
+"""Avatars are served and deleted only inside their owner's folder (Keelson).
+
+Upstream let an organization admin set ``avatar_url`` to any path: ``GET /orgs/{id}/avatar``
+then streamed another owner's file and the next upload deleted it.
+"""
+
+import uuid
+
+import pytest
+
+from app.services.file_storage import avatar_folder, avatar_path, is_inside, replace_avatar
+{%- if enable_teams %}
+from app.schemas.organization import OrganizationUpdate
+{%- endif %}
+
+ORG = uuid.UUID("00000000-0000-0000-0000-00000000000a")
+OTHER = uuid.UUID("00000000-0000-0000-0000-00000000000b")
+
+
+@pytest.mark.parametrize(
+    ("key", "inside"),
+    [
+        (f"avatars/orgs/{ORG}/logo.png", True),
+        (f"avatars/orgs/{OTHER}/logo.png", False),
+        (f"avatars/orgs/{ORG}/../{OTHER}/logo.png", False),
+        (f"/avatars/orgs/{ORG}/logo.png", False),
+        (f"avatars/orgs/{ORG}", False),
+        ("org/abc/secret-document", False),
+        ("", False),
+        (None, False),
+    ],
+)
+def test_a_key_belongs_to_a_folder_only_below_it(key: str | None, inside: bool) -> None:
+    assert is_inside(avatar_folder("organization", ORG), key) is inside
+
+
+def test_user_and_organization_folders_are_apart() -> None:
+    assert not is_inside(avatar_folder("user", ORG), f"avatars/orgs/{ORG}/logo.png")
+
+
+def test_a_path_outside_the_owner_folder_is_not_served(tmp_path, monkeypatch) -> None:
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "MEDIA_DIR", tmp_path)
+    victim = tmp_path / "chat" / "secret.txt"
+    victim.parent.mkdir(parents=True)
+    victim.write_text("TOP-SECRET")
+    assert avatar_path(avatar_folder("organization", ORG), "chat/secret.txt") is None
+
+
+@pytest.mark.anyio
+async def test_replacing_an_avatar_does_not_delete_a_foreign_file(tmp_path, monkeypatch) -> None:
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "MEDIA_DIR", tmp_path)
+    victim = tmp_path / "avatars" / "orgs" / str(OTHER) / "logo.png"
+    victim.parent.mkdir(parents=True)
+    victim.write_bytes(b"victim")
+    folder = avatar_folder("organization", ORG)
+    await replace_avatar(folder, f"avatars/orgs/{OTHER}/logo.png", "mine.png", b"mine")
+    assert victim.read_bytes() == b"victim"
+{%- if enable_teams %}
+
+
+def test_organization_updates_do_not_carry_an_avatar_path() -> None:
+    update = OrganizationUpdate.model_validate({"name": "Acme", "avatar_url": "org/x/y"})
+    assert "avatar_url" not in update.model_dump()
+{%- endif %}

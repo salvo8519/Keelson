@@ -102,7 +102,7 @@ async def get_avatar(user_id: UUID, user_service: UserSvc) -> Any:
     user = await user_service.get_by_id(user_id)
     if not user.avatar_url:
         raise NotFoundError(message="No avatar set")
-    file_path = user_service.get_avatar_path(user.avatar_url)
+    file_path = user_service.get_avatar_path(user)
     if not file_path:
         raise NotFoundError(message="Avatar file not found")
     return FileResponse(path=file_path, media_type="image/jpeg")
