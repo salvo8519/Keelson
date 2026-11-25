@@ -65,6 +65,12 @@ backend/app/
 - Services raise `NotFoundError`, `AlreadyExistsError`
 - Separate `Create`, `Update`, `Response` schemas
 - Commands auto-discovered from `app/commands/`
+{%- if use_frontend %}
+- Frontend: a pattern used on more than one screen (table, drawer, toast, form field, status
+  label) is one component under `frontend/src/components/`, with its variants as props.
+  Screens compose components and do not restyle them; colors, spacing and radii come from the
+  theme tokens (CSS variables), never from literals.
+{%- endif %}
 {%- if enable_rag %}
 - Document ingestion via CLI and API upload
 - Sync sources: configurable connectors with scheduled sync
