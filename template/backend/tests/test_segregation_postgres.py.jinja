@@ -400,6 +400,20 @@ async def test_a_conversation_keeps_its_owner_its_organization_and_its_visibilit
     await _allowed(world, owner, "UPDATE conversations SET title = 'renamed' WHERE id = :c", c=world.conv_a1)
 
 
+async def test_password_hashes_are_hidden_from_the_application(world: World) -> None:
+    """Co-members read each other's profile, never a password hash (column privileges)."""
+    acting = _user(world, world.a1, world.org_a)
+    for statement in ("SELECT hashed_password FROM users WHERE id = :u", "SELECT * FROM users WHERE id = :u"):
+        with acting_as(acting):
+            async with world.db.app() as session:
+                with pytest.raises(DBAPIError, match="permission denied"):
+                    await session.execute(text(statement), {"u": world.a2})
+    with acting_as(acting):
+        async with world.db.app() as session:
+            email = await session.scalar(text("SELECT email FROM users WHERE id = :u"), {"u": world.a2})
+    assert email is not None
+
+
 async def test_a_user_cannot_grant_itself_privileges(world: World) -> None:
     acting = _user(world, world.a2, world.org_a)
     for change in ("is_app_admin = true", "role = 'admin'", "is_active = true", "oauth_id = 'x'"):

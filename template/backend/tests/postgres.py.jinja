@@ -135,8 +135,18 @@ def serving(application: Any, database: SegregatedDatabase) -> Iterator[None]:
 
     application.dependency_overrides[deps.get_db_session] = request_session
     application.dependency_overrides[deps.get_system_db_session] = sign_in_session
+    # Every module that imported system_session (routes, services, the audit), not only deps:
+    # a module left out would read the real database instead of the throwaway schema.
+    import sys
+    from contextlib import ExitStack
+
+    from app.db.session import system_session as original
+
     try:
-        with patch.object(deps, "system_session", system):
+        with ExitStack() as stack:
+            for module in list(sys.modules.values()):
+                if getattr(module, "system_session", None) is original:
+                    stack.enter_context(patch.object(module, "system_session", system))
             yield
     finally:
         application.dependency_overrides.pop(deps.get_db_session, None)

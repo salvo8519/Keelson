@@ -77,6 +77,11 @@ async def _user(database: SegregatedDatabase, email: str, **fields: Any) -> User
         return user
 
 
+async def _password_hash(database: SegregatedDatabase, user: User) -> str | None:
+    async with database.system() as db:
+        return await user_repo.get_password_hash(db, user.id)
+
+
 async def _sign_in(client: AsyncClient, email: str, password: str = PASSWORD) -> dict[str, str]:
     response = await client.post(
         f"{API}/auth/login", data={"username": email, "password": password}
@@ -147,7 +152,7 @@ async def test_a_browser_keeps_its_own_session_after_changing_the_password(
 async def test_a_password_reset_ends_the_sessions(client, database) -> None:
     user = await _user(database, "ada@example.com")
     before = await _sign_in(client, "ada@example.com")
-    token = create_password_reset_token(str(user.id), current_password_hash=user.hashed_password)
+    token = create_password_reset_token(str(user.id), current_password_hash=await _password_hash(database, user))
 
     reset = await client.post(
         f"{API}/auth/password-reset/confirm", json={"token": token, "new_password": NEW_PASSWORD}

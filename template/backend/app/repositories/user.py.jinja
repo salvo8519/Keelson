@@ -123,6 +123,11 @@ async def update(
     return db_user
 
 
+async def get_password_hash(db: AsyncSession, user_id: UUID) -> str | None:
+    """The stored password hash of a user (system sessions only: hidden from the application login)."""
+    return await db.scalar(select(User.hashed_password).where(User.id == user_id))
+
+
 async def set_platform_admin(db: AsyncSession, user: User, admin: bool) -> User:
     """Keelson: grant or revoke platform administration. The role and the flag are written
     together, because ``User.has_role`` requires both."""

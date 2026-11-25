@@ -307,6 +307,14 @@ UNISOLATED_TABLES: dict[str, str] = {
     "usage_event": "billing, written by metering through the system session",
 }
 
+# Columns the application login cannot read. Password hashes are read by sign-in, reset and
+# linking, which run in system sessions; a password change reads the user's own hash through a
+# declared system read (app/services/user.py). The model defers the column so that ordinary
+# loads do not select it.
+HIDDEN_COLUMNS: dict[str, tuple[str, ...]] = {
+    "users": ("hashed_password",),
+}
+
 # Columns the application login cannot change (column privileges: a policy sees the new row
 # only, not what changed). Who owns a row, where it lives and what it grants are set when the
 # row is created or by the platform administration, which uses the system session.
@@ -462,21 +470,25 @@ def table_statements(table: str, schema: str = "public") -> list[str]:
         statements.append(_resolve(clause, schema))
     if frozen := FROZEN_COLUMNS.get(table):
         statements += _column_statements(table, frozen, schema)
+    if hidden := HIDDEN_COLUMNS.get(table):
+        statements += _column_statements(table, hidden, schema, privilege="SELECT")
     return statements
 
 
-def _column_statements(table: str, frozen: tuple[str, ...], schema: str) -> list[str]:
-    """UPDATE on every column but the frozen ones (a table-level grant covers them all)."""
-    excluded = ", ".join(f"'{column}'" for column in frozen)
+def _column_statements(
+    table: str, excluded_columns: tuple[str, ...], schema: str, privilege: str = "UPDATE"
+) -> list[str]:
+    """``privilege`` on every column but the excluded ones (a table-level grant covers them all)."""
+    excluded = ", ".join(f"'{column}'" for column in excluded_columns)
     return [
-        f'REVOKE UPDATE ON "{table}" FROM "{TENANT_ROLE}"',
+        f'REVOKE {privilege} ON "{table}" FROM "{TENANT_ROLE}"',
         f"""
         DO $$ DECLARE cols text; BEGIN
             SELECT string_agg(quote_ident(column_name), ', ') INTO cols
               FROM information_schema.columns
              WHERE table_schema = '{schema}' AND table_name = '{table}'
                AND column_name NOT IN ({excluded});
-            EXECUTE format('GRANT UPDATE (%s) ON %I TO %I', cols, '{table}', '{TENANT_ROLE}');
+            EXECUTE format('GRANT {privilege} (%s) ON %I TO %I', cols, '{table}', '{TENANT_ROLE}');
         END $$
         """,
     ]

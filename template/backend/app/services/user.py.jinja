@@ -37,6 +37,7 @@ from app.core.security import (
 {%- endif %}
 )
 from app.db.models.user import User, UserRole
+from app.db.session import system_session
 {%- if enable_session_management and use_jwt %}
 from app.repositories import session_repo, user_repo
 {%- else %}
@@ -314,7 +315,7 @@ class UserService:
         if by_email is not None:
             linkable = (
                 email_verified
-                and not by_email.hashed_password
+                and not await user_repo.get_password_hash(self.db, by_email.id)
                 and by_email.oauth_provider is None
                 and not getattr(by_email, "is_app_admin", False)
             )
@@ -357,14 +358,14 @@ class UserService:
 
     async def authenticate(self, email: str, password: str) -> User:
         user = await user_repo.get_by_email(self.db, email)
-        if not user or not user.hashed_password:
+        # Keelson: the hash is read explicitly (deferred, and hidden from the application login).
+        stored = await user_repo.get_password_hash(self.db, user.id) if user else None
+        if not user or not stored:
             # Same work as a real check, so the time does not tell which addresses exist.
             await run_in_threadpool(verify_password, password, DUMMY_HASH)
             raise AuthenticationError(message="Invalid email or password")
         # Hashing is deliberately slow: off the event loop.
-        verified, upgraded = await run_in_threadpool(
-            verify_and_update_password, password, user.hashed_password
-        )
+        verified, upgraded = await run_in_threadpool(verify_and_update_password, password, stored)
         if not verified:
             raise AuthenticationError(message="Invalid email or password")
         if not user.is_active:
@@ -405,9 +406,11 @@ class UserService:
 
     async def change_password(self, user: User, current_password: str, new_password: str) -> None:
         """Change the caller's own password after checking the current one."""
-        if not user.hashed_password or not await run_in_threadpool(
-            verify_password, current_password, user.hashed_password
-        ):
+        # Keelson: the application login cannot read password hashes; the caller's own one is
+        # read by a declared system read of the authenticated user's row.
+        async with system_session("password change: current password") as system_db:
+            stored = await user_repo.get_password_hash(system_db, user.id)
+        if not stored or not await run_in_threadpool(verify_password, current_password, stored):
             raise BadRequestError(message="Incorrect password")
         if current_password == new_password:
             raise BadRequestError(message="New password cannot be the same as the current one")
@@ -453,7 +456,8 @@ class UserService:
         if user is None or not user.is_active:
             return None
         token = create_password_reset_token(
-            subject=str(user.id), current_password_hash=user.hashed_password
+            subject=str(user.id),
+            current_password_hash=await user_repo.get_password_hash(self.db, user.id),
         )
         return user, token
 
@@ -474,7 +478,7 @@ class UserService:
 
         # Single use: the token is bound to the password hash it was issued
         # against, so a link that has already been redeemed no longer matches.
-        if payload.get("pwe") != password_epoch(user.hashed_password):
+        if payload.get("pwe") != password_epoch(await user_repo.get_password_hash(self.db, user.id)):
             raise AuthenticationError(message="Reset link is invalid or has expired")
 
         await user_repo.update(
