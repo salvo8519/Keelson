@@ -6,7 +6,7 @@
 // (form validation messages, navigation) are translated too.
 // Every module that calls t() imports this one, so i18next is initialised before any text is
 // read: import order does not matter.
-import i18next from "i18next"
+import i18next, { type TOptions } from "i18next"
 
 import { LANGUAGES, type LanguageCode } from "./locales/languages"
 
@@ -46,8 +46,8 @@ i18next.init({
   initAsync: false,
 })
 
-export const t = (key: string, options?: Record<string, unknown>): string =>
-  i18next.t(key, options)
+export const t = (key: string, options?: TOptions): string =>
+  options ? i18next.t(key, options) : i18next.t(key)
 
 // Marks a text for translation where it is defined, without translating it; t() translates it
 // where it is shown. Same convention as N_ in the backend.
