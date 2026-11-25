@@ -18,6 +18,7 @@ from uuid import UUID
 from sqlalchemy import insert
 
 from app.core.logging import without_secrets
+from app.db.session import system_session
 from app.db.models.audit_log import AppAdminAuditLog
 
 
@@ -45,6 +46,16 @@ async def record_audit(
             ip_address=ip_address,
         )
     )
+
+
+
+async def record_refusal(reason: str, **entry: Any) -> None:
+    """Keelson: an entry that must outlive the caller's transaction. A refusal is followed by
+    an error, which rolls the request back with anything written in it; this entry is written
+    and committed in a system session of its own."""
+    async with system_session(reason) as db:
+        await record_audit(db, **entry)
+        await db.commit()
 
 {%- else %}
 """Audit log — not configured (enable_teams=false)."""

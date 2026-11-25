@@ -12,7 +12,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import api_keys
-from app.core.audit import record_audit
+from app.core.audit import record_audit, record_refusal
 from app.core.config import settings
 from app.core.exceptions import AuthenticationError, BadRequestError, NotFoundError
 from app.db.models.api_key import ApiKey
@@ -39,15 +39,19 @@ class ApiKeyService:
         if actor is None:
             logger.warning("api_key_event_without_actor", extra={"action": action, "key": key.prefix})
             return
-        await record_audit(
-            self.db,
-            actor_user_id=actor,
-            action=f"api_key.{action}",
-            organization_id=key.organization_id,
-            target_type=AUDIT_TARGET,
-            target_id=str(key.id),
-            details={"prefix": key.prefix, **details},
-        )
+        entry = {
+            "actor_user_id": actor,
+            "action": f"api_key.{action}",
+            "organization_id": key.organization_id,
+            "target_type": AUDIT_TARGET,
+            "target_id": str(key.id),
+            "details": {"prefix": key.prefix, **details},
+        }
+        if action == "denied":
+            # The refusal raises next and the request's transaction is rolled back.
+            await record_refusal(f"audit: api key {key.prefix} denied", **entry)
+        else:
+            await record_audit(self.db, **entry)
 
     async def _issue(
         self,

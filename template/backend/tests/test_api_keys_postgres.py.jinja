@@ -12,6 +12,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import app.db.models  # noqa: F401  (registers every table on the metadata)
+from app.core import audit
 from app.core.config import settings
 from app.core.exceptions import AuthenticationError, AuthorizationError
 from app.db.base import Base
@@ -26,12 +27,14 @@ pytestmark = pytest.mark.anyio
 
 
 @pytest.fixture
-async def sessions():
+async def sessions(monkeypatch):
     """System sessions on a segregated database: the service logic of API keys (creation,
     authentication by prefix, rotation) runs as the system does; the isolation of keys between
     organizations is attacked in tests/test_segregation_postgres.py."""
     await require_postgres("API key")
     async with segregated_database() as db:
+        # Refusals are audited in a system session of their own: the segregated one here.
+        monkeypatch.setattr(audit, "system_session", lambda reason: db.system())
         yield db.system
 
 
@@ -65,15 +68,20 @@ async def test_create_authenticate_and_audit(sessions) -> None:
 
 
 async def test_wrong_secret_is_refused_and_audited(sessions) -> None:
+    """The refusal survives the rollback of the request that raised it."""
     async with sessions() as session:
         org, user = await _org_and_user(session)
         key, token = await _create(session, org, user)
+        await session.commit()
+    async with sessions() as session:
         with pytest.raises(AuthenticationError):
             await ApiKeyService(session).authenticate(token[:-1] + ("A" if token[-1] != "A" else "B"))
+        await session.rollback()
+    async with sessions() as session:
         denied = await session.scalar(
             select(func.count()).where(AppAdminAuditLog.action == "api_key.denied")
         )
-        assert denied == 1
+    assert denied == 1
 
 
 async def test_revoked_and_expired_keys_are_refused(sessions) -> None:
