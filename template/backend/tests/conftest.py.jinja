@@ -8,6 +8,9 @@ See: https://anyio.readthedocs.io/en/stable/testing.html
 # ruff: noqa: I001 - Imports structured for Jinja2 template conditionals
 {%- endif %}
 
+{%- if enable_redis %}
+import time
+{%- endif %}
 from collections.abc import AsyncGenerator
 {%- if enable_redis %}
 from unittest.mock import AsyncMock, MagicMock
@@ -55,6 +58,7 @@ def reset_rate_limit_storage(monkeypatch: pytest.MonkeyPatch) -> None:
     that posts to an ``/auth/*`` route gets a 429 from the previous five.
     """
     monkeypatch.setattr(rate_limit_service, "_storage", InMemoryStorage())
+    monkeypatch.setattr(rate_limit_service, "_local_sampler", rate_limit_service.LocalSampler())
 {%- endif %}
 
 
@@ -68,6 +72,7 @@ def mock_redis() -> MagicMock:
     mock.ping = AsyncMock(return_value=True)
     mock.get = AsyncMock(return_value=None)
     mock.set = AsyncMock(return_value=True)
+    mock.time = AsyncMock(side_effect=time.time)  # Keelstone: the clock of Redis
     mock.delete = AsyncMock(return_value=1)
     mock.exists = AsyncMock(return_value=0)
     mock.incr = AsyncMock(return_value=1)

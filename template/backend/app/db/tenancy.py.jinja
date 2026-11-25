@@ -366,9 +366,13 @@ HIDDEN_COLUMNS: dict[str, tuple[str, ...]] = {
 # row is created or by the platform administration, which uses the system session.
 FROZEN_COLUMNS: dict[str, tuple[str, ...]] = {
     # token_epoch (the session version) is not frozen: a user's own password change raises it
-    # with the application login. The policy limits a user to their own row, and no code writes
-    # it other than as an increment (UserService).
-    "users": ("role", "is_app_admin", "is_active", "oauth_provider", "oauth_id", "external_user_id"),
+    # with the application login. The policy limits a user to their own row, and the database
+    # refuses to lower it (NON_DECREASING_COLUMNS). The address changes only through its
+    # confirmation link, which runs in a system session (UserService.confirm_email_change).
+    "users": (
+        "role", "is_app_admin", "is_active", "oauth_provider", "oauth_id", "external_user_id",
+        "email", "email_verified",
+    ),
     "conversations": ("user_id", "organization_id", "is_demo"),
     "conversation_shares": ("shared_by",),
     "organization_members": ("organization_id", "user_id"),
@@ -379,6 +383,13 @@ FROZEN_COLUMNS: dict[str, tuple[str, ...]] = {
     "knowledge_bases": ("scope", "organization_id", "owner_user_id", "collection_name", "is_default"),
     "rag_documents": ("organization_id", "knowledge_base_id", "collection_name"),
     "sync_sources": ("organization_id",),
+}
+
+# Columns that only grow (a trigger, for every login): lowering the session version would bring
+# back sessions that were ended, lowering the magic-link epoch the sign-in and address change
+# links it voided (the application login may write both on the user's own row).
+NON_DECREASING_COLUMNS: dict[str, tuple[str, ...]] = {
+    "users": ("token_epoch", "magic_link_epoch"),
 }
 
 
@@ -436,6 +447,15 @@ def _functions(schema: str) -> list[str]:
                       ORDER BY (s.permission::text = 'edit') DESC LIMIT 1)
                END
                FROM conversations c WHERE c.id = conv $$""",
+        # Trigger of NON_DECREASING_COLUMNS; the column is the trigger's argument.
+        f"""CREATE OR REPLACE FUNCTION {S}.refuse_decrease() RETURNS trigger LANGUAGE plpgsql AS
+            $$ BEGIN
+                IF (to_jsonb(NEW) ->> TG_ARGV[0])::bigint < (to_jsonb(OLD) ->> TG_ARGV[0])::bigint THEN
+                    RAISE EXCEPTION '%.% cannot decrease', TG_TABLE_NAME, TG_ARGV[0]
+                        USING ERRCODE = 'check_violation';
+                END IF;
+                RETURN NEW;
+            END $$""",
     ]
     return [_resolve(statement, schema) for statement in statements]
 
@@ -592,7 +612,28 @@ def table_statements(table: str, schema: str = "public") -> list[str]:
         statements += _column_statements(table, frozen, schema)
     if hidden := HIDDEN_COLUMNS.get(table):
         statements += _column_statements(table, hidden, schema, privilege="SELECT")
+    for column in NON_DECREASING_COLUMNS.get(table, ()):
+        statements.append(_non_decreasing_statement(table, column, schema))
     return statements
+
+
+def _non_decreasing_statement(table: str, column: str, schema: str) -> str:
+    """The trigger that refuses to lower ``column``, once the column exists (earlier
+    migrations apply the policies before it is added)."""
+    trigger = f"{POLICY_PREFIX}{column}_never_decreases"
+    return _resolve(
+        f"""
+        DO $$ BEGIN
+            DROP TRIGGER IF EXISTS {trigger} ON "{table}";
+            IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = '{schema}'
+                       AND table_name = '{table}' AND column_name = '{column}') THEN
+                CREATE TRIGGER {trigger} BEFORE UPDATE OF "{column}" ON "{table}"
+                    FOR EACH ROW EXECUTE FUNCTION {S}.refuse_decrease('{column}');
+            END IF;
+        END $$
+        """,
+        schema,
+    )
 
 
 def _column_statements(

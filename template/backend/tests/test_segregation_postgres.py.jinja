@@ -421,6 +421,27 @@ async def test_a_user_cannot_grant_itself_privileges(world: World) -> None:
     await _allowed(world, acting, "UPDATE users SET full_name = 'A two' WHERE id = :u", u=world.a2)
 
 
+async def test_a_user_cannot_revive_ended_sessions_or_change_the_address(world: World) -> None:
+    """The session version (and the magic-link epoch, which voids e-mail links) only grows, and
+    the address changes only through its confirmation."""
+    acting = _user(world, world.a2, world.org_a)
+{%- if enable_email %}
+    growing = ("token_epoch", "magic_link_epoch")
+{%- else %}
+    growing = ("token_epoch",)
+{%- endif %}
+    for column in growing:
+        await _allowed(world, acting, f"UPDATE users SET {column} = {column} + 2 WHERE id = :u", u=world.a2)
+        with acting_as(acting):
+            async with world.db.app() as session:
+                with pytest.raises(DBAPIError, match=column):
+                    await session.execute(
+                        text(f"UPDATE users SET {column} = {column} - 1 WHERE id = :u"), {"u": world.a2}
+                    )
+    for change in ("email = 'someone@example.com'", "email_verified = true"):
+        await _refused(world, acting, f"UPDATE users SET {change} WHERE id = :u", u=world.a2)
+
+
 async def test_an_admin_manages_members_and_viewers_only(world: World) -> None:
     await _system(world, "UPDATE organization_members SET role = 'admin' WHERE user_id = :u", u=world.a2)
     admin = _user(world, world.a2, world.org_a)

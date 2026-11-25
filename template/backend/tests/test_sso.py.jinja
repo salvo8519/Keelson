@@ -235,6 +235,37 @@ async def test_the_code_is_exchanged_once_for_session_cookies(
 
 
 @pytest.mark.anyio
+async def test_while_redis_is_down_single_sign_on_answers_503(
+    client: AsyncClient, providers, users, mock_redis: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The one-time code lives in Redis: without it the callback and the exchange answer 503
+    (``SESSION_STORE_UNAVAILABLE``, as refreshes do), not an unhandled 500."""
+    from app.core.config import settings
+
+    provider_client = MagicMock()
+    provider_client.authorize_access_token = AsyncMock(
+        return_value={"userinfo": {"sub": "oid-1", "email": "ada@example.com"}}
+    )
+    monkeypatch.setattr(routes, "client", lambda _name: provider_client)
+    mock_redis.set = AsyncMock(side_effect=ConnectionError("redis unavailable"))
+    mock_redis.raw = MagicMock()
+    mock_redis.raw.getdel = AsyncMock(side_effect=ConnectionError("redis unavailable"))
+
+    callback = await client.get("/api/v1/oauth/entra/callback?code=x&state=y")
+    exchange = await client.post(
+        "/api/v1/oauth/exchange",
+        json={"code": "c" * 43},
+        headers={"Origin": settings.CORS_ORIGINS[0], "Cookie": f"{routes.BINDING_COOKIE}=b"},
+    )
+
+    for response in (callback, exchange):
+        assert response.status_code == 503, response.text
+        assert response.json()["code"] == "SESSION_STORE_UNAVAILABLE"
+        assert int(response.headers["Retry-After"]) > 0
+        assert not any(c.startswith("access_token=") for c in response.headers.get_list("set-cookie"))
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize("cookie", [None, "another-browser"])
 async def test_a_code_sent_to_another_browser_signs_nobody_in(
     client: AsyncClient, users, mock_redis: MagicMock, cookie: str | None
@@ -324,6 +355,7 @@ async def test_an_account_without_password_or_identity_is_linked_by_a_verified_a
     assert repo.update.call_args.kwargs["update_data"] == {
         "oauth_provider": "entra",
         "oauth_id": "oid-1",
+        "email_verified": True,
     }
 
 

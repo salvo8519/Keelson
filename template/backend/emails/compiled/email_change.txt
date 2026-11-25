@@ -1,0 +1,11 @@
+Subject: Confirm your new [[app_name]] email address
+
+Hi [[name]],
+
+Use the link below to make this the email address of your [[app_name]] account. Until then your address does not change. The link expires in [[expires_in]].
+
+[[confirm_url]]
+
+If you didn't request this, ignore this email: no account will use this address.
+
+— The [[app_name]] Team

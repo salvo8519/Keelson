@@ -94,8 +94,10 @@ async def agent_websocket(
 {%- endif %}
     )
 {%- if websocket_auth_jwt and not use_delegated_auth %}
-    # The handshake checked the token against this session version.
+    # The handshake checked the token against this session version, and its administrator when
+    # the token is an impersonation (app/api/deps.py, get_current_user_ws).
     session_version = user.token_epoch
+    session_claims = getattr(websocket.state, "session_claims", None)
 {%- endif %}
 
     try:
@@ -111,8 +113,9 @@ async def agent_websocket(
             if problem is None and starts_turn(data):
 {%- if websocket_auth_jwt and not use_delegated_auth %}
                 # Keelstone: a session ended since the handshake (password change, deactivation,
-                # sign out everywhere) ends the connection before the next turn.
-                if not await session_still_current(user, session_version):
+                # sign out everywhere, an impersonating administrator demoted) ends the
+                # connection before the next turn.
+                if not await session_still_current(user, session_version, session_claims):
                     await websocket.close(code=4001, reason="Session ended")
                     break
 {%- endif %}

@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import StrEnum
 from uuid import UUID
 
-from pydantic import EmailStr, Field, field_validator
+from pydantic import ConfigDict, EmailStr, Field, field_validator
 
 from app.schemas.base import BaseSchema, TimestampSchema
 
@@ -96,11 +96,15 @@ class UserUpdate(BaseSchema):
 class UserUpdateMe(BaseSchema):
     """Fields a user may change on their own profile (Keelstone, from the official template).
 
-    Password, role and account status are excluded: the password changes through
-    ``UpdatePassword``, which requires the current one; role and status are for administrators.
+    Password, role, account status and e-mail address are excluded: the password changes
+    through ``UpdatePassword``, which requires the current one; the address through
+    ``EmailChangeRequest``, confirmed by a link sent to it; role and status are for
+    administrators. Any other field is refused (422) rather than ignored, so a client that
+    still sends ``email`` learns that the address did not change.
     """
 
-    email: EmailStr | None = Field(default=None, max_length=255)
+    model_config = ConfigDict(extra="forbid")
+
     full_name: str | None = Field(default=None, max_length=255)
     onboarding_completed_at: datetime | None = Field(
         default=None,
@@ -110,15 +114,57 @@ class UserUpdateMe(BaseSchema):
         default=None, description="Preferred language, one of the supported languages."
     )
 
-    @field_validator("email")
-    @classmethod
-    def normalize_email(cls, v: str | None) -> str | None:
-        return v.lower() if v is not None else None
-
     @field_validator("locale")
     @classmethod
     def supported_locale(cls, v: str | None) -> str | None:
         return _supported_locale(v)
+
+
+class EmailChangeRequest(BaseSchema):
+    """Keelstone: a new e-mail address for the caller's account, pending until confirmed.
+
+    The caller proves their identity again: with the current password when the account has
+    one; an account without a password (single sign-on only) needs a recent sign-in instead.
+    """
+
+    email: EmailStr = Field(max_length=255)
+    current_password: str | None = Field(
+        default=None,
+        max_length=128,
+        description="The current password; required when the account has one.",
+    )
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, v: str) -> str:
+        return v.lower()
+
+
+class EmailChangeAccepted(BaseSchema):
+    """The answer to every e-mail change request: nothing changes until the link is followed.
+
+    The same body whether or not the address can be used, so it does not tell which addresses
+    have an account.
+    """
+
+    message: str = (
+        "If the address can be used, a confirmation link has been sent to it. "
+        "The address changes once it is confirmed."
+    )
+
+
+class AccountDeletion(BaseSchema):
+    """Keelstone: the caller's proof of identity for deleting their own account.
+
+    The current password when the account has one; an account without a password (single
+    sign-on only) sends no body and needs a recent sign-in instead.
+    """
+
+    current_password: str | None = Field(
+        default=None,
+        max_length=128,
+        description="The current password; required when the account has one.",
+    )
 
 
 class UpdatePassword(BaseSchema):
@@ -136,6 +182,15 @@ class UserRead(UserBase, TimestampSchema):
     avatar_url: str | None = None
     onboarding_completed_at: datetime | None = None
     locale: str | None = None
+
+
+class UserMe(UserRead):
+    """Keelstone: the caller's own record, with what only its user needs to know."""
+
+    has_password: bool = Field(
+        default=False,
+        description="The account has a password (accounts of single sign-on only have none).",
+    )
 
 
 class UserInDB(UserRead):

@@ -5,6 +5,23 @@ export type ClientOptions = {
 };
 
 /**
+ * AccountDeletion
+ *
+ * Keelstone: the caller's proof of identity for deleting their own account.
+ *
+ * The current password when the account has one; an account without a password (single
+ * sign-on only) sends no body and needs a recent sign-in instead.
+ */
+export type AccountDeletion = {
+    /**
+     * Current Password
+     *
+     * The current password; required when the account has one.
+     */
+    current_password?: string | null;
+};
+
+/**
  * AdminConversationList
  *
  * Paginated list of conversations for admin.
@@ -895,6 +912,54 @@ export type DemoConversationSummary = {
      * Updated At
      */
     updated_at?: string | null;
+};
+
+/**
+ * EmailChangeAccepted
+ *
+ * The answer to every e-mail change request: nothing changes until the link is followed.
+ *
+ * The same body whether or not the address can be used, so it does not tell which addresses
+ * have an account.
+ */
+export type EmailChangeAccepted = {
+    /**
+     * Message
+     */
+    message?: string;
+};
+
+/**
+ * EmailChangeConfirm
+ *
+ * Keelstone: the token of the link sent to a new e-mail address.
+ */
+export type EmailChangeConfirm = {
+    /**
+     * Token
+     */
+    token: string;
+};
+
+/**
+ * EmailChangeRequest
+ *
+ * Keelstone: a new e-mail address for the caller's account, pending until confirmed.
+ *
+ * The caller proves their identity again: with the current password when the account has
+ * one; an account without a password (single sign-on only) needs a recent sign-in instead.
+ */
+export type EmailChangeRequest = {
+    /**
+     * Email
+     */
+    email: string;
+    /**
+     * Current Password
+     *
+     * The current password; required when the account has one.
+     */
+    current_password?: string | null;
 };
 
 /**
@@ -2747,6 +2812,57 @@ export type UserCreate = {
 };
 
 /**
+ * UserMe
+ *
+ * Keelstone: the caller's own record, with what only its user needs to know.
+ */
+export type UserMe = {
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Updated At
+     */
+    updated_at?: string | null;
+    /**
+     * Email
+     */
+    email: string;
+    /**
+     * Full Name
+     */
+    full_name?: string | null;
+    /**
+     * Is Active
+     */
+    is_active?: boolean;
+    /**
+     * Id
+     */
+    id: string;
+    role?: UserRole;
+    /**
+     * Avatar Url
+     */
+    avatar_url?: string | null;
+    /**
+     * Onboarding Completed At
+     */
+    onboarding_completed_at?: string | null;
+    /**
+     * Locale
+     */
+    locale?: string | null;
+    /**
+     * Has Password
+     *
+     * The account has a password (accounts of single sign-on only have none).
+     */
+    has_password?: boolean;
+};
+
+/**
  * UserRead
  *
  * Schema for reading a user.
@@ -2941,14 +3057,13 @@ export type UserUpdate = {
  *
  * Fields a user may change on their own profile (Keelstone, from the official template).
  *
- * Password, role and account status are excluded: the password changes through
- * ``UpdatePassword``, which requires the current one; role and status are for administrators.
+ * Password, role, account status and e-mail address are excluded: the password changes
+ * through ``UpdatePassword``, which requires the current one; the address through
+ * ``EmailChangeRequest``, confirmed by a link sent to it; role and status are for
+ * administrators. Any other field is refused (422) rather than ignored, so a client that
+ * still sends ``email`` learns that the address did not change.
  */
 export type UserUpdateMe = {
-    /**
-     * Email
-     */
-    email?: string | null;
     /**
      * Full Name
      */
@@ -3305,6 +3420,31 @@ export type authConfirmPasswordResetResponses = {
 
 export type authConfirmPasswordResetResponse = authConfirmPasswordResetResponses[keyof authConfirmPasswordResetResponses];
 
+export type authConfirmEmailChangeData = {
+    body: EmailChangeConfirm;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/email/confirm';
+};
+
+export type authConfirmEmailChangeErrors = {
+    /**
+     * Validation Error
+     */
+    422: HTTPValidationError;
+};
+
+export type authConfirmEmailChangeError = authConfirmEmailChangeErrors[keyof authConfirmEmailChangeErrors];
+
+export type authConfirmEmailChangeResponses = {
+    /**
+     * Successful Response
+     */
+    200: UserRead;
+};
+
+export type authConfirmEmailChangeResponse = authConfirmEmailChangeResponses[keyof authConfirmEmailChangeResponses];
+
 export type authRequestMagicLinkData = {
     body: MagicLinkRequest;
     path?: never;
@@ -3356,11 +3496,23 @@ export type authVerifyMagicLinkResponses = {
 export type authVerifyMagicLinkResponse = authVerifyMagicLinkResponses[keyof authVerifyMagicLinkResponses];
 
 export type usersDeleteCurrentUserData = {
-    body?: never;
+    /**
+     * Body
+     */
+    body?: AccountDeletion | null;
     path?: never;
     query?: never;
     url: '/api/v1/users/me';
 };
+
+export type usersDeleteCurrentUserErrors = {
+    /**
+     * Validation Error
+     */
+    422: HTTPValidationError;
+};
+
+export type usersDeleteCurrentUserError = usersDeleteCurrentUserErrors[keyof usersDeleteCurrentUserErrors];
 
 export type usersDeleteCurrentUserResponses = {
     /**
@@ -3382,7 +3534,7 @@ export type usersReadCurrentUserResponses = {
     /**
      * Successful Response
      */
-    200: UserRead;
+    200: UserMe;
 };
 
 export type usersReadCurrentUserResponse = usersReadCurrentUserResponses[keyof usersReadCurrentUserResponses];
@@ -3411,6 +3563,31 @@ export type usersUpdateCurrentUserResponses = {
 };
 
 export type usersUpdateCurrentUserResponse = usersUpdateCurrentUserResponses[keyof usersUpdateCurrentUserResponses];
+
+export type usersRequestEmailChangeData = {
+    body: EmailChangeRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/users/me/email';
+};
+
+export type usersRequestEmailChangeErrors = {
+    /**
+     * Validation Error
+     */
+    422: HTTPValidationError;
+};
+
+export type usersRequestEmailChangeError = usersRequestEmailChangeErrors[keyof usersRequestEmailChangeErrors];
+
+export type usersRequestEmailChangeResponses = {
+    /**
+     * Successful Response
+     */
+    202: EmailChangeAccepted;
+};
+
+export type usersRequestEmailChangeResponse = usersRequestEmailChangeResponses[keyof usersRequestEmailChangeResponses];
 
 export type usersUpdateCurrentUserPasswordData = {
     body: UpdatePassword;

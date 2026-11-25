@@ -30,7 +30,9 @@ JWT auth (`core/security.py`):
 - `read_session_token(token, ACCESS | REFRESH)` → `SessionClaims | None`; then
   `claims.is_current_for(user)` (active user, current `token_epoch`)
 - Token payload: `{"exp", "sub": user_id, "type": "access"|"refresh", "ver": token_epoch}`,
-  plus `jti` (refresh) and `act` (impersonation)
+  plus `jti` and `sid` (refresh: token and session ids, rotated and ended in
+  `app/core/revoked_tokens.py`), `act` (impersonation: administrator id and session version)
+  and `auth_time` (sign-in time, kept by rotations; `UserService.confirm_identity`)
 - A change of credentials raises `users.token_epoch` (`UserService`), ending every session
 - User content is served through `app/core/user_content.py` (sandbox, nosniff, RFC 6266 names)
 

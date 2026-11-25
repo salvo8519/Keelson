@@ -68,6 +68,11 @@ class User(TimestampMixin, SQLModel, table=True):
         default=0,
         sa_column=Column(Integer, nullable=False, server_default="0"),
     )
+    # Keelstone: the address was confirmed, see the SQLAlchemy model below.
+    email_verified: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, nullable=False, server_default="false"),
+    )
 {%- if enable_oauth %}
     oauth_provider: str | None = Field(
         default=None,
@@ -165,6 +170,12 @@ class User(Base, TimestampMixin):
     # Keelstone: session version. Access and refresh tokens carry the version in force when they
     # were issued (``ver``); raising it ends every session (app/core/security.py).
     token_epoch: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0", default=0)
+    # Keelstone: the user proved control of the address in force (a link sent to it, or a
+    # provider that verified it). A password reset or a sign-in link on an address never
+    # confirmed removes the external identities of the account (UserService).
+    email_verified: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false", default=False
+    )
 {%- if enable_email %}
     # Bumped every time a magic link is redeemed. Each link carries the epoch
     # in force when it was issued, so redeeming one invalidates every

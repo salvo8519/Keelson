@@ -120,3 +120,44 @@ class TestMigrations:
             f"Current revision is not at head:\n"
             f"stdout: {result.stdout}\nstderr: {result.stderr}"
         )
+
+    def test_the_migrated_users_table_guards_its_sessions(self):
+        """Keelstone: the migrations, not only the models, give users the confirmed-address
+        column and the trigger that keeps the session version from decreasing (k0009, k0010)."""
+        from sqlalchemy import create_engine, text
+
+        from app.core.config import settings
+        from app.db.tenancy import POLICY_PREFIX
+
+        up = subprocess.run(
+            [sys.executable, "-m", "alembic", "upgrade", "head"], capture_output=True, text=True, cwd="."
+        )
+        assert up.returncode == 0, f"Migration upgrade failed:\n{up.stderr}"
+        engine = create_engine(settings.DATABASE_URL_SYNC, connect_args={"connect_timeout": 5})
+        try:
+            with engine.connect() as connection:
+                column = connection.scalar(
+                    text(
+                        "SELECT column_default FROM information_schema.columns "
+                        "WHERE table_name = 'users' AND column_name = 'email_verified'"
+                    )
+                )
+                trigger = connection.scalar(
+                    text("SELECT tgname FROM pg_trigger WHERE tgname = :name AND NOT tgisinternal"),
+                    {"name": f"{POLICY_PREFIX}token_epoch_never_decreases"},
+                )
+                has_magic_links = connection.scalar(
+                    text(
+                        "SELECT count(*) FROM information_schema.columns "
+                        "WHERE table_name = 'users' AND column_name = 'magic_link_epoch'"
+                    )
+                )
+                magic_link_trigger = connection.scalar(
+                    text("SELECT tgname FROM pg_trigger WHERE tgname = :name AND NOT tgisinternal"),
+                    {"name": f"{POLICY_PREFIX}magic_link_epoch_never_decreases"},
+                )
+        finally:
+            engine.dispose()
+        assert column == "false"
+        assert trigger == f"{POLICY_PREFIX}token_epoch_never_decreases"
+        assert (magic_link_trigger is not None) == bool(has_magic_links)

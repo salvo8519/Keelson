@@ -5,7 +5,7 @@ import { logInUser, signUpNewUser } from "./utils/user"
 
 test.use({ storageState: { cookies: [], origins: [] } })
 
-const resetPath = "/reset-password?token="
+const resetPath = "/reset-password#token="
 
 test("Password Recovery title is visible", async ({ page }) => {
   await page.goto("/recover-password")
@@ -52,11 +52,13 @@ test("User can reset password successfully using the link", async ({
   })
 
   expect(emailHtml).toContain(resetPath)
-  const resetUrl = emailHtml.match(/\/reset-password\?token=[^"]+/)?.[0]
+  const resetUrl = emailHtml.match(/\/reset-password#token=[^"]+/)?.[0]
   expect(resetUrl).toBeDefined()
 
   // Set the new password and confirm it
   await page.goto(resetUrl!)
+  // The token leaves the address bar and the history once the page has read it.
+  await expect(page).toHaveURL(/\/reset-password$/)
 
   await page.getByTestId("new-password-input").fill(newPassword)
   await page.getByTestId("confirm-password-input").fill(newPassword)
@@ -69,6 +71,7 @@ test("User can reset password successfully using the link", async ({
 
 test("Expired or invalid reset link", async ({ page }) => {
   const password = randomPassword()
+  // A link in the earlier form (query string) is still read.
   const invalidUrl = "/reset-password?token=invalidtoken"
 
   await page.goto(invalidUrl)
@@ -99,7 +102,7 @@ test("Weak new password validation", async ({ page, request }) => {
   })
 
   expect(emailHtml).toContain(resetPath)
-  const resetUrl = emailHtml.match(/\/reset-password\?token=[^"]+/)?.[0]
+  const resetUrl = emailHtml.match(/\/reset-password#token=[^"]+/)?.[0]
   expect(resetUrl).toBeDefined()
 
   // Set a weak new password

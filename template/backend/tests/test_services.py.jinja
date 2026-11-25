@@ -33,6 +33,9 @@ class MockUser:
         self.hashed_password = hashed_password
         self.is_active = is_active
         self.role = role
+        self.email_verified = False
+        self.oauth_provider = None
+        self.locale = None
 
 
 
@@ -306,7 +309,7 @@ class TestSingleUseLinks:
             assert issued is not None
             _, token = issued
 
-            mock_repo.get_by_id = AsyncMock(return_value=user)
+            mock_repo.get_by_id_for_update = AsyncMock(return_value=user)
 
             # Redeeming rotates the hash, which is what expires the token.
             async def _rotate(db, *, db_user, update_data):
@@ -332,7 +335,7 @@ class TestSingleUseLinks:
             assert issued is not None
             _, token = issued
 
-            mock_repo.get_by_id = AsyncMock(return_value=user)
+            mock_repo.get_by_id_for_update = AsyncMock(return_value=user)
 
             async def _bump(db, *, db_user, update_data):
                 db_user.magic_link_epoch = update_data["magic_link_epoch"]
@@ -359,7 +362,7 @@ class TestSingleUseLinks:
             second = await user_service.issue_magic_link_token(user.email)
             assert first is not None and second is not None
 
-            mock_repo.get_by_id = AsyncMock(return_value=user)
+            mock_repo.get_by_id_for_update = AsyncMock(return_value=user)
 
             async def _bump(db, *, db_user, update_data):
                 db_user.magic_link_epoch = update_data["magic_link_epoch"]

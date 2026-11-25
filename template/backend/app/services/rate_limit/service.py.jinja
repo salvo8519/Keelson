@@ -4,18 +4,25 @@
 from __future__ import annotations
 
 import logging
+import time
+from collections import OrderedDict
 
 from fastapi import Depends, Request
 
-from app.core.exceptions import RateLimitError
+from app.core.exceptions import RateLimitError, StoreUnavailableError
 
 {%- if enable_teams %}
 from app.api.deps import ActiveOrg, CurrentUser
 {%- else %}
 from app.api.deps import CurrentUser
 {%- endif %}
-from app.services.rate_limit.rules import DEFAULT_RATE_LIMITS, RateLimitRule
-from app.services.rate_limit.storage import RateLimitResult, RateLimitStorage, get_storage
+from app.services.rate_limit.rules import DEFAULT_RATE_LIMITS, FAIL_CLOSED_CATEGORIES, RateLimitRule
+from app.services.rate_limit.storage import (
+    RateLimitResult,
+    RateLimitStorage,
+    RateLimitStorageUnavailable,
+    get_storage,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -34,13 +41,74 @@ async def _check_one(
     key: str,
     limit: int,
     period: int,
-) -> RateLimitResult:
-    return await storage.increment_and_check(key, limit, period)
+    category: str,
+) -> RateLimitResult | None:
+    """Count one call; None when the storage cannot count and ``category`` fails open.
+
+    Keelstone: upstream's storage allowed every call while Redis was down. The categories of
+    ``FAIL_CLOSED_CATEGORIES`` (sign-in, re-authentication) are refused with 503 instead,
+    before any password is checked; the others are allowed. The error is logged in full either
+    way: unlimited traffic, or refused sign-ins, are worth paging about.
+    """
+    try:
+        return await storage.increment_and_check(key, limit, period)
+    except RateLimitStorageUnavailable:
+        fail_closed = category in FAIL_CLOSED_CATEGORIES
+        logger.exception(
+            "rate_limit_storage_unavailable", extra={"category": category, "fail_closed": fail_closed}
+        )
+        if not fail_closed:
+            return None
+    raise StoreUnavailableError(
+        message="Signing in and account changes are temporarily unavailable. "
+        "Try again in a few minutes.",
+        code="RATE_LIMIT_UNAVAILABLE",
+        details={"category": category, "reason": "rate_limit_unavailable"},
+    )
+
+
+class LocalSampler:
+    """Keelstone: ``first_in_window`` in this process, for when the shared storage is down.
+
+    One entry per key, the time of its last sample; at most ``max_keys`` keys, the least
+    recently sampled dropped first, so memory stays bounded whatever the callers send. With N
+    replicas a key is sampled at most N times per window instead of once.
+    """
+
+    def __init__(self, max_keys: int = 10_000) -> None:
+        self.max_keys = max_keys
+        self._sampled: OrderedDict[str, float] = OrderedDict()
+
+    def first(self, key: str, period_seconds: int) -> bool:
+        now = time.monotonic()
+        last = self._sampled.get(key)
+        if last is not None and now - last < period_seconds:
+            return False
+        self._sampled[key] = now
+        self._sampled.move_to_end(key)
+        while len(self._sampled) > self.max_keys:
+            self._sampled.popitem(last=False)
+        return True
+
+    def __len__(self) -> int:
+        return len(self._sampled)
+
+
+_local_sampler = LocalSampler()
 
 
 async def first_in_window(key: str, period_seconds: int) -> bool:
-    """Keelstone: True for the first call with ``key`` in ``period_seconds`` (sampling, not limits)."""
-    return (await _get_storage().increment_and_check(f"once:{key}", 1, period_seconds)).allowed
+    """Keelstone: True for the first call with ``key`` in ``period_seconds`` (sampling, not limits).
+
+    When the storage cannot count, the sample is taken in this process (``LocalSampler``):
+    callers use it to bound work done per refused request (an audit row in a system session),
+    so an outage must not lift the bound.
+    """
+    try:
+        return (await _get_storage().increment_and_check(f"once:{key}", 1, period_seconds)).allowed
+    except RateLimitStorageUnavailable:
+        logger.exception("rate_limit_storage_unavailable", extra={"category": "sampling"})
+        return _local_sampler.first(key, period_seconds)
 
 
 def client_ip(request: Request) -> str:
@@ -58,6 +126,9 @@ async def check_rate_limit(
     plan_features: dict | None = None,
 ) -> None:
     """Check rate limit; raise HTTP 429 if exceeded.
+
+    Keelstone: when the storage cannot count, a category of ``FAIL_CLOSED_CATEGORIES`` raises
+    HTTP 503 and every other category is allowed (``_check_one``).
 
     Args:
         category: One of RateLimitCategory constants.
@@ -86,25 +157,28 @@ async def check_rate_limit(
     if rule is None or rule.is_unlimited():
         return
 
-    if rule.per_ip is not None:
-        result = await _check_one(
-            storage, f"rl:{category}:ip:{client_ip}", rule.per_ip, rule.ip_period_seconds
-        )
-        if not result.allowed:
-            _raise_429(result, category, "ip")
-
+    # Keelstone: the caller's own budget first. Upstream counted the IP first, so a user already
+    # refused per user kept using up the budget of the address, shared behind a NAT with their
+    # colleagues; the address now counts only the calls their user was allowed to make.
     if rule.per_user is not None and user_id:
         result = await _check_one(
-            storage, f"rl:{category}:user:{user_id}", rule.per_user, rule.period_seconds
+            storage, f"rl:{category}:user:{user_id}", rule.per_user, rule.period_seconds, category
         )
-        if not result.allowed:
+        if result is not None and not result.allowed:
             _raise_429(result, category, "user")
+
+    if rule.per_ip is not None:
+        result = await _check_one(
+            storage, f"rl:{category}:ip:{client_ip}", rule.per_ip, rule.ip_period_seconds, category
+        )
+        if result is not None and not result.allowed:
+            _raise_429(result, category, "ip")
 
     if rule.per_org is not None and org_id:
         result = await _check_one(
-            storage, f"rl:{category}:org:{org_id}", rule.per_org, rule.org_period_seconds
+            storage, f"rl:{category}:org:{org_id}", rule.per_org, rule.org_period_seconds, category
         )
-        if not result.allowed:
+        if result is not None and not result.allowed:
             _raise_429(result, category, "org")
 
 
@@ -183,6 +257,19 @@ def make_rate_limit_dep(category: str):
             is_admin=getattr(user, "is_app_admin", False),
         )
 {%- endif %}
+
+    return Depends(_dep)
+
+
+def make_user_rate_limit_dep(category: str):
+    """Keelstone: FastAPI dependency factory for an authenticated route limited per user only.
+
+    Unlike :func:`make_rate_limit_dep`, it needs no active organization and reads no plan: for
+    routes about the caller's own account. Platform administrators are limited too.
+    """
+
+    async def _dep(request: Request, user: CurrentUser) -> None:
+        await check_rate_limit(category=category, client_ip=client_ip(request), user_id=str(user.id))
 
     return Depends(_dep)
 

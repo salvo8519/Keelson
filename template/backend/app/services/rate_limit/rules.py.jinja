@@ -45,6 +45,14 @@ class RateLimitCategory:
     # Keelstone: session refreshes, per user. They shared AUTH (per IP) with sign-in, so users
     # behind one address lost their sessions after a few failed sign-ins of anyone there.
     REFRESH = "refresh"
+    # Keelstone: e-mail address change requests, per user. Each one sends e-mail to an address
+    # the caller chooses and to the account's own address.
+    EMAIL_CHANGE = "email_change"
+    # Keelstone: attempts to prove the identity again (the current password), per user, shared
+    # by every route that asks for it, so that a session cannot guess the password, and per
+    # client IP. These routes used AUTH per IP as well, so behind a shared address (a company
+    # network) one user's attempts locked colleagues out of signing in.
+    REAUTH = "reauth"
 
 
 # Default fallback limits (used when plan features don't define limits)
@@ -59,7 +67,17 @@ DEFAULT_RATE_LIMITS: dict[str, RateLimitRule] = {
     RateLimitCategory.API_KEY: RateLimitRule(per_user=600, period_seconds=60, per_org=3000),
     RateLimitCategory.API_KEY_REFUSAL: RateLimitRule(per_ip=20, ip_period_seconds=300),
     RateLimitCategory.REFRESH: RateLimitRule(per_user=20, period_seconds=900),
+    RateLimitCategory.EMAIL_CHANGE: RateLimitRule(per_user=3, period_seconds=3600),
+    RateLimitCategory.REAUTH: RateLimitRule(
+        per_user=5, period_seconds=900, per_ip=20, ip_period_seconds=900
+    ),
 }
+
+# Keelstone: categories whose routes are refused (503) when the storage cannot count a call,
+# instead of allowed as upstream did for every category. Without a limit, these routes would
+# let anyone guess passwords at full speed while Redis is down; the other categories protect
+# capacity rather than credentials and keep answering.
+FAIL_CLOSED_CATEGORIES: frozenset[str] = frozenset({RateLimitCategory.AUTH, RateLimitCategory.REAUTH})
 
 {%- else %}
 """Rate limiting rules — not enabled."""
