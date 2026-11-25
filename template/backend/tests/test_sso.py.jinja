@@ -185,9 +185,14 @@ async def test_the_callback_sends_a_one_time_code_never_the_tokens(
         full_name=None,
         email_verified=False,
     )
-    key, user_id = mock_redis.set.call_args.args[:2]
+    key, value = mock_redis.set.call_args.args[:2]
     assert key == "oauth:code:" + hashlib.sha256(code.encode()).hexdigest()
     assert mock_redis.set.call_args.kwargs["ttl"] == routes.CODE_TTL_SECONDS
+    # The code is bound to this browser by an HttpOnly cookie on the exchange path.
+    binding = response.cookies[routes.BINDING_COOKIE]
+    assert value.endswith(":" + hashlib.sha256(binding.encode()).hexdigest())
+    cookie = next(c for c in response.headers.get_list("set-cookie") if c.startswith(routes.BINDING_COOKIE))
+    assert "HttpOnly" in cookie and "Path=/api/v1/oauth/exchange" in cookie
 
 
 @pytest.mark.anyio
@@ -216,8 +221,10 @@ async def test_the_code_is_exchanged_once_for_session_cookies(
     user = SimpleNamespace(id=uuid4(), is_active=True, token_epoch=0)
     users.get_by_id = AsyncMock(return_value=user)
     mock_redis.raw = MagicMock()
-    mock_redis.raw.getdel = AsyncMock(side_effect=[str(user.id), None])
-    body, headers = {"code": "c" * 43}, {"Origin": settings.CORS_ORIGINS[0]}
+    bound = f"{user.id}:{hashlib.sha256(b'browser-binding').hexdigest()}"
+    mock_redis.raw.getdel = AsyncMock(side_effect=[bound, None])
+    body = {"code": "c" * 43}
+    headers = {"Origin": settings.CORS_ORIGINS[0], "Cookie": f"{routes.BINDING_COOKIE}=browser-binding"}
 
     first = await client.post("/api/v1/oauth/exchange", json=body, headers=headers)
     second = await client.post("/api/v1/oauth/exchange", json=body, headers=headers)
@@ -225,6 +232,28 @@ async def test_the_code_is_exchanged_once_for_session_cookies(
     assert first.status_code == 204 and first.content == b"", "no token in the body"
     assert any("HttpOnly" in c for c in first.headers.get_list("set-cookie"))
     assert second.status_code == 401
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("cookie", [None, "another-browser"])
+async def test_a_code_sent_to_another_browser_signs_nobody_in(
+    client: AsyncClient, users, mock_redis: MagicMock, cookie: str | None
+) -> None:
+    """Login CSRF: the attacker's code, opened in the victim's browser, is refused."""
+    from app.core.config import settings
+
+    users.get_by_id = AsyncMock(return_value=SimpleNamespace(id=uuid4(), is_active=True, token_epoch=0))
+    mock_redis.raw = MagicMock()
+    mock_redis.raw.getdel = AsyncMock(return_value=f"{uuid4()}:{hashlib.sha256(b'attacker').hexdigest()}")
+    headers = {"Origin": settings.CORS_ORIGINS[0]}
+    if cookie:
+        headers["Cookie"] = f"{routes.BINDING_COOKIE}={cookie}"
+
+    response = await client.post("/api/v1/oauth/exchange", json={"code": "c" * 43}, headers=headers)
+
+    assert response.status_code == 401
+    assert not any(c.startswith("access_token=") for c in response.headers.get_list("set-cookie"))
+    users.get_by_id.assert_not_awaited()
 
 
 def _account(**fields: object) -> SimpleNamespace:

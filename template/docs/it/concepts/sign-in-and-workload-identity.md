@@ -1,4 +1,4 @@
-<!-- i18n source: concepts/sign-in-and-workload-identity.md source_hash: 38c98c005d7b -->
+<!-- i18n source: concepts/sign-in-and-workload-identity.md source_hash: e75708bcb48c -->
 # Accesso e identità dei workload
 
 Le persone accedono con una password o tramite il provider di identità della propria azienda.
@@ -124,7 +124,9 @@ Come funziona un accesso:
    un indirizzo registrato da qualcun altro.
 4. Il browser torna al frontend con un codice valido una sola volta, per un minuto, e salvato
    solo come hash. Il frontend lo scambia con i token di sessione. I token non compaiono mai in
-   un URL, dove la cronologia del browser, i proxy e i log del server li conserverebbero.
+   un URL, dove la cronologia del browser, i proxy e i log del server li conserverebbero. Il
+   codice funziona solo nel browser tornato dal provider, che ha ricevuto anche un breve cookie
+   HttpOnly: un codice inviato a qualcun altro non fa accedere nessuno (login CSRF).
 
 L'utente accede una sola volta, presso il provider. Autenticazione a più fattori, policy delle
 password e blocco degli account sono quelli del provider.

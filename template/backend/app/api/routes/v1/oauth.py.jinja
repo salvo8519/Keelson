@@ -10,6 +10,11 @@ Keelson: upstream put the access and refresh tokens in the URL of the redirect t
 frontend, where browser history, proxies and server logs keep them. The redirect now carries
 a random code, valid once for a minute and stored only as a hash; the frontend exchanges it
 in a POST for the session, set as HttpOnly cookies (app/core/session_cookies.py). The user signs in once, at the provider.
+
+The code is bound to the browser that came back from the provider: the callback also sets a
+short HttpOnly cookie, and the exchange needs both. Without it, someone could sign in with
+their own account, stop before the exchange and send the link to a victim, whose browser would
+then work in the attacker's account (login CSRF).
 """
 
 import hashlib
@@ -29,7 +34,7 @@ from app.core.exceptions import AuthenticationError, NotFoundError
 from app.core.oauth import PROVIDERS, client, redirect_uri
 from app.core.oidc import SignInRefused, verified_identity
 from app.core.security import issue_session_tokens
-from app.core.session_cookies import require_trusted_origin, set_session_cookies
+from app.core.session_cookies import require_trusted_origin, secure_cookies, set_session_cookies
 from app.schemas.oauth import OAuthCodeExchange, OAuthProviderRead
 
 logger = logging.getLogger(__name__)
@@ -38,10 +43,19 @@ router = APIRouter()
 
 CODE_PREFIX = "oauth:code:"
 CODE_TTL_SECONDS = 60
+BINDING_COOKIE = "sso_binding"
+
+
+def _binding_path() -> str:
+    return f"{settings.API_V1_STR}/oauth/exchange"
+
+
+def _digest(value: str) -> str:
+    return hashlib.sha256(value.encode()).hexdigest()
 
 
 def _code_key(code: str) -> str:
-    return CODE_PREFIX + hashlib.sha256(code.encode()).hexdigest()
+    return CODE_PREFIX + _digest(code)
 
 
 def _to_login(error: str) -> RedirectResponse:
@@ -94,10 +108,20 @@ async def provider_callback(
         return _to_login(refused.code)
     if not user.is_active:
         return _to_login("account_disabled")
-    code = secrets.token_urlsafe(32)
-    await redis.set(_code_key(code), str(user.id), ttl=CODE_TTL_SECONDS)
+    code, binding = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
+    await redis.set(_code_key(code), f"{user.id}:{_digest(binding)}", ttl=CODE_TTL_SECONDS)
     frontend = settings.FRONTEND_URL.rstrip("/")
-    return RedirectResponse(url=f"{frontend}/auth/callback?{urlencode({'code': code})}")
+    redirect = RedirectResponse(url=f"{frontend}/auth/callback?{urlencode({'code': code})}")
+    redirect.set_cookie(
+        BINDING_COOKIE,
+        binding,
+        max_age=CODE_TTL_SECONDS,
+        path=_binding_path(),
+        httponly=True,
+        secure=secure_cookies(),
+        samesite="lax",
+    )
+    return redirect
 
 
 @router.post("/exchange", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
@@ -110,11 +134,14 @@ async def exchange_code(
 ) -> None:
     """Trade the one-time code of a sign-in for the session, set as HttpOnly cookies."""
     require_trusted_origin(request)
-    user_id = await redis.raw.getdel(_code_key(body.code))
-    if not user_id:
+    stored = await redis.raw.getdel(_code_key(body.code))
+    response.delete_cookie(BINDING_COOKIE, path=_binding_path())
+    # The client decodes responses (app/clients/redis.py): "<user id>:<digest of the binding>".
+    user_id, _, bound = str(stored or "").partition(":")
+    binding = request.cookies.get(BINDING_COOKIE, "")
+    if not user_id or not binding or not secrets.compare_digest(bound, _digest(binding)):
         raise AuthenticationError(message="Invalid or expired sign-in code")
-    # The client decodes responses (app/clients/redis.py): the value is the user id as text.
-    user = await user_service.get_by_id(UUID(str(user_id)))
+    user = await user_service.get_by_id(UUID(user_id))
     if not user.is_active:
         raise AuthenticationError(message="User account is disabled")
     set_session_cookies(response, *issue_session_tokens(user))

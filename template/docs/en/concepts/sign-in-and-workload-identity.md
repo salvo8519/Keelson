@@ -117,7 +117,9 @@ How a sign-in works:
    password. Accounts are never taken over through an address someone else registered.
 4. The browser returns to the frontend with a code valid once, for one minute, and stored only
    as a hash. The frontend exchanges it for the session tokens. Tokens never appear in a URL,
-   where browser history, proxies and server logs would keep them.
+   where browser history, proxies and server logs would keep them. The code works only in the
+   browser that came back from the provider, which also received a short HttpOnly cookie: a
+   code sent to someone else signs nobody in (login CSRF).
 
 The user signs in once, at the provider. Multi-factor authentication, password policies and
 account locking are those of the provider.
