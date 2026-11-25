@@ -1,0 +1,84 @@
+{%- if use_ai and enable_websockets and websocket_auth_jwt %}
+"""A chat turn is checked before it starts (Keelson).
+
+Upstream passed the model and the thinking effort chosen by the client to the provider, and
+never applied the agent rate limit: a user could run any model, as often as they liked.
+"""
+
+import uuid
+from typing import Any
+
+import pytest
+from starlette.testclient import TestClient
+
+from app.api.deps import get_current_user_ws
+from app.api.routes.v1 import agent as agent_route
+from app.core.config import settings
+from app.db.models.user import User
+from app.main import app
+from app.services.agent import turn_options_problem
+
+MODEL = settings.AI_AVAILABLE_MODELS[0]
+
+
+@pytest.mark.parametrize(
+    ("frame", "problem"),
+    [
+        ({"message": "hi"}, None),
+        ({"message": "hi", "model": MODEL, "thinking_effort": "high"}, None),
+        ({"message": "hi", "model": "someone/most-expensive"}, "Model not available"),
+        ({"message": "hi", "thinking_effort": "maximum"}, "Thinking effort not available"),
+    ],
+)
+def test_turn_options_are_those_the_deployment_offers(frame: dict[str, Any], problem: str | None) -> None:
+    assert turn_options_problem(frame) == problem
+
+
+@pytest.fixture
+def frames(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
+    """The frames that reach the agent session."""
+    received: list[dict[str, Any]] = []
+
+    async def handle_frame(self: Any, data: dict[str, Any]) -> None:
+        received.append(data)
+        # Every frame gets an answer, so a test never waits for one that does not come.
+        await self.websocket.send_json({"type": "reached_agent", "data": data})
+
+    async def shutdown(self: Any) -> None:
+        return None
+
+    monkeypatch.setattr(agent_route.AgentSession, "handle_frame", handle_frame)
+    monkeypatch.setattr(agent_route.AgentSession, "shutdown", shutdown)
+    user = User(id=uuid.uuid4(), email="u@example.com", role="user", is_app_admin=False, is_active=True)
+    app.dependency_overrides[get_current_user_ws] = lambda: user
+    yield received
+    app.dependency_overrides.pop(get_current_user_ws, None)
+
+
+def test_a_model_the_deployment_does_not_offer_never_reaches_the_agent(frames: list[dict[str, Any]]) -> None:
+    with TestClient(app).websocket_connect(f"{settings.API_V1_STR}/ws/agent") as websocket:
+        websocket.send_json({"message": "hi", "model": "someone/most-expensive"})
+        assert websocket.receive_json() == {"type": "error", "data": {"message": "Model not available"}}
+        websocket.send_json({"message": "hi", "model": MODEL})
+        assert websocket.receive_json()["type"] == "reached_agent"
+    assert [frame.get("model") for frame in frames] == [MODEL]
+{%- if enable_rate_limiting %}
+
+
+def test_turns_over_the_quota_never_reach_the_agent(
+    frames: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.core.exceptions import RateLimitError
+
+    async def exhausted(**_: Any) -> None:
+        raise RateLimitError(message="Rate limit exceeded")
+
+    monkeypatch.setattr(agent_route, "check_rate_limit", exhausted)
+    with TestClient(app).websocket_connect(f"{settings.API_V1_STR}/ws/agent") as websocket:
+        websocket.send_json({"message": "hi"})
+        assert websocket.receive_json() == {"type": "error", "data": {"message": "Rate limit exceeded"}}
+        websocket.send_json({"type": "stop"})
+        assert websocket.receive_json()["type"] == "reached_agent"
+    assert frames == [{"type": "stop"}]
+{%- endif %}
+{%- endif %}

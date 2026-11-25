@@ -121,17 +121,6 @@ class TestGetAgent:
 {%- endif %}
 
 
-class TestAgentRoutes:
-    """Tests for agent WebSocket routes."""
-
-    @pytest.mark.anyio
-    async def test_agent_websocket_connection(self, client):
-        """Test WebSocket connection to agent endpoint."""
-        # This test verifies the WebSocket endpoint is accessible
-        # Actual agent testing would require mocking OpenAI
-        pass
-
-
 class TestHistoryConversion:
     """Tests for conversation history conversion."""
 
@@ -268,17 +257,6 @@ class TestGetAgent:
         """Test get_agent returns LangChainAssistant."""
         agent = get_agent()
         assert isinstance(agent, LangChainAssistant)
-
-
-class TestAgentRoutes:
-    """Tests for agent WebSocket routes."""
-
-    @pytest.mark.anyio
-    async def test_agent_websocket_connection(self, client):
-        """Test WebSocket connection to agent endpoint."""
-        # This test verifies the WebSocket endpoint is accessible
-        # Actual agent testing would require mocking OpenAI
-        pass
 
 
 class TestHistoryConversion:

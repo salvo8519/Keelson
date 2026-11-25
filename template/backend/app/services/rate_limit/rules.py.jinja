@@ -45,7 +45,9 @@ class RateLimitCategory:
 
 # Default fallback limits (used when plan features don't define limits)
 DEFAULT_RATE_LIMITS: dict[str, RateLimitRule] = {
-    RateLimitCategory.AGENT_INVOCATION: RateLimitRule(per_user=10, period_seconds=86400),
+    # Keelson: applied to every chat turn (upstream defined it and never applied it), so the
+    # default allows a working day of conversation; plans and deployments narrow it.
+    RateLimitCategory.AGENT_INVOCATION: RateLimitRule(per_user=200, period_seconds=86400),
     RateLimitCategory.RAG_UPLOAD: RateLimitRule(per_user=5, period_seconds=86400),
     RateLimitCategory.AUTH: RateLimitRule(per_ip=5, ip_period_seconds=900),
     RateLimitCategory.READ_API: RateLimitRule(per_user=300, period_seconds=60),

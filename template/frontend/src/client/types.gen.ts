@@ -1749,10 +1749,6 @@ export type OrganizationUpdate = {
      */
     name?: string | null;
     /**
-     * Avatar Url
-     */
-    avatar_url?: string | null;
-    /**
      * Default Locale
      */
     default_locale?: string | null;
@@ -2713,7 +2709,7 @@ export type UpdatePassword = {
 /**
  * UserCreate
  *
- * Schema for creating a user.
+ * Schema for creating a user (administrators).
  */
 export type UserCreate = {
     /**
@@ -2778,6 +2774,28 @@ export type UserRead = {
      * Locale
      */
     locale?: string | null;
+};
+
+/**
+ * UserRegister
+ *
+ * Self-registration (Keelson, from the official template): no role, no status.
+ *
+ * Upstream registered with ``UserCreate``, so anyone could send ``"role": "admin"``.
+ */
+export type UserRegister = {
+    /**
+     * Email
+     */
+    email: string;
+    /**
+     * Password
+     */
+    password: string;
+    /**
+     * Full Name
+     */
+    full_name?: string | null;
 };
 
 /**
@@ -3084,7 +3102,7 @@ export type authLoginResponses = {
 export type authLoginResponse = authLoginResponses[keyof authLoginResponses];
 
 export type authRegisterData = {
-    body: UserCreate;
+    body: UserRegister;
     path?: never;
     query?: never;
     url: '/api/v1/auth/register';

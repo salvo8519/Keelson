@@ -4,8 +4,8 @@ import { useNavigate } from "@tanstack/react-router"
 import {
   type Body_auth_login as AccessToken,
   AuthService,
-  type UserCreate,
   type UserRead,
+  type UserRegister,
   UsersService,
 } from "@/client"
 import { currentLanguage, isSupported, setLanguage } from "@/i18n"
@@ -42,7 +42,7 @@ const useAuth = () => {
   })
 
   const signUpMutation = useMutation({
-    mutationFn: (data: UserCreate) => AuthService.register({ body: data }),
+    mutationFn: (data: UserRegister) => AuthService.register({ body: data }),
     onSuccess: () => {
       navigate({ to: "/login" })
     },
