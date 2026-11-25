@@ -5,6 +5,7 @@ import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 from app.core.exceptions import AlreadyExistsError, AuthorizationError, BadRequestError, NotFoundError
 from app.schemas.organization import OrganizationCreate, OrganizationUpdate
@@ -52,8 +53,10 @@ class TestOrganizationService:
 
     @pytest.mark.anyio
     async def test_create_raises_if_slug_taken(self, service, mock_db):
+        # Keelson: the unique index decides (other tenants' slugs are hidden by row level security).
+        taken = IntegrityError("INSERT", {}, Exception('duplicate key value violates "ix_organizations_slug"'))
         with (
-            patch("app.services.organization.organization_repo.slug_exists", new=AsyncMock(return_value=True)),
+            patch("app.services.organization.organization_repo.create", new=AsyncMock(side_effect=taken)),
             pytest.raises(AlreadyExistsError),
         ):
             await service.create(

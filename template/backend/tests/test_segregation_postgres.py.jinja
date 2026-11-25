@@ -459,6 +459,22 @@ async def test_tables_created_later_stay_closed_to_the_application(world: World)
     assert open_tables == [], f"tables open to the application without row level security: {open_tables}"
 
 
+async def test_an_organization_name_used_by_another_tenant_is_not_an_error(world: World) -> None:
+    """Row level security hides other tenants' slugs; the unique index decides (was a 500)."""
+    from app.core.exceptions import AlreadyExistsError
+    from app.schemas.organization import OrganizationCreate
+    from app.services.organization import OrganizationService
+
+    with acting_as(_user(world, world.c)):
+        async with world.db.app() as session:
+            org = await OrganizationService(session).create(OrganizationCreate(name="org a"), world.c)
+            await session.commit()
+            assert org.slug.startswith("org-a-"), org.slug
+        async with world.db.app() as session:
+            with pytest.raises(AlreadyExistsError):
+                await OrganizationService(session).create(OrganizationCreate(name="Mine", slug="org-b"), world.c)
+
+
 async def test_any_password_creates_a_working_application_login(world: World) -> None:
     """Quotes and dollar quotes in the password stay data (they used to end the DO block)."""
     import asyncpg

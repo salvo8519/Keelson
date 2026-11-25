@@ -367,6 +367,9 @@ msgstr "Esiste già un comando slash con questo nome"
 msgid "Slug already taken"
 msgstr "Slug già in uso"
 
+msgid "Could not choose a free slug"
+msgstr "Impossibile scegliere uno slug libero"
+
 msgid "Sync is not in running state"
 msgstr "La sincronizzazione non è in corso"
 
