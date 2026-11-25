@@ -1,0 +1,62 @@
+{%- if enable_rag and enable_teams and use_postgresql and (use_celery or use_taskiq or use_arq) %}
+"""A document deleted while it is being ingested leaves no searchable vectors (Keelson).
+
+The delete finds no vectors yet (the document is still processing) and the worker writes them
+afterwards: the worker must remove what it wrote when the document is gone.
+"""
+
+import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.models.rag_document import RAGDocument
+from app.db.session import _managed_session
+from app.services.rag.ingestion import IngestionService
+from app.services.rag_document import RAGDocumentService
+from app.services.stored_object import StoredObjectService
+from app.worker.tasks import rag_tasks
+from tests.postgres import require_postgres, segregated_database
+
+pytestmark = pytest.mark.anyio
+
+
+async def test_a_document_deleted_during_ingestion_leaves_no_vectors(monkeypatch: pytest.MonkeyPatch) -> None:
+    await require_postgres("ingestion")
+    async with segregated_database() as db:
+        async with db.system() as session:
+            document = RAGDocument(collection_name="kb", filename="a.txt", filesize=1, filetype="txt")
+            session.add(document)
+            await session.commit()
+
+        @asynccontextmanager
+        async def worker_session() -> AsyncIterator[AsyncSession]:
+            async with _managed_session(db.system) as session:
+                yield session
+
+        store = MagicMock(delete_document=AsyncMock())
+        ingestion = IngestionService(processor=MagicMock(), vector_store=store)
+
+        async def ingest_file(**_: object) -> MagicMock:
+            # The user deletes the document while the worker embeds it: no vectors to remove yet.
+            async with worker_session() as session:
+                await RAGDocumentService(session).delete_document(str(document.id), ingestion)
+            store.delete_document.assert_not_awaited()
+            return MagicMock(document_id="vectors-1")
+
+        monkeypatch.setattr(ingestion, "ingest_file", ingest_file)
+        monkeypatch.setattr(rag_tasks, "_build_ingestion_service", lambda: ingestion)
+        monkeypatch.setattr(rag_tasks, "get_worker_db_context", worker_session)
+        monkeypatch.setattr(rag_tasks, "collection_tenant", AsyncMock(return_value="app"))
+        monkeypatch.setattr(rag_tasks, "_notify_ws", AsyncMock())
+        monkeypatch.setattr(StoredObjectService, "copy_to_file", AsyncMock())
+
+        result = await rag_tasks._run_ingestion(str(document.id), "kb", str(uuid.uuid4()), "a.txt", False)
+
+    store.delete_document.assert_awaited_once_with(collection_name="kb", document_id="vectors-1")
+    assert result["status"] == "deleted"
+    rag_tasks._notify_ws.assert_not_awaited()
+{%- endif %}

@@ -199,7 +199,8 @@ def _document(scene: Scene, monkeypatch: pytest.MonkeyPatch, *, deleted: bool) -
     doc = MagicMock(id=uuid4(), collection_name=scene.kb.collection_name, vector_document_id="vec-1",
                     stored_object_id=None)
     monkeypatch.setattr(rag_document_repo, "get_by_id", AsyncMock(return_value=doc))
-    monkeypatch.setattr(rag_document_repo, "delete", AsyncMock(return_value=deleted))
+    removed = rag_document_repo.DeletedDocument(doc.collection_name, doc.vector_document_id, None)
+    monkeypatch.setattr(rag_document_repo, "delete", AsyncMock(return_value=removed if deleted else None))
     app.dependency_overrides.pop(deps.get_rag_document_service)
     return doc
 

@@ -33,7 +33,11 @@ The rules (``POLICIES``) mirror the application's access model:
 * an organization's knowledge bases, documents and sync sources are changed by its owners,
   admins and members (``ORG_WRITER_ROLES``); viewers read them. The application's knowledge
   bases are changed by the platform administration only, through the system session;
+* the documents and sync sources of a knowledge base follow the knowledge base, not the
+  organization stored on the row: a personal knowledge base's stay with its owner;
 * child rows (messages, tool calls, sync logs) follow their parent;
+* a row is not created with a value only the system grants (a public demo, a default
+  knowledge base, a storage migration in progress): column privileges stop updates only;
 * the audit log is append-only: the application can write it, not read it.
 
 Policies are declared here and applied by migrations (``segregation_statements``); a change to
@@ -130,27 +134,62 @@ def _org_writer(column: str) -> str:
     return f"{S}.has_org_role({column}, {_WRITER_ROLES})"
 
 
-# The application's knowledge bases are written by the platform administration only, through
-# the system session: no rule here opens them to the application login.
-_KB_WRITABLE = (
-    f"(scope = 'personal' AND owner_user_id = {ME})"
-    f" OR (scope = 'org' AND {_org_writer('organization_id')})"
+def _kb_writable(alias: str = "") -> str:
+    """The acting user may change the knowledge base (``alias``: its table alias with a dot).
+
+    The application's knowledge bases are written by the platform administration only, through
+    the system session: no rule here opens them to the application login.
+    """
+    return (
+        f"({alias}scope = 'personal' AND {alias}owner_user_id = {ME})"
+        f" OR ({alias}scope = 'org' AND {_org_writer(alias + 'organization_id')})"
+    )
+
+
+_KB_WRITABLE = _kb_writable()
+# Content of a knowledge base follows the knowledge base, not the organization stored on the
+# row: an upload into a personal knowledge base carries the active organization, and the other
+# members of that organization must not read it. Content outside any knowledge base follows
+# its organization.
+_DOCUMENT_VISIBLE = (
+    f"CASE WHEN knowledge_base_id IS NULL"
+    f" THEN organization_id IS NOT NULL AND {S}.in_organization(organization_id)"
+    " ELSE EXISTS (SELECT 1 FROM knowledge_bases k WHERE k.id = knowledge_base_id) END"
 )
-# A document is written with its knowledge base, and never carries another organization.
+# A document is written with its knowledge base, in that knowledge base's collection (the
+# vectors a delete removes), and never carries another organization.
 _DOCUMENT_WRITABLE = (
     "(organization_id IS NULL OR {in_org})"
     " AND CASE WHEN knowledge_base_id IS NULL"
     " THEN organization_id IS NOT NULL AND {writer}"
-    " ELSE EXISTS (SELECT 1 FROM knowledge_bases k WHERE k.id = knowledge_base_id AND ({kb}))"
+    " ELSE EXISTS (SELECT 1 FROM knowledge_bases k WHERE k.id = knowledge_base_id"
+    " AND k.collection_name = rag_documents.collection_name AND ({kb}))"
     " END"
 ).format(
     in_org=f"{S}.in_organization(organization_id)",
     writer=_org_writer("organization_id"),
-    kb=f"(k.scope = 'personal' AND k.owner_user_id = {ME})"
-    f" OR (k.scope = 'org' AND {_org_writer('k.organization_id')})",
+    kb=_kb_writable("k."),
 )
-_SYNC_SOURCE_VISIBLE = f"organization_id IS NOT NULL AND {S}.in_organization(organization_id)"
-_SYNC_SOURCE_WRITABLE = f"organization_id IS NOT NULL AND {_org_writer('organization_id')}"
+
+
+def _source_knowledge_base(rule: str) -> str:
+    """A sync source feeding the collection of a knowledge base follows that knowledge base
+    (``rule`` on alias ``k``); a source of another collection, or of none, its organization."""
+    return (
+        f"(collection_name IS NULL OR NOT {S}.knowledge_base_collection(collection_name)"
+        " OR EXISTS (SELECT 1 FROM knowledge_bases k"
+        f" WHERE k.collection_name = sync_sources.collection_name AND ({rule})))"
+    )
+
+
+_SYNC_SOURCE_VISIBLE = (
+    f"organization_id IS NOT NULL AND {S}.in_organization(organization_id)"
+    f" AND {_source_knowledge_base('true')}"
+)
+_SYNC_SOURCE_WRITABLE = (
+    f"organization_id IS NOT NULL AND {_org_writer('organization_id')}"
+    f" AND {_source_knowledge_base(_kb_writable('k.'))}"
+)
 
 # table -> policies for TENANT_ROLE. Tables in UNISOLATED_TABLES carry the reason they have
 # none (closed to the application login). Tables a project does not have are skipped.
@@ -190,10 +229,13 @@ POLICIES: dict[str, list[Policy]] = {
             using=f"user_id = {ME} OR {S}.conversation_access(id) IS NOT NULL"
             f" OR (user_id IS NULL AND {S}.is_service() AND {S}.in_organization(organization_id))",
         ),
+        # A public demo is shown to anonymous visitors: only the platform administration marks
+        # one (system session), so a conversation is never created as one.
         Policy(
             "INSERT",
-            check=f"(user_id = {ME} AND (organization_id IS NULL OR {S}.in_organization(organization_id)))"
-            f" OR (user_id IS NULL AND {S}.is_service() AND {S}.in_organization(organization_id))",
+            check=f"NOT is_demo AND ("
+            f"(user_id = {ME} AND (organization_id IS NULL OR {S}.in_organization(organization_id)))"
+            f" OR (user_id IS NULL AND {S}.is_service() AND {S}.in_organization(organization_id)))",
         ),
         Policy(
             "UPDATE",
@@ -252,30 +294,28 @@ POLICIES: dict[str, list[Policy]] = {
     # is system work (storage migration).
     "stored_objects": [
         Policy("SELECT", using=_OBJECT_OWNER),
-        Policy("INSERT", check=f"({_OBJECT_OWNER}) AND {_OBJECT_KEY} AND previous_key IS NULL"),
+        Policy(
+            "INSERT",
+            check=f"({_OBJECT_OWNER}) AND {_OBJECT_KEY} AND previous_key IS NULL AND previous_backend IS NULL",
+        ),
         Policy("UPDATE", using=_OBJECT_OWNER, check=_OBJECT_OWNER),
         Policy("DELETE", using=_OBJECT_OWNER),
     ],
     "knowledge_bases": [
         Policy("SELECT", using=_KB_VISIBLE),
-        Policy("INSERT", check=_KB_WRITABLE),
+        # Default knowledge bases are created by migrations and the system, never by a user.
+        Policy("INSERT", check=f"NOT is_default AND ({_KB_WRITABLE})"),
         Policy("UPDATE", using=_KB_WRITABLE, check=_KB_WRITABLE),
         Policy("DELETE", using=_KB_WRITABLE),
     ],
     # Readable with a visible knowledge base, writable only with a writable one (the
     # application's knowledge bases are visible to everyone, written by the system). Keelson:
-    # the row's own organization no longer opens a knowledge base the user cannot write.
-    "rag_documents": [
-        Policy(
-            "SELECT",
-            using=f"(organization_id IS NOT NULL AND {S}.in_organization(organization_id))"
-            " OR (knowledge_base_id IS NOT NULL"
-            " AND EXISTS (SELECT 1 FROM knowledge_bases k WHERE k.id = knowledge_base_id))",
-        ),
-        *_writes(_DOCUMENT_WRITABLE),
-    ],
+    # the row's own organization opens neither a knowledge base the user cannot write nor one
+    # the user cannot read.
+    "rag_documents": [Policy("SELECT", using=_DOCUMENT_VISIBLE), *_writes(_DOCUMENT_WRITABLE)],
     # Integrations of an organization, with their credentials: read by its members and API
-    # keys, changed by its owners, admins and members.
+    # keys, changed by its owners, admins and members. A source feeding a knowledge base is
+    # read and changed with that knowledge base (a personal one's by its owner only).
     "sync_sources": [Policy("SELECT", using=_SYNC_SOURCE_VISIBLE), *_writes(_SYNC_SOURCE_WRITABLE)],
     "sync_logs": [
         Policy(
@@ -373,6 +413,12 @@ def _functions(schema: str) -> list[str]:
         f"""CREATE OR REPLACE FUNCTION {S}.created_organization(org uuid) RETURNS boolean {definer} AS
             $$ SELECT EXISTS (SELECT 1 FROM organizations o
                 WHERE o.id = org AND o.created_by_user_id = {S}.current_user_id()) $$""",
+{%- if enable_rag %}
+        # Whether a collection belongs to a knowledge base, visible to the user or not (the
+        # policies of sync sources; the knowledge bases' own policy hides the others).
+        f"""CREATE OR REPLACE FUNCTION {S}.knowledge_base_collection(name text) RETURNS boolean {definer} AS
+            $$ SELECT EXISTS (SELECT 1 FROM knowledge_bases k WHERE k.collection_name = name) $$""",
+{%- endif %}
         # 'owner', 'edit', 'view' or NULL: how the acting user may use a conversation.
         f"""CREATE OR REPLACE FUNCTION {S}.conversation_access(conv uuid) RETURNS text {definer} AS
             $$ SELECT CASE

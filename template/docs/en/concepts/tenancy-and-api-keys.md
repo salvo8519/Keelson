@@ -43,10 +43,17 @@ every transaction of the application login writes it into transaction-local sett
   is granted by an owner, and an organization's creator becomes its owner once;
 - viewers read an organization's knowledge bases, documents and sync sources; owners,
   administrators and members change them. A document is written only with a knowledge base
-  the user may write, whatever organization the row names;
+  the user may write, in that knowledge base's collection, whatever organization the row
+  names;
+- the documents and sync sources of a knowledge base are read with the knowledge base, not with
+  the organization stored on the row: those of a personal knowledge base stay with its owner,
+  even though an upload records the active organization. A sync source feeds only a knowledge
+  base its author may write;
 - what a row grants cannot be rewritten by the application login: column privileges keep a
   user's role and administrator flag, a conversation's author, organization and public demo
-  flag, and the author of a share, as they were created;
+  flag, and the author of a share, as they were created. Nor can a row be created with what
+  only the system grants: a conversation is not created as a public demo, a knowledge base as a
+  default, a stored object as a storage migration in progress;
 - tables are opened to the application login one by one, with their policies: a table created
   later, by a migration or by the pgvector store at run time, stays closed until a migration
   segregates it;
@@ -93,7 +100,9 @@ The vector store has no row level security of its own, so it gets two barriers:
    search every tenant.
 
 Deleting a document removes its vectors, and deleting a knowledge base removes its documents
-and its collection: deleted content is no longer retrievable. Local sync
+and its collection: deleted content is no longer retrievable. A document deleted while it is
+being ingested has no vectors yet; the worker removes the vectors it wrote when it finds the
+document gone. Local sync
 (`POST /rag/sync/local`) reads only inside `RAG_LOCAL_SYNC_ROOT` and feeds only the
 application's knowledge bases; without that setting it is refused in staging and production.
 

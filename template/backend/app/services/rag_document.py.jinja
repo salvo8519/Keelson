@@ -289,16 +289,45 @@ class RAGDocumentService:
         vector_document_id: str,
         chunk_count: int = 0,
     ) -> None:
-        """Mark a document as successfully ingested."""
-        doc = await self.get_document(doc_id)
-        await rag_document_repo.update_status(
+        """Mark a document as successfully ingested.
+
+        Raises:
+            NotFoundError: The document no longer exists.
+        """
+        if not await rag_document_repo.mark_ingested(
             self.db,
-            doc.id,
-            status="done",
+            UUID(doc_id),
             vector_document_id=vector_document_id,
             chunk_count=chunk_count,
             completed_at=datetime.now(UTC),
-        )
+        ):
+            raise NotFoundError(message="Document not found", details={"doc_id": doc_id})
+
+    async def finish_ingestion(
+        self,
+        doc_id: str,
+        *,
+        collection_name: str,
+        vector_document_id: str,
+        ingestion: "IngestionService",
+    ) -> bool:
+        """Record the vectors a worker wrote; False when the document was deleted meanwhile.
+
+        Keelson: a document deleted while it was ingested had no vectors to remove yet, and the
+        worker's vectors stayed searchable with no row to delete them. The worker removes what
+        it wrote when the document is gone.
+        """
+        try:
+            await self.complete_ingestion(doc_id, vector_document_id=vector_document_id)
+        except NotFoundError:
+            logger.info("Document %s deleted during its ingestion: removing its vectors", doc_id)
+            if not await ingestion.remove_document(collection_name, vector_document_id):
+                logger.error(
+                    "Vectors %s of deleted document %s could not be removed from %s",
+                    vector_document_id, doc_id, collection_name,
+                )
+            return False
+        return True
 
     async def fail_ingestion(self, doc_id: str, error_message: str) -> None:
         """Mark a document ingestion as failed."""
@@ -362,16 +391,19 @@ class RAGDocumentService:
             ExternalServiceError: The vector store did not delete the vectors.
         """
         doc = await self.get_document(doc_id)
-        if not await rag_document_repo.delete(self.db, doc.id):
+        deleted = await rag_document_repo.delete(self.db, doc.id)
+        if deleted is None:
             raise NotFoundError(message="Document not found", details={"doc_id": doc_id})
-        if doc.vector_document_id and not await ingestion.remove_document(
-            doc.collection_name, doc.vector_document_id
+        # A document still processing has no vectors yet: its worker removes them on completion
+        # (finish_ingestion).
+        if deleted.vector_document_id and not await ingestion.remove_document(
+            deleted.collection_name, deleted.vector_document_id
         ):
             raise ExternalServiceError(
                 message="The document's vectors could not be deleted", details={"doc_id": doc_id}
             )
-        if doc.stored_object_id is not None:
-            await StoredObjectService(self.db).delete(doc.stored_object_id)
+        if deleted.stored_object_id is not None:
+            await StoredObjectService(self.db).delete(deleted.stored_object_id)
 {%- if enable_teams and use_jwt %}
 
     async def delete_for_knowledge_base(self, kb_id: UUID) -> None:

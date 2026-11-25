@@ -1,0 +1,42 @@
+{%- if enable_teams and use_postgresql %}
+"""visibility of knowledge base content and privileged values at insert (Keelson)
+
+Revision ID: k0008_content_visibility
+Revises: k0007_session_version
+Create Date: 2026-11-25T00:00:00+00:00
+
+The policies of these tables are applied again from app/db/tenancy.py:
+
+* the documents and sync sources of a knowledge base are read and changed with the knowledge
+  base, not with the organization stored on the row (a personal knowledge base's documents were
+  readable by every member of the uploader's active organization);
+* a sync source feeds only a knowledge base its author may write, and a document names its
+  knowledge base's collection;
+* a conversation is not created as a public demo, a knowledge base not as a default, a stored
+  object not as a storage migration in progress (column privileges stop updates only).
+"""
+
+import sqlalchemy as sa
+from alembic import op
+
+from app.db.tenancy import segregation_statements
+
+revision = "k0008_content_visibility"
+down_revision = "k0007_session_version"
+branch_labels = None
+depends_on = None
+
+TABLES = {"conversations", "stored_objects", "knowledge_bases", "rag_documents", "sync_sources", "sync_logs"}
+
+
+def upgrade() -> None:
+    op.execute("SET LOCAL check_function_bodies = off")
+    existing = set(sa.inspect(op.get_bind()).get_table_names())
+    for statement in segregation_statements(TABLES & existing):
+        op.execute(statement)
+
+
+def downgrade() -> None:
+    # The stricter policies stay: they are a correction, not a feature to remove.
+    pass
+{%- endif %}

@@ -1,0 +1,1 @@
+The documents and sync sources of a personal knowledge base are no longer readable by the other members of the organization, a sync source feeds only a knowledge base its author may write, a document deleted during its ingestion leaves no searchable vectors, and the application login cannot create public demos, default knowledge bases or stored objects in migration.

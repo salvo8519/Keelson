@@ -4,10 +4,10 @@
 Contains database operations for RAGDocument entities.
 """
 
-from typing import Any
+from typing import Any, NamedTuple
 from uuid import UUID
 
-from sqlalchemy import delete as sql_delete, func, select
+from sqlalchemy import delete as sql_delete, func, select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.rag_document import RAGDocument
@@ -125,14 +125,54 @@ async def update_status(
     return doc
 
 
-async def delete(db: AsyncSession, doc_id: UUID) -> bool:
-    """Delete a RAG document by ID; False when no row was deleted.
+class DeletedDocument(NamedTuple):
+    """What a deleted document leaves outside its row: its vectors and its stored file."""
 
-    Keelson: the row count is the answer. A row the session can read and row level security
+    collection_name: str
+    vector_document_id: str | None
+    stored_object_id: UUID | None
+
+
+async def delete(db: AsyncSession, doc_id: UUID) -> DeletedDocument | None:
+    """Delete a RAG document by ID; None when no row was deleted.
+
+    Keelson: the deleted row is the answer. A row the session can read and row level security
     does not let it delete matches nothing; the ORM's delete of a loaded object reported that
-    as success.
+    as success. The vectors are read from the deleted row itself, so an ingestion completed
+    while the delete waited for the row is not missed.
     """
-    result = await db.execute(sql_delete(RAGDocument).where(RAGDocument.id == doc_id))
+    result = await db.execute(
+        sql_delete(RAGDocument)
+        .where(RAGDocument.id == doc_id)
+        .returning(
+            RAGDocument.collection_name, RAGDocument.vector_document_id, RAGDocument.stored_object_id
+        )
+    )
+    row = result.one_or_none()
+    await db.flush()
+    return DeletedDocument(*row) if row is not None else None
+
+
+async def mark_ingested(
+    db: AsyncSession,
+    doc_id: UUID,
+    *,
+    vector_document_id: str,
+    chunk_count: int,
+    completed_at: Any,
+) -> bool:
+    """Record a finished ingestion; False when the document no longer exists (Keelson)."""
+    result = await db.execute(
+        sql_update(RAGDocument)
+        .where(RAGDocument.id == doc_id)
+        .values(
+            status="done",
+            vector_document_id=vector_document_id,
+            chunk_count=chunk_count,
+            completed_at=completed_at,
+        )
+        .execution_options(synchronize_session=False)
+    )
     await db.flush()
     return bool(result.rowcount)  # ty: ignore[unresolved-attribute]
 

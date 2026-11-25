@@ -1,4 +1,4 @@
-<!-- i18n source: concepts/tenancy-and-api-keys.md source_hash: a77e9b91da70 -->
+<!-- i18n source: concepts/tenancy-and-api-keys.md source_hash: b925412aac85 -->
 # Tenancy e API key
 
 I progetti Keelson servono più organizzazioni con un solo deploy. Questa pagina spiega come
@@ -45,11 +45,19 @@ e ogni transazione del login applicativo lo scrive in impostazioni locali alla t
   crea un'organizzazione ne diventa owner una sola volta;
 - i viewer leggono le knowledge base, i documenti e le sorgenti di sincronizzazione di
   un'organizzazione; owner, admin e membri li modificano. Un documento si scrive solo con una
-  knowledge base che l'utente può modificare, qualunque organizzazione indichi la riga;
+  knowledge base che l'utente può modificare, nella collezione di quella knowledge base,
+  qualunque organizzazione indichi la riga;
+- i documenti e le sorgenti di sincronizzazione di una knowledge base si leggono con la
+  knowledge base, non con l'organizzazione registrata sulla riga: quelli di una knowledge base
+  personale restano al suo proprietario, anche se un caricamento registra l'organizzazione
+  attiva. Una sorgente di sincronizzazione alimenta solo una knowledge base che il suo autore
+  può modificare;
 - ciò che una riga concede non può essere riscritto dal login applicativo: i privilegi di
   colonna mantengono come sono stati creati il ruolo e il flag di amministratore di un utente,
   l'autore, l'organizzazione e il flag di demo pubblica di una conversazione, e l'autore di una
-  condivisione;
+  condivisione. Né una riga può essere creata con ciò che concede solo il sistema: una
+  conversazione non nasce come demo pubblica, una knowledge base come predefinita, un oggetto
+  archiviato come migrazione di storage in corso;
 - le tabelle sono aperte al login applicativo una alla volta, con le loro policy: una tabella
   creata in seguito, da una migrazione o dallo store pgvector a run time, resta chiusa finché
   una migrazione non la segrega;
@@ -98,7 +106,9 @@ La vector store non ha una propria row level security, quindi ha due barriere:
    l'amministrazione, può cercare in tutti i tenant.
 
 Eliminare un documento ne elimina i vettori, ed eliminare una knowledge base ne elimina i
-documenti e la collezione: il contenuto eliminato non è più recuperabile. La sincronizzazione
+documenti e la collezione: il contenuto eliminato non è più recuperabile. Un documento
+eliminato mentre è in ingestione non ha ancora vettori; il worker rimuove i vettori che ha
+scritto quando trova il documento eliminato. La sincronizzazione
 locale (`POST /rag/sync/local`) legge solo dentro `RAG_LOCAL_SYNC_ROOT` e alimenta solo le
 knowledge base dell'applicazione; senza questa impostazione è rifiutata in staging e
 produzione.

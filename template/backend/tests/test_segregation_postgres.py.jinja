@@ -538,6 +538,73 @@ async def test_a_viewer_reads_the_organization_content_and_does_not_change_it(wo
     await _allowed(world, owner, "DELETE FROM knowledge_bases WHERE id = :k", k=kb_org_a)
 
 
+async def test_a_personal_knowledge_base_keeps_its_documents_and_sources_private(world: World) -> None:
+    """An upload into a personal knowledge base carries the active organization; the other
+    members of that organization still do not read its documents, sources or sync logs."""
+    owner, member = _user(world, world.a1, world.org_a), _user(world, world.a2, world.org_a)
+    kb_a1 = await _kb_id(world, "kb_a1")
+    document = await _seed(world, "rag_documents", **_document("kb_a1", kb_a1, world.org_a))
+    source = await _seed(world, "sync_sources", organization_id=world.org_a, name="drive",
+                         connector_type="local", collection_name="kb_a1", config={})
+    log = await _seed(world, "sync_logs", source="local", collection_name="kb_a1", sync_source_id=source)
+    assert await _ids(world, member, "knowledge_bases", "name") == {"kb_org_a", "kb_app"}
+    assert document not in await _ids(world, member, "rag_documents")
+    assert source not in await _ids(world, member, "sync_sources")
+    assert log not in await _ids(world, member, "sync_logs")
+    await _refused(world, member, "UPDATE sync_sources SET name = 'taken' WHERE id = :s", s=source)
+    await _refused(world, member, "DELETE FROM sync_sources WHERE id = :s", s=source)
+    # The owner of the knowledge base keeps them.
+    assert document in await _ids(world, owner, "rag_documents")
+    assert source in await _ids(world, owner, "sync_sources")
+    assert log in await _ids(world, owner, "sync_logs")
+    # Documents and sources outside any knowledge base stay with the organization.
+    loose = await _seed(world, "rag_documents", **_document("loose", None, world.org_a))
+    shared = await _seed(world, "sync_sources", organization_id=world.org_a, name="shared",
+                         connector_type="local", config={})
+    assert loose in await _ids(world, member, "rag_documents")
+    assert shared in await _ids(world, member, "sync_sources")
+
+
+async def test_content_is_not_created_with_a_privileged_or_foreign_value(world: World) -> None:
+    """Frozen columns stop UPDATE only; an INSERT must not set them to what the system grants."""
+    member = _user(world, world.a2, world.org_a)
+    await _refused_insert(world, member, "knowledge_bases", scope="org", organization_id=world.org_a,
+                          name="d", collection_name="d", is_default=True)
+    await _allowed_insert(world, member, "knowledge_bases", scope="org", organization_id=world.org_a,
+                          name="n", collection_name="n")
+    kb_org_a = await _kb_id(world, "kb_org_a")
+    # A document of a writable knowledge base names that knowledge base's collection only.
+    await _refused_insert(world, member, "rag_documents", **_document("kb_org_b", kb_org_a, world.org_a))
+    # A sync source feeds a knowledge base its author may write, not another tenant's.
+    for target in ("kb_org_b", "kb_a1", "kb_app"):
+        await _refused_insert(world, member, "sync_sources", organization_id=world.org_a, name="x",
+                              connector_type="local", collection_name=target, config={})
+    own = await _allowed_insert(world, member, "sync_sources", organization_id=world.org_a, name="x",
+                                connector_type="local", collection_name="kb_org_a", config={})
+    await _refused(world, member, "UPDATE sync_sources SET collection_name = 'kb_org_b' WHERE id = :s", s=own)
+{%- endif %}
+
+
+async def test_a_conversation_is_not_created_as_a_public_demo(world: World) -> None:
+    """Demos are shown to anonymous visitors: only the platform administration marks them."""
+    for principal, owner in (
+        (_user(world, world.a1, world.org_a), world.a1),
+        (Principal(organization_id=world.org_a, service=True), None),
+    ):
+        await _refused_insert(world, principal, "conversations", user_id=owner,
+                              organization_id=world.org_a, is_demo=True)
+
+
+async def test_a_stored_object_is_not_created_as_a_storage_migration(world: World) -> None:
+    """The previous location of an object's bytes is written by the storage migration only."""
+    acting = _user(world, world.a2, world.org_a)
+    own = uuid.uuid4()
+    await _refused_insert(world, acting, "stored_objects", id=own, organization_id=world.org_a, size=1,
+                          content_type="application/pdf", backend="local",
+                          storage_key=f"org/{world.org_a}/{own}", previous_backend="s3", status="pending")
+{%- if enable_rag %}
+
+
 async def test_a_knowledge_base_keeps_its_scope_owner_and_collection(world: World) -> None:
     """The tenant of a knowledge base's vectors follows from these columns."""
     owner = _user(world, world.a1, world.org_a)
