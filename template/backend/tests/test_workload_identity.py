@@ -254,7 +254,7 @@ async def test_metadata_may_write_the_issuer_with_a_trailing_slash(discovery: di
 def test_a_user_access_token_is_not_a_workload_credential() -> None:
     from app.core.security import create_access_token
 
-    assert wi.read(wi.CREDENTIAL_PREFIX + create_access_token("user-id"), settings.SECRET_KEY, [TRUST]) is None
+    assert wi.read(wi.CREDENTIAL_PREFIX + create_access_token("user-id", version=0), settings.SECRET_KEY, [TRUST]) is None
 
 
 @pytest.mark.anyio

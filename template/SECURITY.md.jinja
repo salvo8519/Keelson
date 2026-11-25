@@ -21,7 +21,8 @@ We aim to acknowledge within 48h and ship a fix within 7 days for high-severity 
 ### Authentication
 
 {%- if use_jwt %}
-- **JWT (`HS256`)** signed with `SECRET_KEY`. Access token TTL = `ACCESS_TOKEN_EXPIRE_MINUTES` (default 30 min). Refresh token TTL = `REFRESH_TOKEN_EXPIRE_MINUTES` (default 7 days).
+- **JWT (`HS256`)** signed with `SECRET_KEY`. Access token TTL = `ACCESS_TOKEN_EXPIRE_MINUTES` (default 30 min, at most 60 in staging and production). Refresh token TTL = `REFRESH_TOKEN_EXPIRE_MINUTES` (default 7 days).
+- **Session revocation:** every token carries the user's session version (`users.token_epoch`). A password change, a password reset, a password set by an administrator, a deactivation and `POST /auth/logout-all` raise it, which ends every session issued before. Signing out (`/auth/logout`, `/auth/session/logout`) ends that session's refresh token (its id is kept in Redis until it would expire); its access token lasts until it expires. Impersonation tokens name the administrator (`act`), recorded in the logs and the audit log.
 - **Password hashing:** Argon2id via `pwdlib` (as in the official FastAPI template). Hashes of earlier versions (bcrypt) are verified and replaced with Argon2id at the next sign-in. Plain passwords are never stored. A sign-in with an unknown address does the same hashing work, so response times do not reveal which addresses exist.
 - **Secrets at rest:** connector credentials and MCP tokens are encrypted (Fernet) with `DATA_ENCRYPTION_KEYS`, separate from `SECRET_KEY` and rotatable (a new key goes in front; older ones still decrypt).
 - **Logs:** messages, `extra=` fields and exception text are redacted (passwords, tokens, API key secrets, e-mail addresses); fields named like secrets are never written; SQL errors do not carry statement values outside debug mode. A test (`tests/test_log_trap.py`) fails when a known secret reaches the logs.
@@ -30,15 +31,15 @@ We aim to acknowledge within 48h and ship a fix within 7 days for high-severity 
 {%- endif %}
 {%- if enable_session_management %}
 - **Session management** — DB-backed sessions with revocation. Each refresh-token issuance creates a session row; `/sessions` endpoint lets users see + revoke devices.
-{%- else %}
-- **Stateless JWT** — no DB session table. Logout is client-side (drop tokens). For server-side revocation, regenerate with `--session-management`.
 {%- endif %}
 {%- endif %}
 {%- if use_api_key %}
 - **Admin API key** — static `settings.API_KEY` matched via `X-API-Key` header for service-to-service calls. Constant-time compared with `secrets.compare_digest()`.
 {%- endif %}
 
-- **Browser session** — access and refresh tokens in HttpOnly, `SameSite=Lax` cookies (`Secure` outside local development), out of reach of scripts in the page; cookie-authenticated writes and WebSocket handshakes are accepted only from origins in `CORS_ORIGINS` (CSRF). Programs use `Authorization: Bearer` or API keys.
+- **Browser session** — access and refresh tokens in HttpOnly, `SameSite=Lax` cookies (`Secure` outside local development), out of reach of scripts in the page; cookie-authenticated writes and WebSocket handshakes are accepted only from origins in `CORS_ORIGINS` (CSRF); sign-in and sign-out are refused when the browser names another site in `Origin` or `Referer` (login CSRF). Programs use `Authorization: Bearer` or API keys.
+- **User content** — uploaded files and avatars are served with `Content-Security-Policy: sandbox; default-src 'none'` and `nosniff`; HTML, SVG, XML and scripts are always downloads. File names follow RFC 6266.
+- **Registration** — the answer is the same whether or not an address has an account; the owner of a known address is told by e-mail.
 - **Single sign-on** — any OpenID Connect provider, configured at run time (`OIDC_PROVIDERS`): code flow with PKCE, ID token verified, an existing account is matched only by an address the provider has verified (or a trusted company directory). The frontend receives a one-time code, never tokens in a URL.
 - **CI workload identity** — GitHub Actions and GitLab CI jobs exchange their OpenID Connect token, checked against `WORKLOAD_IDENTITIES` (issuer, audience, repository and branch claims), for a short-lived credential acting for one organization with API key scopes. No secret is stored in the CI.
 

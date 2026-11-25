@@ -42,6 +42,7 @@ import uuid  # noqa: E402
 from collections.abc import AsyncIterator, Iterator  # noqa: E402
 from contextlib import asynccontextmanager, contextmanager  # noqa: E402
 from dataclasses import dataclass  # noqa: E402
+from typing import Any  # noqa: E402
 
 from sqlalchemy import text  # noqa: E402
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine  # noqa: E402
@@ -105,4 +106,39 @@ def acting_as(principal: Principal | None) -> Iterator[None]:
         yield
     finally:
         _principal.reset(token)
+
+
+@contextmanager
+def serving(application: Any, database: SegregatedDatabase) -> Iterator[None]:
+    """Serve ``application`` from ``database``: requests under its policies, system work outside.
+
+    The request session, the sign-in session and every ``system_session`` of the routes use
+    the throwaway schema, with the commit and rollback of the real sessions.
+    """
+    from unittest.mock import patch
+
+    from app.api import deps
+    from app.db.session import _managed_session
+
+    async def request_session() -> AsyncIterator[AsyncSession]:
+        async with _managed_session(database.app) as session:
+            yield session
+
+    async def sign_in_session() -> AsyncIterator[AsyncSession]:
+        async with _managed_session(database.system) as session:
+            yield session
+
+    @asynccontextmanager
+    async def system(reason: str) -> AsyncIterator[AsyncSession]:
+        async with _managed_session(database.system) as session:
+            yield session
+
+    application.dependency_overrides[deps.get_db_session] = request_session
+    application.dependency_overrides[deps.get_system_db_session] = sign_in_session
+    try:
+        with patch.object(deps, "system_session", system):
+            yield
+    finally:
+        application.dependency_overrides.pop(deps.get_db_session, None)
+        application.dependency_overrides.pop(deps.get_system_db_session, None)
 {%- endif %}

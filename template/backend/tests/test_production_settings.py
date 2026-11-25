@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from app.core.config import SECRETS_WHEN_DEPLOYED, Settings, is_placeholder_secret
+from app.core.config import MAX_DEPLOYED_ACCESS_TOKEN_MINUTES, SECRETS_WHEN_DEPLOYED, Settings, is_placeholder_secret
 
 DEFAULTED_SECRETS = tuple(
     name
@@ -129,3 +129,18 @@ def test_deployed_metrics_need_a_token() -> None:
 def test_only_hmac_signing_algorithms_are_accepted(algorithm: str) -> None:
     with pytest.raises(ValidationError, match="ALGORITHM"):
         _production(ALGORITHM=algorithm)
+
+
+@pytest.mark.parametrize("environment", ["staging", "production"])
+def test_deployed_environments_refuse_long_lived_access_tokens(environment: str) -> None:
+    """An access token is checked against its session only by its version: it must be short."""
+    assert _production(environment, ACCESS_TOKEN_EXPIRE_MINUTES=MAX_DEPLOYED_ACCESS_TOKEN_MINUTES)
+    with pytest.raises(ValidationError, match="ACCESS_TOKEN_EXPIRE_MINUTES"):
+        _production(environment, ACCESS_TOKEN_EXPIRE_MINUTES=MAX_DEPLOYED_ACCESS_TOKEN_MINUTES + 1)
+
+
+def test_env_example_access_token_lifetime_is_the_default_and_within_the_limit() -> None:
+    lines = ENV_EXAMPLE.read_text(encoding="utf-8").splitlines()
+    value = next(line.partition("=")[2] for line in lines if line.startswith("ACCESS_TOKEN_EXPIRE_MINUTES="))
+    assert int(value) == Settings.model_fields["ACCESS_TOKEN_EXPIRE_MINUTES"].default
+    assert int(value) <= MAX_DEPLOYED_ACCESS_TOKEN_MINUTES

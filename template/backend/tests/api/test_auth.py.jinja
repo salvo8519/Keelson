@@ -13,7 +13,7 @@ from httpx import ASGITransport, AsyncClient
 from app.api.deps import get_current_user
 from tests.overrides import override_user_service
 from app.core.config import settings
-from app.core.exceptions import AlreadyExistsError, AuthenticationError
+from app.core.exceptions import AuthenticationError
 from app.core.security import create_access_token, create_refresh_token
 from app.main import app
 {%- if enable_redis %}
@@ -43,6 +43,8 @@ class MockUser:
         self.full_name = full_name
         self.is_active = is_active
         self.role = role
+        self.token_epoch = 0
+        self.locale = None
         self.hashed_password = "hashed"
         self.avatar_url = None
 {%- if enable_oauth %}
@@ -163,7 +165,7 @@ async def test_login_invalid_credentials(
 
 @pytest.mark.anyio
 async def test_register_success(client_with_mock_service: AsyncClient):
-    """Test successful registration."""
+    """Registration is accepted; the body does not describe the account (Keelson)."""
     response = await client_with_mock_service.post(
         f"{settings.API_V1_STR}/auth/register",
         json={
@@ -172,9 +174,8 @@ async def test_register_success(client_with_mock_service: AsyncClient):
             "full_name": "New User",
         },
     )
-    assert response.status_code == 201
-    data = response.json()
-    assert data["email"] == "test@example.com"  # From mock
+    assert response.status_code == 202
+    assert set(response.json()) == {"message"}
 
 
 @pytest.mark.anyio
@@ -182,10 +183,8 @@ async def test_register_duplicate_email(
     client_with_mock_service: AsyncClient,
     mock_user_service: MagicMock,
 ):
-    """Test registration with duplicate email."""
-    mock_user_service.register = ServiceMock(
-        side_effect=AlreadyExistsError(message="Email already registered")
-    )
+    """A known address gets the same answer as a new one (Keelson)."""
+    mock_user_service.register = ServiceMock(return_value=None)
 
     response = await client_with_mock_service.post(
         f"{settings.API_V1_STR}/auth/register",
@@ -195,7 +194,7 @@ async def test_register_duplicate_email(
             "full_name": "Test User",
         },
     )
-    assert response.status_code == 409
+    assert response.status_code == 202
 
 
 {%- if not enable_session_management %}
@@ -207,7 +206,7 @@ async def test_refresh_token_success(
     mock_user: MockUser,
 ):
     """Test successful token refresh."""
-    refresh_token = create_refresh_token(subject=str(mock_user.id))
+    refresh_token = create_refresh_token(mock_user.id, version=0)
 
     response = await client_with_mock_service.post(
         f"{settings.API_V1_STR}/auth/refresh",
@@ -239,7 +238,7 @@ async def test_refresh_token_wrong_type(
     mock_user: MockUser,
 ):
     """Test refresh with access token instead of refresh token."""
-    access_token = create_access_token(subject=str(mock_user.id))
+    access_token = create_access_token(mock_user.id, version=0)
 
     response = await client_with_mock_service.post(
         f"{settings.API_V1_STR}/auth/refresh",
@@ -256,7 +255,7 @@ async def test_refresh_token_inactive_user(
     """Test refresh token for inactive user."""
     inactive_user = MockUser(is_active=False)
     mock_user_service.get_by_id = ServiceMock(return_value=inactive_user)
-    refresh_token = create_refresh_token(subject=str(inactive_user.id))
+    refresh_token = create_refresh_token(inactive_user.id, version=0)
 
     response = await client_with_mock_service.post(
         f"{settings.API_V1_STR}/auth/refresh",

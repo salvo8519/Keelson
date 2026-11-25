@@ -101,7 +101,7 @@ async def test_large_objects_are_sent_in_parts_and_a_failure_aborts_the_upload(
 async def test_presigned_urls_are_short_lived(s3_storage: S3FileStorage) -> None:
     await s3_storage.write("org/o/doc", iter_bytes(b"pdf"))
     url = await s3_storage.presigned_url(
-        "org/o/doc", filename="a.pdf", content_type="application/pdf", disposition="inline", ttl=120
+        "org/o/doc", content_type="application/pdf", content_disposition='inline; filename="a.pdf"', ttl=120
     )
     assert url and "X-Amz-Expires=120" in url and "X-Amz-Signature=" in url
 

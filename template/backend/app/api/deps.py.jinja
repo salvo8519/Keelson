@@ -277,7 +277,8 @@ BillingSvc = Annotated[BillingService, Depends(get_billing_service)]
 
 {%- if use_jwt %}
 from app.core.exceptions import AuthenticationError, AuthorizationError, NotFoundError
-from app.core.security import verify_token
+from app.core.logging import acting_admin_var
+from app.core.security import ACCESS, read_session_token
 from app.db.models.user import User, UserRole
 from app.core.session_cookies import ACCESS_COOKIE, require_trusted_origin, trusted_origin
 
@@ -346,26 +347,27 @@ async def get_current_user(
             raise AuthenticationError(message="Not authenticated")
         require_trusted_origin(request)
 
-    payload = verify_token(token)
-    if payload is None:
+    claims = read_session_token(token, ACCESS)
+    if claims is None:
         raise AuthenticationError(message="Invalid or expired token")
-
-    # Ensure this is an access token, not a refresh token
-    if payload.get("type") != "access":
-        raise AuthenticationError(message="Invalid token type")
-
-    user_id = payload.get("sub")
-    if user_id is None:
-        raise AuthenticationError(message="Invalid token payload")
-
 {%- if enable_teams and use_postgresql %}
     # Keelson: the verified subject becomes the principal of the request before any query, so
     # the database applies its policies as this user (app/db/tenancy.py).
-    await bind_user(user_service.db, UUID(user_id))
+    await bind_user(user_service.db, claims.user_id)
 {%- endif %}
-    user = await user_service.get_by_id(UUID(user_id))
+    try:
+        user = await user_service.get_by_id(claims.user_id)
+    except NotFoundError:
+        raise AuthenticationError(message="Invalid or expired token") from None
     if not user.is_active:
         raise AuthenticationError(message="User account is disabled")
+    # Keelson: a token of an earlier session version was ended (password change, sign-out
+    # from every device; app/core/security.py).
+    if not claims.is_current_for(user):
+        raise AuthenticationError(message="Invalid or expired token")
+    if claims.actor_id:
+        acting_admin_var.set(claims.actor_id)
+        request.state.acting_admin_id = claims.actor_id
 
     # Keelson: the user's language wins over the organization's and the header's.
     set_language(getattr(user, "locale", None), LanguageSource.USER)
@@ -702,32 +704,31 @@ async def get_current_user_ws(
         db.expunge(user)
         return user
 {%- else %}
-    payload = verify_token(auth_token)
-    if payload is None:
+    claims = read_session_token(auth_token, ACCESS)
+    if claims is None:
         raise WebSocketException(code=4001, reason="Invalid or expired token")
-
-    if payload.get("type") != "access":
-        raise WebSocketException(code=4001, reason="Invalid token type")
-
-    user_id = payload.get("sub")
-    if user_id is None:
-        raise WebSocketException(code=4001, reason="Invalid token payload")
 {%- if enable_teams and use_postgresql %}
 
     # Keelson: the connection acts as this user; agent turns, started as tasks of the
     # connection, inherit it (app/db/tenancy.py).
-    await bind_user(None, UUID(user_id))
+    await bind_user(None, claims.user_id)
 {%- endif %}
 
     async with get_db_context() as db:
         user_service = UserService(db)
         try:
-            user = await user_service.get_by_id(UUID(user_id))
+            user = await user_service.get_by_id(claims.user_id)
         except NotFoundError:
             raise WebSocketException(code=4001, reason="User not found") from None
 
         if not user.is_active:
             raise WebSocketException(code=4001, reason="User account is disabled")
+        # Keelson: the same session version check as get_current_user. An open connection
+        # is not closed when the version changes; a new handshake is refused.
+        if not claims.is_current_for(user):
+            raise WebSocketException(code=4001, reason="Invalid or expired token")
+        if claims.actor_id:
+            acting_admin_var.set(claims.actor_id)
 
         # Eagerly load all columns, then detach from session to avoid
         # "instance not bound to a Session" errors after the context manager exits

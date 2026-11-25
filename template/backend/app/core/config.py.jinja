@@ -63,6 +63,10 @@ SECRETS_WHEN_DEPLOYED = (
     # reads it, so a deployed environment needs one (Prometheus sends it as a bearer token).
     "PROMETHEUS_AUTH_TOKEN",
 )
+# Keelson: a deployed access token lives at most this long. It is checked against its session
+# (the user's token version) on every request, but a revoked session keeps a token already
+# held by a browser or a program until it expires; refresh tokens carry the long sessions.
+MAX_DEPLOYED_ACCESS_TOKEN_MINUTES = 60
 # Credentials that may be left empty (S3 from the instance role, for example) but, when set,
 # must not be a stand-in: the Kubernetes secret ships them as "CHANGE_ME".
 OPTIONAL_SECRETS_WHEN_DEPLOYED = ("S3_ACCESS_KEY", "S3_SECRET_KEY")
@@ -863,6 +867,12 @@ class Settings(BaseSettings):
             )
         if self.DEBUG:
             raise ValueError(f"DEBUG must be false in {self.ENVIRONMENT}")
+        lifetime = getattr(self, "ACCESS_TOKEN_EXPIRE_MINUTES", None)
+        if lifetime is not None and lifetime > MAX_DEPLOYED_ACCESS_TOKEN_MINUTES:
+            raise ValueError(
+                f"ACCESS_TOKEN_EXPIRE_MINUTES must be at most {MAX_DEPLOYED_ACCESS_TOKEN_MINUTES} "
+                f"in {self.ENVIRONMENT}: sessions last through refresh tokens"
+            )
         return self
 
 {%- if enable_rag %}

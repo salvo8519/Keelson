@@ -311,6 +311,9 @@ UNISOLATED_TABLES: dict[str, str] = {
 # only, not what changed). Who owns a row, where it lives and what it grants are set when the
 # row is created or by the platform administration, which uses the system session.
 FROZEN_COLUMNS: dict[str, tuple[str, ...]] = {
+    # token_epoch (the session version) is not frozen: a user's own password change raises it
+    # with the application login. The policy limits a user to their own row, and no code writes
+    # it other than as an increment (UserService).
     "users": ("role", "is_app_admin", "is_active", "oauth_provider", "oauth_id", "external_user_id"),
     "conversations": ("user_id", "organization_id", "is_demo"),
     "conversation_shares": ("shared_by",),

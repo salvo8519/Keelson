@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError, ValidationError
+from app.core.user_content import content_disposition
 from app.repositories import conversation as conversation_repo
 from app.repositories import message_rating as rating_repo
 from app.schemas.message_rating import (
@@ -305,7 +306,7 @@ class MessageRatingService:
         return fmt
 
     def _export_disposition(self, now: datetime, fmt: str) -> str:
-        return f'attachment; filename="ratings_export_{now.strftime("%Y%m%d_%H%M%S")}.{fmt}"'
+        return content_disposition("attachment", f"ratings_export_{now.strftime('%Y%m%d_%H%M%S')}.{fmt}")
 
     def _build_json_payload(
         self, items: list[MessageRatingWithDetails], now: datetime

@@ -18,20 +18,17 @@ import logging
 from typing import Any
 {%- else %}
 from typing import Annotated, Any
-{%- if not enable_session_management %}
-from uuid import UUID
-{%- endif %}
 {%- endif %}
 
-from fastapi import APIRouter{% if not use_delegated_auth %}, Depends, Request, Response{% endif %}{% if not use_delegated_auth %}, status{% endif %}
+from fastapi import APIRouter{% if not use_delegated_auth %}, Depends, Request, Response, status{% endif %}
 {%- if not use_delegated_auth %}
 from fastapi.security import OAuth2PasswordRequestForm
 {%- endif %}
 
 {%- if enable_session_management %}
-from app.api.deps import AuthUserSvc, CurrentUser, SessionSvc
+from app.api.deps import AuthUserSvc, CurrentUser, Redis, SessionSvc, UserSvc
 {%- elif not use_delegated_auth %}
-from app.api.deps import AuthUserSvc, CurrentUser
+from app.api.deps import AuthUserSvc, CurrentUser, Redis, UserSvc
 {%- else %}
 from app.api.deps import CurrentUser
 {%- endif %}
@@ -39,14 +36,9 @@ from app.api.deps import CurrentUser
 from app.core.config import settings
 {%- endif %}
 {%- if not use_delegated_auth %}
-from app.core.exceptions import AuthenticationError
-from app.core.security import (
-    create_access_token,
-    create_refresh_token,
-{%- if not enable_session_management %}
-    verify_token,
-{%- endif %}
-)
+from app.core.exceptions import AuthenticationError, NotFoundError
+from app.core.revoked_tokens import is_revoked, revoke
+from app.core.security import REFRESH, SessionClaims, issue_session_tokens, read_session_token
 {%- endif %}
 {%- if enable_email and not use_delegated_auth %}
 from app.services.email.service import get_email_service
@@ -63,16 +55,24 @@ from app.schemas.password_reset import (
 from app.core.session_cookies import (
     REFRESH_COOKIE,
     clear_session_cookies,
+    refuse_foreign_origin,
     require_trusted_origin,
     set_session_cookies,
 )
+from app.db.models.user import User
 from app.schemas.token import RefreshTokenRequest, Token
-from app.schemas.user import UserRead, UserRegister
+from app.schemas.user import RegistrationAccepted, UserRead, UserRegister
+from app.services.user import UserService
 {%- else %}
 from app.schemas.user import UserRead
 {%- endif %}
 {%- if enable_rate_limiting and not use_delegated_auth %}
-from app.services.rate_limit import RateLimitCategory, make_anonymous_rate_limit_dep
+from app.services.rate_limit import (
+    RateLimitCategory,
+    check_rate_limit,
+    client_ip,
+    make_anonymous_rate_limit_dep,
+)
 
 # Unauthenticated endpoints: the only scope available is the caller's IP, and
 # these are exactly the routes that need one (credential stuffing, reset-email
@@ -85,6 +85,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 {%- if not use_delegated_auth %}
+
+INVALID_REFRESH = "Invalid or expired refresh token"
 
 
 @router.post(
@@ -104,9 +106,11 @@ async def login(
 {%- endif %}
 ) -> Any:
     """OAuth2 password login, returns access and refresh tokens."""
+    # Keelson: a page of another site must not sign the browser into an account of its
+    # choice (login CSRF). Programs send no Origin and no Referer and are accepted.
+    refuse_foreign_origin(request)
     user = await user_service.authenticate(form_data.username, form_data.password)
-    access_token = create_access_token(subject=str(user.id))
-    refresh_token = create_refresh_token(subject=str(user.id))
+    access_token, refresh_token = issue_session_tokens(user)
 {%- if enable_session_management %}
 
     # Track this login as a server-side session (enables remote logout).
@@ -125,8 +129,8 @@ async def login(
 
 @router.post(
     "/register",
-    response_model=UserRead,
-    status_code=status.HTTP_201_CREATED,
+    response_model=RegistrationAccepted,
+    status_code=status.HTTP_202_ACCEPTED,
 {%- if enable_rate_limiting %}
     dependencies=[AuthRateLimit],
 {%- endif %}
@@ -135,24 +139,47 @@ async def register(
     user_in: UserRegister,
     user_service: AuthUserSvc,
 ) -> Any:
-    """Register a new user."""
-    user = await user_service.register(user_in)
-    return user
+    """Register a new user.
+
+    The answer is the same whether or not the address already has an account; its owner is
+    told by e-mail.
+    """
+    await user_service.register(user_in)
+    return RegistrationAccepted()
 
 
-{%- if not enable_session_management %}
+async def _refreshing_user(
+    request: Request, token: str | None, user_service: UserService, redis: Redis
+) -> tuple[User, SessionClaims]:
+    """Keelson: the user of a refresh token (body or cookie) that is still in force.
 
-
-def _refresh_subject(token: str | None) -> UUID:
-    """The user id of a valid refresh token (body or cookie)."""
-    payload = verify_token(token) if token else None
-    if not payload or payload.get("type") != "refresh":
-        raise AuthenticationError(message="Invalid or expired refresh token")
-    try:
-        return UUID(str(payload.get("sub")))
-    except ValueError as exc:
-        raise AuthenticationError(message="Invalid refresh token") from exc
+    A refresh token is refused when it is invalid, of an earlier session version (password
+    change, sign-out from every device), signed out (app/core/revoked_tokens.py), or when
+    its user is gone or disabled. Refreshes are limited per user; invalid tokens count
+    against the per-IP limit of the sign-in routes.
+    """
+    claims = read_session_token(token, REFRESH)
+{%- if enable_rate_limiting %}
+    if claims is None:
+        await check_rate_limit(category=RateLimitCategory.AUTH, client_ip=client_ip(request))
+    else:
+        await check_rate_limit(
+            category=RateLimitCategory.REFRESH,
+            client_ip=client_ip(request),
+            user_id=str(claims.user_id),
+        )
 {%- endif %}
+    if claims is None:
+        raise AuthenticationError(message=INVALID_REFRESH)
+    try:
+        user = await user_service.get_by_id(claims.user_id)
+    except NotFoundError:
+        raise AuthenticationError(message=INVALID_REFRESH) from None
+    if not user.is_active:
+        raise AuthenticationError(message="User account is disabled")
+    if not claims.is_current_for(user) or await is_revoked(redis, claims):
+        raise AuthenticationError(message=INVALID_REFRESH)
+    return user, claims
 
 
 @router.post("/refresh", response_model=Token)
@@ -160,28 +187,19 @@ async def refresh_token(
     request: Request,
     body: RefreshTokenRequest,
     user_service: AuthUserSvc,
+    redis: Redis,
 {%- if enable_session_management %}
     session_service: SessionSvc,
 {%- endif %}
 ) -> Any:
     """Exchange a refresh token for a new access token."""
 {%- if enable_session_management %}
-
     session = await session_service.validate_refresh_token(body.refresh_token)
     if not session:
-        raise AuthenticationError(message="Invalid or expired refresh token")
-
-    user = await user_service.get_by_id(session.user_id)
-{%- else %}
-
-    # No DB-backed sessions — validate the refresh JWT directly.
-    user = await user_service.get_by_id(_refresh_subject(body.refresh_token))
+        raise AuthenticationError(message=INVALID_REFRESH)
 {%- endif %}
-    if not user.is_active:
-        raise AuthenticationError(message="User account is disabled")
-
-    access_token = create_access_token(subject=str(user.id))
-    new_refresh_token = create_refresh_token(subject=str(user.id))
+    user, _ = await _refreshing_user(request, body.refresh_token, user_service, redis)
+    access_token, new_refresh_token = issue_session_tokens(user)
 {%- if enable_session_management %}
 
     await session_service.logout_by_refresh_token(body.refresh_token)
@@ -195,54 +213,64 @@ async def refresh_token(
     return Token(access_token=access_token, refresh_token=new_refresh_token)
 
 
+async def _end_refresh(token: str | None, redis: Redis) -> None:
+    """Sign out the session of a refresh token, if it is one (no answer tells either way)."""
+    claims = read_session_token(token, REFRESH)
+    if claims is not None:
+        await revoke(redis, claims)
+
+
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def logout(
     body: RefreshTokenRequest,
+    redis: Redis,
 {%- if enable_session_management %}
     session_service: SessionSvc,
 {%- endif %}
 ) -> None:
-{%- if enable_session_management %}
-    """Logout and invalidate the current session.
+    """Sign out: the refresh token can no longer be exchanged.
 
-    Invalidates the refresh token, preventing further token refresh.
+    \f
+    Keelson: upstream did nothing without session tracking, so the token kept working for
+    its whole lifetime.
     """
+{%- if enable_session_management %}
     await session_service.logout_by_refresh_token(body.refresh_token)
-{%- else %}
-    """No-op without session tracking. Clients drop their JWTs locally."""
-    return None
 {%- endif %}
+    await _end_refresh(body.refresh_token, redis)
+
+
+@router.post("/logout-all", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
+async def logout_everywhere(
+    response: Response,
+    current_user: CurrentUser,
+    user_service: UserSvc,
+) -> None:
+    """Sign out of every device: every access and refresh token issued so far stops working."""
+    await user_service.end_all_sessions(current_user)
+    clear_session_cookies(response)
 {%- if not enable_session_management %}
 
 
-@router.post(
-    "/session/refresh",
-    status_code=status.HTTP_204_NO_CONTENT,
-    response_model=None,
-{%- if enable_rate_limiting %}
-    dependencies=[AuthRateLimit],
-{%- endif %}
-)
-async def refresh_session(request: Request, response: Response, user_service: AuthUserSvc) -> None:
+@router.post("/session/refresh", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
+async def refresh_session(
+    request: Request, response: Response, user_service: AuthUserSvc, redis: Redis
+) -> None:
     """Browsers: renew the session from the refresh cookie.
 
     The new tokens are set as HttpOnly cookies and never returned in the body, so a script in
     the page cannot obtain them.
     """
     require_trusted_origin(request)
-    user = await user_service.get_by_id(_refresh_subject(request.cookies.get(REFRESH_COOKIE)))
-    if not user.is_active:
-        raise AuthenticationError(message="User account is disabled")
-    set_session_cookies(
-        response,
-        create_access_token(subject=str(user.id)),
-        create_refresh_token(subject=str(user.id)),
-    )
+    user, _ = await _refreshing_user(request, request.cookies.get(REFRESH_COOKIE), user_service, redis)
+    set_session_cookies(response, *issue_session_tokens(user))
 
 
 @router.post("/session/logout", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
-async def end_session(response: Response) -> None:
-    """Browsers: sign out by removing the session cookies."""
+async def end_session(request: Request, response: Response, redis: Redis) -> None:
+    """Browsers: sign out. The refresh cookie's session ends and the cookies are removed."""
+    refuse_foreign_origin(request)
+    await _end_refresh(request.cookies.get(REFRESH_COOKIE), redis)
     clear_session_cookies(response)
 {%- endif %}
 {%- endif %}
@@ -342,8 +370,7 @@ async def verify_magic_link(
 ) -> Any:
     """Exchange a magic-link token for an access + refresh token pair."""
     user = await user_service.consume_magic_link_token(body.token)
-    access_token = create_access_token(subject=str(user.id))
-    refresh_token = create_refresh_token(subject=str(user.id))
+    access_token, refresh_token = issue_session_tokens(user)
 {%- if enable_session_management %}
     await session_service.create_session(
         user_id=user.id,

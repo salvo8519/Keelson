@@ -2330,6 +2330,21 @@ export type RefreshTokenRequest = {
 };
 
 /**
+ * RegistrationAccepted
+ *
+ * The answer to every registration.
+ *
+ * The same body for a new and a known address, so the answer does not tell whether an
+ * address has an account; the owner of a known address is told by e-mail.
+ */
+export type RegistrationAccepted = {
+    /**
+     * Message
+     */
+    message?: string;
+};
+
+/**
  * StripeEventList
  */
 export type StripeEventList = {
@@ -3121,7 +3136,7 @@ export type authRegisterResponses = {
     /**
      * Successful Response
      */
-    201: UserRead;
+    202: RegistrationAccepted;
 };
 
 export type authRegisterResponse = authRegisterResponses[keyof authRegisterResponses];
@@ -3175,6 +3190,22 @@ export type authLogoutResponses = {
 };
 
 export type authLogoutResponse = authLogoutResponses[keyof authLogoutResponses];
+
+export type authLogoutEverywhereData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/logout-all';
+};
+
+export type authLogoutEverywhereResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type authLogoutEverywhereResponse = authLogoutEverywhereResponses[keyof authLogoutEverywhereResponses];
 
 export type authRefreshSessionData = {
     body?: never;

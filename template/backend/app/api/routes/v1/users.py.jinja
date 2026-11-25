@@ -6,8 +6,7 @@ from typing import Any
 
 from uuid import UUID
 
-from fastapi import APIRouter, File, Query, UploadFile, status
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, File, Query, Request, Response, UploadFile, status
 {%- if enable_pagination %}
 from fastapi_pagination import Page
 {%- endif %}
@@ -19,6 +18,9 @@ from app.api.deps import (
     UserSvc,
 )
 from app.core.exceptions import BadRequestError, NotFoundError
+from app.core.security import issue_session_tokens
+from app.core.session_cookies import ACCESS_COOKIE, set_session_cookies
+from app.core.user_content import avatar_response
 from app.db.models.user import UserRole
 from app.schemas.user import UpdatePassword, UserCreate, UserRead, UserUpdate, UserUpdateMe
 
@@ -50,12 +52,21 @@ async def update_current_user(
 
 @router.patch("/me/password", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def update_current_user_password(
+    request: Request,
+    response: Response,
     body: UpdatePassword,
     current_user: CurrentUser,
     user_service: UserSvc,
 ) -> None:
-    """Change the current user's password; the current password is required."""
+    """Change the current user's password; the current password is required.
+
+    Every session of the user ends, the other devices included. A browser that made the
+    change keeps its own session: it receives new session cookies.
+    """
     await user_service.change_password(current_user, body.current_password, body.new_password)
+    # Keelson: the browser session (cookie, no bearer token) is renewed in the new version.
+    if request.cookies.get(ACCESS_COOKIE) and "authorization" not in request.headers:
+        set_session_cookies(response, *issue_session_tokens(current_user))
 
 
 @router.delete("/me", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
@@ -97,15 +108,21 @@ async def upload_avatar(
 
 
 @router.get("/avatar/{user_id}", response_model=None)
-async def get_avatar(user_id: UUID, user_service: UserSvc) -> Any:
-    """Get user avatar image."""
+async def get_avatar(user_id: UUID, user_service: UserSvc, _: CurrentUser) -> Any:
+    """Get the avatar image of a user who shares an organization with the caller.
+
+    \f
+    Keelson: upstream served it without authentication, so under row level security the
+    lookup had no principal and always answered 404. It now needs a signed-in user, and the
+    users policy (the user or someone sharing an organization) decides who is found.
+    """
     user = await user_service.get_by_id(user_id)
     if not user.avatar_url:
         raise NotFoundError(message="No avatar set")
     file_path = user_service.get_avatar_path(user)
     if not file_path:
         raise NotFoundError(message="Avatar file not found")
-    return FileResponse(path=file_path, media_type="image/jpeg")
+    return avatar_response(file_path)
 
 
 {%- if enable_pagination %}

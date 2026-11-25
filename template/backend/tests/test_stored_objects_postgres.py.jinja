@@ -131,6 +131,25 @@ async def test_another_organization_cannot_read_or_list_an_object(setup: Setup) 
         assert response.headers["content-disposition"] == 'attachment; filename="a.pdf"'
 
 
+async def test_user_content_cannot_run_in_the_api_origin(setup: Setup) -> None:
+    """An HTML file asked inline, with a name outside Latin-1, is a sandboxed attachment."""
+    async with setup.as_user(setup.alice, setup.org_a) as session:
+        stored = await StoredObjectService(session).store(
+            owner=ObjectOwner.user(setup.alice),
+            chunks=iter_bytes(b"<script>alert(1)</script>"),
+            content_type="text/html",
+        )
+        response = await StoredObjectService(session).download(
+            stored.id, filename="отчёт 2026.html", disposition="inline"
+        )
+    disposition = response.headers["content-disposition"]
+    assert disposition.startswith("attachment; ")
+    assert "filename*=UTF-8''%D0%BE%D1%82%D1%87%D1%91%D1%82%202026.html" in disposition
+    assert disposition.isascii()
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["content-security-policy"] == "sandbox; default-src 'none'"
+
+
 async def test_nobody_stores_an_object_in_the_name_of_another_owner(setup: Setup) -> None:
     for owner in (ObjectOwner.organization(setup.org_b), ObjectOwner.user(setup.bob)):
         with pytest.raises(Exception, match="row-level security"):

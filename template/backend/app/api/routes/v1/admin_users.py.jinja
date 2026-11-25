@@ -113,9 +113,13 @@ async def impersonate_user(
 ) -> Any:
     """Issue a short-lived (1h) access token to act as the target user."""
     target = await service.get_by_id(user_id)
+    # Keelson: the token names the administrator (``act``): what is done with it is
+    # attributed to them in the logs and the audit log (app/core/audit.py).
     token = create_access_token(
-        subject=str(target.id),
+        target.id,
+        version=target.token_epoch,
         expires_delta=timedelta(hours=1),
+        actor=admin.id,
     )
 {%- if enable_teams %}
     await record_audit(

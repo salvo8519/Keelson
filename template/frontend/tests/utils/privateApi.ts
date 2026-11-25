@@ -14,12 +14,9 @@ export const createUser = async ({
   email: string
   password: string
 }) => {
-  const response = await AuthService.register({
-    body: {
-      email,
-      password,
-      full_name: "Test User",
-    },
-  })
-  return response.data
+  const user = { email, password, full_name: "Test User" }
+  // Registration answers the same for every address (no account enumeration), so it does
+  // not return the user: the helper returns what it registered.
+  await AuthService.register({ body: user, throwOnError: true })
+  return { email, full_name: user.full_name }
 }

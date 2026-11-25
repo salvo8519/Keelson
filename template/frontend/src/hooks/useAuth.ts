@@ -8,7 +8,7 @@ import {
   type UserRegister,
   UsersService,
 } from "@/client"
-import { currentLanguage, isSupported, setLanguage } from "@/i18n"
+import { currentLanguage, isSupported, setLanguage, t } from "@/i18n"
 import { session } from "@/lib/session"
 import { handleError } from "@/utils"
 import useCustomToast from "./useCustomToast"
@@ -33,7 +33,7 @@ const completeSignIn = async (): Promise<boolean> => {
 const useAuth = () => {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const { showErrorToast } = useCustomToast()
+  const { showErrorToast, showSuccessToast } = useCustomToast()
 
   const { data: user } = useQuery<UserRead | null, Error>({
     queryKey: ["currentUser"],
@@ -41,9 +41,16 @@ const useAuth = () => {
     enabled: isLoggedIn(),
   })
 
+  // Keelson: the API answers a registration the same way whether or not the address already
+  // has an account (its owner is told by e-mail), so the page says both.
   const signUpMutation = useMutation({
     mutationFn: (data: UserRegister) => AuthService.register({ body: data }),
     onSuccess: () => {
+      showSuccessToast(
+        t(
+          "Registration received. If the address is new, you can sign in now; otherwise check your e-mail.",
+        ),
+      )
       navigate({ to: "/login" })
     },
     onError: handleError.bind(showErrorToast),

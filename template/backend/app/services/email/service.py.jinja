@@ -23,6 +23,7 @@ class EmailKey(enum.StrEnum):
     EMAIL_VERIFICATION = "email_verification"
     MAGIC_LINK = "magic_link"
     PASSWORD_RESET = "password_reset"  # noqa: S105 - a template key
+    ACCOUNT_EXISTS = "account_exists"
     INVITATION = "invitation"
 {%- if enable_billing %}
     PAYMENT_SUCCEEDED = "payment_succeeded"
@@ -49,6 +50,7 @@ _CATEGORIES: dict[EmailKey, EmailCategory] = {
     EmailKey.EMAIL_VERIFICATION: EmailCategory.TRANSACTIONAL,
     EmailKey.MAGIC_LINK: EmailCategory.TRANSACTIONAL,
     EmailKey.PASSWORD_RESET: EmailCategory.TRANSACTIONAL,
+    EmailKey.ACCOUNT_EXISTS: EmailCategory.TRANSACTIONAL,
     EmailKey.INVITATION: EmailCategory.TRANSACTIONAL,
 {%- if enable_billing %}
     EmailKey.PAYMENT_SUCCEEDED: EmailCategory.TRANSACTIONAL,
@@ -137,6 +139,22 @@ class EmailService:
             key=EmailKey.PASSWORD_RESET,
             to=to,
             context={"name": name, "reset_url": reset_url, "expires_in": expires_in, "app_name": "{{ project_name }}"},
+            language=language,
+        )
+
+    async def send_account_exists(
+        self, *, to: str, name: str, login_url: str, reset_url: str, language: str | None = None
+    ) -> SendResult:
+        """Keelson: someone tried to register with an address that has an account."""
+        return await self.send(
+            key=EmailKey.ACCOUNT_EXISTS,
+            to=to,
+            context={
+                "name": name,
+                "login_url": login_url,
+                "reset_url": reset_url,
+                "app_name": "{{ project_name }}",
+            },
             language=language,
         )
 

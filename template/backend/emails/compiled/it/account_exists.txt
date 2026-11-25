@@ -1,0 +1,15 @@
+Subject: Il tuo account [[app_name]]
+
+Ciao [[name]],
+
+qualcuno ha provato a creare un account [[app_name]] con questo indirizzo e-mail. Ne hai già uno, quindi non è stato modificato nulla.
+
+Accedi da qui:
+[[login_url]]
+
+Se hai dimenticato la password, reimpostala qui:
+[[reset_url]]
+
+Se non hai provato a registrarti, puoi ignorare questa e-mail.
+
+Il team di [[app_name]]

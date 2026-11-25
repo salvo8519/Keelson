@@ -190,7 +190,7 @@ class BaseFileStorage(ABC):
         """Every key under ``prefix`` with the time it was last written (reconciliation)."""
 
     async def presigned_url(
-        self, key: str, *, filename: str, content_type: str, disposition: str, ttl: int
+        self, key: str, *, content_type: str, content_disposition: str, ttl: int
     ) -> str | None:
         """A short-lived URL to read ``key`` directly, when the backend can issue one."""
         return None
@@ -455,9 +455,9 @@ class S3FileStorage(BaseFileStorage):
                 yield item["Key"], item["LastModified"]
 
     async def presigned_url(
-        self, key: str, *, filename: str, content_type: str, disposition: str, ttl: int
+        self, key: str, *, content_type: str, content_disposition: str, ttl: int
     ) -> str | None:
-        safe_name = filename.replace('"', "")
+        # Keelson: the Content-Disposition is built by the caller (app/core/user_content.py).
         return await asyncio.to_thread(
             self.client.generate_presigned_url,
             "get_object",
@@ -465,7 +465,7 @@ class S3FileStorage(BaseFileStorage):
                 "Bucket": self.bucket,
                 "Key": key,
                 "ResponseContentType": content_type,
-                "ResponseContentDisposition": f'{disposition}; filename="{safe_name}"',
+                "ResponseContentDisposition": content_disposition,
             },
             ExpiresIn=ttl,
         )
@@ -532,7 +532,11 @@ async def replace_avatar(folder: str, current: str | None, filename: str, data: 
     if is_inside(folder, current):
         with contextlib.suppress(Exception):
             await storage.delete(current)  # type: ignore[arg-type]
-    return await storage.save(folder, filename, data)
+    # ``save`` keeps only the last component of its folder argument, which put the file outside
+    # ``folder``, where ``avatar_path`` never finds it: the key is built here.
+    key = f"{folder}/{make_storage_filename(filename)}"
+    await storage.write(key, iter_bytes(data))
+    return key
 
 
 def avatar_path(folder: str, key: str | None) -> str | None:

@@ -29,6 +29,7 @@ from starlette.responses import RedirectResponse, Response, StreamingResponse
 
 from app.core.config import settings
 from app.core.exceptions import NotFoundError
+from app.core.user_content import user_content_headers
 from app.db.models.stored_object import ORGANIZATION_PREFIX, USER_PREFIX, StoredObject, StoredObjectStatus
 from app.repositories import stored_object_repo
 from app.services.file_storage import BaseFileStorage, get_file_storage
@@ -72,11 +73,6 @@ class ObjectOwner:
     @classmethod
     def of(cls, stored: StoredObject) -> "ObjectOwner":
         return cls(organization_id=stored.organization_id, user_id=stored.user_id)
-
-
-def content_disposition(disposition: str, filename: str) -> str:
-    mode = "attachment" if disposition == "attachment" else "inline"
-    return f'{mode}; filename="{filename.replace(chr(34), "")}"'
 
 
 class StoredObjectService:
@@ -161,12 +157,14 @@ class StoredObjectService:
         stored = await self.get(object_id)
         storage = self.storage_of(stored)
         media_type = media_type or stored.content_type
+        # Keelson: user content, sandboxed and an attachment when active (app/core/user_content.py).
+        # The caller's headers cannot replace these.
+        protection = user_content_headers(media_type, disposition, filename)
         if settings.S3_PRESIGNED_DOWNLOADS:
             url = await storage.presigned_url(
                 stored.storage_key,
-                filename=filename,
                 content_type=media_type,
-                disposition="attachment" if disposition == "attachment" else "inline",
+                content_disposition=protection["Content-Disposition"],
                 ttl=settings.S3_PRESIGN_TTL_SECONDS,
             )
             if url:
@@ -187,10 +185,10 @@ class StoredObjectService:
             body(),
             media_type=media_type,
             headers={
-                "Content-Disposition": content_disposition(disposition, filename),
                 # The size is exact for every object hashed when written.
                 **({"Content-Length": str(stored.size)} if stored.sha256 else {}),
                 **(headers or {}),
+                **protection,
             },
         )
 

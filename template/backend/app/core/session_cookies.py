@@ -88,3 +88,15 @@ def require_trusted_origin(request: Request) -> None:
         return
     if not trusted_origin(request.headers.get("origin"), request.headers.get("referer")):
         raise AuthorizationError(message="Request origin not allowed")
+
+
+def refuse_foreign_origin(request: Request) -> None:
+    """Refuse a request that names another site in Origin or Referer (login CSRF).
+
+    Signing in and out sets or removes cookies without a session to check, so a form on
+    another site could sign the browser into the attacker's account. Browsers name the site
+    of a form; programs send neither header and are accepted.
+    """
+    origin, referer = request.headers.get("origin"), request.headers.get("referer")
+    if (origin is not None or referer is not None) and not trusted_origin(origin, referer):
+        raise AuthorizationError(message="Request origin not allowed")

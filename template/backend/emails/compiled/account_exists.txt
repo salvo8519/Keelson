@@ -1,0 +1,15 @@
+Subject: Your [[app_name]] account
+
+Hi [[name]],
+
+Someone tried to create a [[app_name]] account with this e-mail address. You already have one, so nothing was changed.
+
+Sign in here:
+[[login_url]]
+
+If you forgot your password, reset it here:
+[[reset_url]]
+
+If you did not try to register, you can ignore this e-mail.
+
+The [[app_name]] team

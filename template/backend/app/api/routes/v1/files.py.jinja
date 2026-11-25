@@ -57,15 +57,13 @@ async def download_file(
     except NotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found") from None
 
-    # The chat file-preview panel embeds this URL in an iframe (PDFs, HTML,
-    # etc). Default ``X-Frame-Options: DENY`` from SecurityHeadersMiddleware
-    # would break that, so opt this endpoint down to SAMEORIGIN. The CSP
-    # ``frame-ancestors 'self'`` is the modern equivalent — browsers honor
-    # whichever they recognize.
-    headers = {
-        "X-Frame-Options": "SAMEORIGIN",
-        "Content-Security-Policy": "frame-ancestors 'self'",
-    }
+    # The chat file-preview panel embeds this URL in an iframe, which the default
+    # ``X-Frame-Options: DENY`` of SecurityHeadersMiddleware would refuse.
+    # Keelson: the Content Security Policy is the sandbox of user content, set by the stored
+    # object service with nosniff; HTML, SVG, XML and scripts are always attachments
+    # (app/core/user_content.py). Upstream sent only ``frame-ancestors 'self'``, so an uploaded
+    # HTML page ran in the API's origin.
+    headers = {"X-Frame-Options": "SAMEORIGIN"}
     # Keelson: the content is streamed from its stored object (local disk or S3), or answered
     # with a short-lived presigned URL, after the database has checked who may read it.
     return await file_upload_svc.download(chat_file, disposition=disposition, headers=headers)

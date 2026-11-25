@@ -21,6 +21,7 @@ from app.api.deps import MessageRatingSvc
 {%- if enable_teams and use_jwt %}
 from app.api.deps import ActiveOrg
 {%- endif %}
+from app.core.user_content import content_disposition
 from app.db.models.user import UserRole
 from app.schemas.conversation import (
     ConversationCreate,
@@ -63,7 +64,7 @@ async def export_conversations(
     """Export all conversations with messages and tool calls (admin only)."""
     export_data = await conversation_service.export_all()
     return JSONResponse(content={"conversations": export_data, "total": len(export_data)},
-        headers={"Content-Disposition": 'attachment; filename="conversations_export.json"'})
+        headers={"Content-Disposition": content_disposition("attachment", "conversations_export.json")})
 
 
 {%- if use_jwt %}

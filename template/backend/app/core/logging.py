@@ -17,6 +17,9 @@ from typing import Any, ClassVar
 from opentelemetry import trace
 
 request_id_var: ContextVar[str | None] = ContextVar("request_id", default=None)
+# Keelson: the platform administrator acting through an impersonation token, named in every
+# record and audit entry of the request (``act`` claim, app/core/security.py).
+acting_admin_var: ContextVar[str | None] = ContextVar("acting_admin_id", default=None)
 
 # Loggers that install their own handlers; their records go through the root handler instead.
 _SERVER_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access")
@@ -114,6 +117,7 @@ class ContextFilter(logging.Filter):
 
     def filter(self, record: logging.LogRecord) -> bool:
         record.request_id = request_id_var.get()
+        record.acting_admin_id = acting_admin_var.get()
         context = trace.get_current_span().get_span_context()
         record.trace_id = format(context.trace_id, "032x") if context.is_valid else None
         record.span_id = format(context.span_id, "016x") if context.is_valid else None

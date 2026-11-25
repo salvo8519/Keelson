@@ -17,7 +17,7 @@ from uuid import UUID
 
 from sqlalchemy import insert
 
-from app.core.logging import without_secrets
+from app.core.logging import acting_admin_var, without_secrets
 from app.db.session import system_session
 from app.db.models.audit_log import AppAdminAuditLog
 
@@ -33,7 +33,13 @@ async def record_audit(
     details: dict[str, Any] | None = None,
     ip_address: str | None = None,
 ) -> None:
-    """Add an audit log entry in the caller's transaction; raises if it cannot be written."""
+    """Add an audit log entry in the caller's transaction; raises if it cannot be written.
+
+    Keelson: under an impersonation token the actor is the impersonated user; the
+    administrator who acts through it is added to the details (``acting_admin_id``).
+    """
+    if acting_admin := acting_admin_var.get():
+        details = {**(details or {}), "acting_admin_id": acting_admin}
     await db.execute(
         insert(AppAdminAuditLog).values(
             actor_user_id=actor_user_id,

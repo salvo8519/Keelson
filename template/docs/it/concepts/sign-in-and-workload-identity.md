@@ -1,4 +1,4 @@
-<!-- i18n source: concepts/sign-in-and-workload-identity.md source_hash: b6018599880d -->
+<!-- i18n source: concepts/sign-in-and-workload-identity.md source_hash: 38c98c005d7b -->
 # Accesso e identità dei workload
 
 Le persone accedono con una password o tramite il provider di identità della propria azienda.
@@ -14,6 +14,12 @@ vengono verificati e sostituiti al login successivo. Un login con un indirizzo s
 esegue lo stesso lavoro di hashing, così i tempi di risposta non rivelano quali indirizzi sono
 registrati.
 
+Neanche la registrazione li rivela: risponde `202 Accepted` con lo stesso messaggio per un
+indirizzo nuovo e per uno che ha già un account. Per un indirizzo noto non viene creato nulla,
+e il suo titolare riceve un'e-mail con i link per accedere e per reimpostare la password. Un
+accesso successivo con la password appena scelta distingue ancora un indirizzo noto da uno
+nuovo: per chiudere anche questo serve la verifica dell'e-mail prima del primo accesso.
+
 ## La sessione nel browser
 
 Nel browser, i token di accesso e di refresh sono cookie HttpOnly impostati dalle API: nessuno
@@ -28,13 +34,46 @@ sessione.
 Entrambi sono `SameSite=Lax`, e `Secure` fuori dallo sviluppo locale. Quando il token di
 accesso scade, il frontend rinnova la sessione una volta dal cookie di refresh e ripete la
 richiesta; i nuovi token sono impostati come cookie, mai restituiti alla pagina. L'uscita
-rimuove i cookie.
+rimuove i cookie e chiude la sessione (vedi sotto).
 
 Poiché un browser allega i cookie da solo, una richiesta autenticata da un cookie che modifica
 qualcosa (qualsiasi metodo tranne GET, HEAD e OPTIONS), e una WebSocket aperta con un cookie,
 deve provenire da un'origine elencata in `CORS_ORIGINS`; altrimenti viene rifiutata (cross-site
 request forgery). I programmi (script, servizi, CI) inviano `Authorization: Bearer` o una API
 key, che un browser non allega mai da solo, e non sono interessati.
+
+L'accesso e l'uscita impostano o rimuovono cookie prima che qualcuno sia autenticato, quindi
+vengono rifiutati quando il browser indica un altro sito in `Origin` o `Referer`: una pagina
+altrove non può far accedere il browser a un account scelto da lei (login CSRF). I programmi
+non inviano nessuna delle due intestazioni.
+
+## Chiusura delle sessioni
+
+Ogni token di accesso e di refresh porta la versione di sessione del suo utente (`ver`, la
+colonna `token_epoch`). Una richiesta, un refresh e l'apertura di una WebSocket vengono
+rifiutati quando la versione del token non è quella corrente dell'utente. La versione viene
+incrementata, chiudendo ogni sessione emessa prima, da:
+
+- un cambio di password (il browser che lo ha fatto riceve nuovi cookie e resta collegato);
+- un reset della password, e una password impostata da un amministratore della piattaforma;
+- una disattivazione (un account riattivato non riottiene le vecchie sessioni);
+- `POST /api/v1/auth/logout-all`, l'uscita da tutti i dispositivi.
+
+L'uscita (`POST /api/v1/auth/session/logout` nel browser, `POST /api/v1/auth/logout` con il
+token di refresh per i programmi) chiude solo quella sessione: l'id del suo token di refresh
+resta in Redis fino alla scadenza del token, e un refresh con esso viene rifiutato. Il token di
+accesso di quella sessione non è confrontato con l'elenco: scade da solo, ed è per questo che
+`ACCESS_TOKEN_EXPIRE_MINUTES` non può superare 60 in staging e in produzione. Una WebSocket già
+aperta non viene chiusa quando la sua sessione termina; l'apertura successiva viene rifiutata.
+
+Il rinnovo di una sessione è limitato per utente (20 ogni 15 minuti per impostazione
+predefinita, categoria `refresh`), non per indirizzo: gli utenti dietro uno stesso indirizzo di
+rete non condividono un limite tra loro né con gli accessi falliti. Un token di refresh non
+valido conta nel limite per indirizzo delle route di accesso.
+
+Un token di accesso emesso da un amministratore della piattaforma per agire come un utente
+(impersonazione) indica l'amministratore nel claim `act`. Mentre viene usato, ogni record di
+log riporta `acting_admin_id` e ogni voce del registro di audit lo registra nei dettagli.
 
 ## Single sign-on
 

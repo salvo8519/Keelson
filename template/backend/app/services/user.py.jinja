@@ -59,6 +59,19 @@ from app.schemas.conversation_share import AdminUserList, AdminUserRead
 logger = logging.getLogger(__name__)
 
 
+def _ending_sessions(update_data: dict[str, Any], *, always: bool = False) -> dict[str, Any]:
+    """Keelson: the update, raising the session version when it changes the credentials.
+
+    A new password (changed, reset or set by an administrator) and a deactivation end every
+    session issued before: tokens carry the version they were issued in
+    (app/core/security.py). The rehash of a password at sign-in keeps the sessions. The
+    increment is done by the database, so concurrent changes cannot cancel each other.
+    """
+    if always or "hashed_password" in update_data or update_data.get("is_active") is False:
+        return {**update_data, "token_epoch": User.token_epoch + 1}
+    return update_data
+
+
 class UserService:
 
     def __init__(self, db: AsyncSession):
@@ -141,8 +154,31 @@ class UserService:
         ]
         return AdminUserList(items=items, total=total)
 
-    async def register(self, user_in: UserRegister) -> User:
-        """Self-registration: a plain user (the first one excepted, see ``_create``)."""
+    async def register(self, user_in: UserRegister) -> User | None:
+        """Self-registration: a plain user (the first one excepted, see ``_create``).
+
+        Keelson: an address that already has an account is not disclosed. Nothing is created,
+        the owner of the address is told by e-mail, and None is returned: the route answers
+        as for a new account. The password is hashed all the same, so the time taken does not
+        tell the two cases apart.
+        """
+        existing = await user_repo.get_by_email(self.db, user_in.email)
+        if existing is not None:
+            await run_in_threadpool(get_password_hash, user_in.password)
+{%- if enable_email %}
+            try:
+                frontend = settings.FRONTEND_URL.rstrip("/")
+                await get_email_service().send_account_exists(
+                    to=existing.email,
+                    name=existing.full_name or existing.email,
+                    login_url=f"{frontend}/login",
+                    reset_url=f"{frontend}/recover-password",
+                    language=existing.locale,
+                )
+            except Exception:
+                logger.exception("account_exists_email_failed", extra={"user_id": str(existing.id)})
+{%- endif %}
+            return None
         return await self._create(user_in, UserRole.USER)
 
     async def create(self, user_in: UserCreate) -> User:
@@ -349,7 +385,11 @@ class UserService:
         if update_data.get("role") is not None:
             update_data["is_app_admin"] = update_data["role"] == UserRole.ADMIN
 
-        return await user_repo.update(self.db, db_user=user, update_data=update_data)
+        return await user_repo.update(self.db, db_user=user, update_data=_ending_sessions(update_data))
+
+    async def end_all_sessions(self, user: User) -> User:
+        """Sign the user out of every device: every token issued so far stops working."""
+        return await user_repo.update(self.db, db_user=user, update_data=_ending_sessions({}, always=True))
 
     async def update_me(self, user: User, user_in: UserUpdateMe) -> User:
         """Update the caller's own profile; an email already in use is refused."""
@@ -372,7 +412,9 @@ class UserService:
         if current_password == new_password:
             raise BadRequestError(message="New password cannot be the same as the current one")
         await user_repo.update(
-            self.db, db_user=user, update_data={"hashed_password": get_password_hash(new_password)}
+            self.db,
+            db_user=user,
+            update_data=_ending_sessions({"hashed_password": get_password_hash(new_password)}),
         )
 
     async def update_avatar(
@@ -438,7 +480,7 @@ class UserService:
         await user_repo.update(
             self.db,
             db_user=user,
-            update_data={"hashed_password": get_password_hash(new_password)},
+            update_data=_ending_sessions({"hashed_password": get_password_hash(new_password)}),
         )
 {%- if enable_session_management and use_jwt %}
         # Revoke any active sessions so a previously-issued refresh token cannot

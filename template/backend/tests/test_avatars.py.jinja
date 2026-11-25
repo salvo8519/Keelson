@@ -5,6 +5,7 @@ then streamed another owner's file and the next upload deleted it.
 """
 
 import uuid
+from pathlib import Path
 
 import pytest
 
@@ -59,6 +60,19 @@ async def test_replacing_an_avatar_does_not_delete_a_foreign_file(tmp_path, monk
     folder = avatar_folder("organization", ORG)
     await replace_avatar(folder, f"avatars/orgs/{OTHER}/logo.png", "mine.png", b"mine")
     assert victim.read_bytes() == b"victim"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("owner", ["user", "organization"])
+async def test_a_stored_avatar_is_found_in_its_folder(tmp_path, monkeypatch, owner) -> None:
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "MEDIA_DIR", tmp_path)
+    folder = avatar_folder(owner, ORG)
+    key = await replace_avatar(folder, None, "../me.png", b"png")
+    assert is_inside(folder, key)
+    path = avatar_path(folder, key)
+    assert path is not None and Path(path).read_bytes() == b"png"
 {%- if enable_teams %}
 
 

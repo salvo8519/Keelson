@@ -57,6 +57,16 @@ class UserRegister(BaseSchema):
         return v.lower()
 
 
+class RegistrationAccepted(BaseSchema):
+    """The answer to every registration.
+
+    The same body for a new and a known address, so the answer does not tell whether an
+    address has an account; the owner of a known address is told by e-mail.
+    """
+
+    message: str = "Registration received. If the address is new, you can sign in now; otherwise check your e-mail."
+
+
 class UserCreate(UserBase):
     """Schema for creating a user (administrators)."""
 

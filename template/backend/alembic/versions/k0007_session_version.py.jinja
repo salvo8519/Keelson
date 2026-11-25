@@ -1,0 +1,35 @@
+{%- if enable_teams and use_postgresql %}
+"""session version of users (Keelson)
+
+Revision ID: k0007_session_version
+Revises: k0006_knowledge_base_writes
+Create Date: 2026-11-25T00:00:00+00:00
+
+Adds users.token_epoch, the version every access and refresh token carries (app/core/
+security.py). Tokens issued before this migration carry no version and are refused: every user
+signs in again once. Row level security is applied again to users so that the application
+login may update the new column: a user's own password change raises it.
+"""
+
+import sqlalchemy as sa
+from alembic import op
+
+from app.db.tenancy import segregation_statements
+
+revision = "k0007_session_version"
+down_revision = "k0006_knowledge_base_writes"
+branch_labels = None
+depends_on = None
+
+
+def upgrade() -> None:
+    op.add_column("users", sa.Column("token_epoch", sa.Integer(), nullable=False, server_default="0"))
+    # Column privileges are granted column by column (FROZEN_COLUMNS): grant the new one.
+    op.execute("SET LOCAL check_function_bodies = off")
+    for statement in segregation_statements({"users"}):
+        op.execute(statement)
+
+
+def downgrade() -> None:
+    op.drop_column("users", "token_epoch")
+{%- endif %}

@@ -25,9 +25,14 @@ Exception handlers in `api/exception_handlers.py` automatically:
 ## Security Patterns
 
 JWT auth (`core/security.py`):
-- `create_access_token(subject)` / `create_refresh_token(subject)` — encode with `jwt.encode()`
-- `verify_token(token)` → `dict | None` — decode with `jwt.decode()`
-- Token payload: `{"exp": ..., "sub": user_id, "type": "access"|"refresh"}`
+- `issue_session_tokens(user)` — access and refresh token in the user's session version;
+  `create_access_token(subject, version=...)` / `create_refresh_token(subject, version=...)` below it
+- `read_session_token(token, ACCESS | REFRESH)` → `SessionClaims | None`; then
+  `claims.is_current_for(user)` (active user, current `token_epoch`)
+- Token payload: `{"exp", "sub": user_id, "type": "access"|"refresh", "ver": token_epoch}`,
+  plus `jti` (refresh) and `act` (impersonation)
+- A change of credentials raises `users.token_epoch` (`UserService`), ending every session
+- User content is served through `app/core/user_content.py` (sandbox, nosniff, RFC 6266 names)
 
 Password hashing (pwdlib):
 - `get_password_hash(password)` — Argon2id

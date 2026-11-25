@@ -1,8 +1,11 @@
 """Security utilities for JWT authentication."""
 
 import hashlib
+import secrets
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from uuid import UUID
 
 import jwt
 from pwdlib import PasswordHash
@@ -101,32 +104,95 @@ def verify_idp_token(token: str) -> dict[str, Any] | None:
 {%- endif %}
 
 
+# Keelson: every access and refresh token carries the session version of its user (``ver``),
+# the value of ``users.token_epoch`` when it was issued. Raising the version (a password change
+# or reset, a password set by an administrator, a deactivation, a sign-out from every device)
+# ends every session issued before, as ``magic_link_epoch`` does for sign-in links. A refresh
+# token also has an id (``jti``), so that signing out can end that session alone
+# (``app/core/revoked_tokens.py``). An access token issued for an impersonation names the
+# administrator in ``act`` (RFC 8693, section 4.1).
+ACCESS = "access"
+REFRESH = "refresh"
+
+
+def _encode(claims: dict[str, Any], lifetime: timedelta) -> str:
+    claims["exp"] = datetime.now(UTC) + lifetime
+    return jwt.encode(claims, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+
 def create_access_token(
     subject: str | Any,
+    *,
+    version: int,
     expires_delta: timedelta | None = None,
+    actor: str | Any | None = None,
 ) -> str:
-    """Create a JWT access token."""
-    if expires_delta:
-        expire = datetime.now(UTC) + expires_delta
-    else:
-        expire = datetime.now(UTC) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-
-    to_encode = {"exp": expire, "sub": str(subject), "type": "access"}
-    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    """Create a JWT access token for the session ``version`` of the user ``subject``."""
+    claims: dict[str, Any] = {"sub": str(subject), "type": ACCESS, "ver": version}
+    if actor is not None:
+        claims["act"] = {"sub": str(actor)}
+    lifetime = expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    return _encode(claims, lifetime)
 
 
 def create_refresh_token(
     subject: str | Any,
+    *,
+    version: int,
     expires_delta: timedelta | None = None,
 ) -> str:
-    """Create a JWT refresh token."""
-    if expires_delta:
-        expire = datetime.now(UTC) + expires_delta
-    else:
-        expire = datetime.now(UTC) + timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES)
+    """Create a JWT refresh token for the session ``version`` of the user ``subject``."""
+    claims: dict[str, Any] = {
+        "sub": str(subject),
+        "type": REFRESH,
+        "ver": version,
+        "jti": secrets.token_urlsafe(16),
+    }
+    lifetime = expires_delta or timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES)
+    return _encode(claims, lifetime)
 
-    to_encode = {"exp": expire, "sub": str(subject), "type": "refresh"}
-    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+def issue_session_tokens(user: Any) -> tuple[str, str]:
+    """A new access and refresh token for ``user``, in its current session version."""
+    return (
+        create_access_token(user.id, version=user.token_epoch),
+        create_refresh_token(user.id, version=user.token_epoch),
+    )
+
+
+@dataclass(frozen=True)
+class SessionClaims:
+    """The verified claims of an access or refresh token."""
+
+    user_id: UUID
+    version: int | None
+    actor_id: str | None
+    token_id: str | None
+    expires_at: int
+
+    def is_current_for(self, user: Any) -> bool:
+        """The token belongs to an active user's current session."""
+        return bool(user.is_active) and self.version == user.token_epoch
+
+
+def read_session_token(token: str | None, token_type: str) -> SessionClaims | None:
+    """The claims of a valid token of ``token_type``, or None (signature, expiry, type, subject)."""
+    payload = verify_token(token) if token else None
+    if payload is None or payload.get("type") != token_type:
+        return None
+    try:
+        user_id = UUID(str(payload.get("sub")))
+    except ValueError:
+        return None
+    version = payload.get("ver")
+    actor = payload.get("act")
+    return SessionClaims(
+        user_id=user_id,
+        version=version if isinstance(version, int) else None,
+        actor_id=str(actor["sub"]) if isinstance(actor, dict) and actor.get("sub") else None,
+        token_id=str(payload["jti"]) if payload.get("jti") else None,
+        expires_at=int(payload.get("exp", 0)),
+    )
 
 
 def verify_token(token: str) -> dict[str, Any] | None:

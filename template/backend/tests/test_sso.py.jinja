@@ -213,7 +213,7 @@ async def test_the_code_is_exchanged_once_for_session_cookies(
 ) -> None:
     from app.core.config import settings
 
-    user = SimpleNamespace(id=uuid4(), is_active=True)
+    user = SimpleNamespace(id=uuid4(), is_active=True, token_epoch=0)
     users.get_by_id = AsyncMock(return_value=user)
     mock_redis.raw = MagicMock()
     mock_redis.raw.getdel = AsyncMock(side_effect=[str(user.id), None])

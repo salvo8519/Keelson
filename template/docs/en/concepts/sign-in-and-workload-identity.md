@@ -11,6 +11,12 @@ Passwords are hashed with Argon2id. Hashes of earlier versions (bcrypt) are veri
 replaced at the next sign-in. A sign-in with an unknown address does the same hashing work, so
 response times do not reveal which addresses are registered.
 
+Registration does not reveal them either: it answers `202 Accepted` with the same message for
+a new address and for one that already has an account. Nothing is created for a known address,
+and its owner receives an e-mail with links to sign in and to reset the password. Signing in
+afterwards with the password just chosen still tells a known address from a new one: closing
+that needs e-mail verification before the first sign-in.
+
 ## The browser session
 
 In the browser, the access and refresh tokens are HttpOnly cookies set by the API: no script
@@ -23,13 +29,46 @@ in the page can read them, so a script injected into the page cannot steal the s
 
 Both are `SameSite=Lax`, and `Secure` outside local development. When the access token
 expires, the frontend renews the session once from the refresh cookie and repeats the request;
-the new tokens are set as cookies, never returned to the page. Signing out removes the cookies.
+the new tokens are set as cookies, never returned to the page. Signing out removes the cookies
+and ends the session (see below).
 
 Because a browser attaches cookies by itself, a request authenticated by a cookie that changes
 something (any method but GET, HEAD and OPTIONS), and a WebSocket opened with a cookie, must
 come from an origin listed in `CORS_ORIGINS`; otherwise it is refused (cross-site request
 forgery). Programs (scripts, services, CI) send `Authorization: Bearer` or an API key, which a
 browser never attaches by itself, and are not affected.
+
+Signing in and signing out set or remove cookies before anyone is authenticated, so they are
+refused when the browser names another site in `Origin` or `Referer`: a page elsewhere cannot
+sign the browser into an account of its choice (login CSRF). Programs send neither header.
+
+## Ending sessions
+
+Every access and refresh token carries the session version of its user (`ver`, the
+`token_epoch` column). A request, a refresh and a WebSocket handshake are refused when the
+version of their token is not the user's current one. The version is raised, ending every
+session issued before, by:
+
+- a password change (the browser that made it receives new cookies and stays signed in);
+- a password reset, and a password set by a platform administrator;
+- a deactivation (a reactivated account does not get its old sessions back);
+- `POST /api/v1/auth/logout-all`, signing out of every device.
+
+Signing out (`POST /api/v1/auth/session/logout` in the browser, `POST /api/v1/auth/logout`
+with the refresh token for programs) ends that session only: the id of its refresh token is
+kept in Redis until the token would have expired, and a refresh with it is refused. The access
+token of that session is not checked against the list: it expires on its own, which is why
+`ACCESS_TOKEN_EXPIRE_MINUTES` may not exceed 60 in staging and production. A WebSocket already
+open is not closed when its session ends; the next handshake is refused.
+
+Refreshing a session is limited per user (20 every 15 minutes by default, category `refresh`),
+not per address: users behind one network address do not share a limit with each other or with
+failed sign-ins. An invalid refresh token counts against the per-address limit of the sign-in
+routes.
+
+An access token issued by a platform administrator to act as a user (impersonation) names the
+administrator in the `act` claim. While it is used, every log record carries
+`acting_admin_id`, and every audit entry records it in its details.
 
 ## Single sign-on
 
