@@ -1,4 +1,4 @@
-<!-- i18n source: concepts/tenancy-and-api-keys.md source_hash: 17909c8e69a8 -->
+<!-- i18n source: concepts/tenancy-and-api-keys.md source_hash: a77e9b91da70 -->
 # Tenancy e API key
 
 I progetti Keelson servono più organizzazioni con un solo deploy. Questa pagina spiega come
@@ -10,6 +10,12 @@ Ogni utente ha un'organizzazione personale e può appartenere ad altre, con un r
 admin, member o viewer. Il frontend permette di scegliere l'organizzazione attiva; ogni
 richiesta la porta nell'header `X-Organization-Id`, e il backend verifica l'appartenenza prima
 di usarla.
+
+Il database separa i tenant in base all'appartenenza: le richieste di un utente possono leggere
+le righe di tutte le organizzazioni a cui appartiene, qualunque sia quella attiva.
+L'organizzazione attiva decide dove vanno i nuovi dati dell'organizzazione e cosa elencano le
+schermate; non è un secondo confine tra le organizzazioni dell'utente. Fanno eccezione le API
+key: una chiave agisce solo per la sua organizzazione.
 
 ## Isolamento nel database
 
@@ -26,7 +32,7 @@ e ogni transazione del login applicativo lo scrive in impostazioni locali alla t
 | Principal | Impostato da | Vede |
 | --- | --- | --- |
 | Utente | un JWT o una sessione | le proprie righe, quelle delle sue organizzazioni, le persone con cui condivide un'organizzazione |
-| Organizzazione | l'organizzazione attiva, dopo la verifica dell'appartenenza | restringe l'utente a quell'organizzazione |
+| Organizzazione | l'organizzazione attiva, dopo la verifica dell'appartenenza | dove vengono scritti i nuovi dati dell'organizzazione; il confine nel database resta l'appartenenza dell'utente |
 | Servizio | una API key | i dati della sua organizzazione, non le conversazioni private dei membri; non può gestire le chiavi |
 | Nessuno | nessuna autenticazione | niente: le policy falliscono in modo chiuso |
 

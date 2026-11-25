@@ -10,6 +10,11 @@ member or viewer. The frontend lets the user choose the active organization; eve
 carries it in the `X-Organization-Id` header, and the backend checks the membership before
 using it.
 
+The database separates tenants by membership: a user's requests can read the rows of every
+organization the user belongs to, whichever is active. The active organization decides where
+new organization data goes and what the screens list; it is not a second boundary inside the
+user's own organizations. API keys are the exception: a key acts for its one organization only.
+
 ## Isolation in the database
 
 The database enforces the separation itself, so a forgotten filter in the code cannot leak
@@ -25,7 +30,7 @@ every transaction of the application login writes it into transaction-local sett
 | Principal | Set by | Sees |
 | --- | --- | --- |
 | User | a JWT or a session | their own rows, their organizations' rows, the people they share an organization with |
-| Organization | the active organization, after the membership check | narrows the user to that organization |
+| Organization | the active organization, after the membership check | where new organization data is written; the database boundary stays the user's memberships |
 | Service | an API key | its organization's data, not members' private conversations; it cannot manage keys |
 | None | no authentication | nothing: the policies fail closed |
 
