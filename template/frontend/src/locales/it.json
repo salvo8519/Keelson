@@ -140,8 +140,10 @@
   "User updated successfully": "Utente aggiornato",
   "Users": "Utenti",
   "Viewer": "Lettore",
-  "Welcome back, nice to see you again!!!": "Bentornato.",
   "You": "Tu",
   "Your account has been successfully deleted": "Il tuo account è stato eliminato",
-  "or": "oppure"
+  "or": "oppure",
+  "Welcome back.": "Bentornato.",
+  "Hello, {{name}}": "Ciao, {{name}}",
+  "Version {{version}}": "Versione {{version}}"
 }

@@ -1,3 +1,7 @@
 """{{ project_description }}"""
 
-__version__ = "0.1.0"
+from importlib import metadata
+
+# Keelson: one version for the whole project, VERSION at its root (scripts/version.py copies it
+# into pyproject.toml); the installed package carries it.
+__version__ = metadata.version("{{ project_slug }}")

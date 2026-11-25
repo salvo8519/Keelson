@@ -12,7 +12,7 @@ SHELL := /bin/bash
 	create-admin user-create user-list celery-worker celery-beat celery-flower \
 	taskiq-worker taskiq-scheduler docker-db docker-db-stop docker-redis docker-redis-stop \
 	docker-shell skills skills-check skills-scan i18n-extract i18n-check docs docs-serve \
-	docs-check upgrade upgrade-dry-run clean
+	docs-check version bump-version upgrade upgrade-dry-run clean
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*## "} \
@@ -226,7 +226,8 @@ test: ## Run the backend tests (PostgreSQL tests need a database: make docker-db
 test-cov: ## Run the backend tests with a coverage report (htmlcov/)
 	uv run --directory backend pytest tests/ -v --cov=app --cov-report=html --cov-report=term-missing
 
-lint: ## Lint, format check and type check of the backend
+lint: ## Lint, format check and type check of the backend; versions in step with VERSION
+	python3 scripts/version.py check
 	uv run --directory backend ruff check app tests cli
 	uv run --directory backend ruff format app tests cli --check
 	uv run --directory backend ty check
@@ -316,6 +317,16 @@ docs-serve: ## Preview the documentation (DOCS_LANG=it for the Italian edition)
 
 docs-check: ## Fail when a translation is missing or older than its English page
 	$(DOCS_RUN) scripts/i18n.py check
+
+##@ Version (VERSION is the only place to change it)
+
+version: ## Print the project version
+	@python3 scripts/version.py show
+
+bump-version: ## Raise the version: make bump-version part=patch|minor|major
+	@test -n "$(part)" || { echo "usage: make bump-version part=patch|minor|major"; exit 1; }
+	python3 scripts/version.py bump $(part)
+	cd backend && uv lock --quiet
 
 ##@ Maintenance
 

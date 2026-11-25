@@ -27,7 +27,11 @@ export const Route = createFileRoute("/_layout/settings")({
 
 function UserSettings() {
   const { user: currentUser } = useAuth()
-  const finalTabs = isAdmin(currentUser) ? tabsConfig.slice(0, 3) : tabsConfig
+  // An administrator does not delete their own account from here (upstream hid the last tab;
+  // Keelson has three tabs, so the danger zone is filtered by name).
+  const finalTabs = isAdmin(currentUser)
+    ? tabsConfig.filter((tab) => tab.value !== "danger-zone")
+    : tabsConfig
 
   if (!currentUser) {
     return null

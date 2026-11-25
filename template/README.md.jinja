@@ -50,7 +50,9 @@
 ## Quick start
 
 ```bash
-make quickstart      # backend/.env from the example, development stack, migrations{% if use_jwt %}, admin user{% endif %}
+make quickstart      # first run: backend/.env from the example, development stack, migrations{% if use_jwt %}, admin user{% endif %}
+make dev             # the development stack, every day after the first run (reload on change)
+make prod-local      # the production stack on this machine: production settings, local secrets
 make help            # every command, by area
 ```
 
@@ -231,29 +233,17 @@ For production, **never** commit secrets — `backend/.env` is gitignored. Fill 
 | `make client` | The contract, then the frontend client generated from it |
 {%- endif %}
 | `make docs-serve` | Preview the documentation |
-
----|---|
-| `make test` | Run pytest |
-| `make lint` | Run ruff check + format check + ty |
-| `make format` | Auto-format with ruff |
-| `make db-migrate` | Generate a new migration from model changes (interactive) |
-| `make db-upgrade` | Apply pending migrations |
-| `make db-downgrade` | Roll back one migration |
-| `make db-current` | Show current head |
+| `make db-upgrade` / `make db-downgrade` | Apply pending migrations / roll back one |
 {%- if use_jwt %}
-| `make create-admin` | Interactive admin creation |
-| `make user-list` | List all users |
+| `make user-list` | List the users |
 {%- endif %}
-{%- if background_tasks == "celery" %}
-| `make celery-worker` | Run Celery worker locally |
-| `make celery-beat` | Run Celery beat |
-| `make celery-flower` | Open Flower UI at <http://localhost:5555> |
-{%- elif background_tasks == "taskiq" %}
-| `make taskiq-worker` | Run Taskiq worker locally |
-| `make taskiq-scheduler` | Run Taskiq scheduler |
-{%- elif background_tasks == "prefect" %}
-| `make dev` | Starts the Prefect server + runner (UI at <http://localhost:4200>) |
-{%- endif %}
+| `make version` | Print the project version |
+| `make bump-version part=patch` | Raise the version (`patch`, `minor` or `major`) |
+
+The version lives in one file, `VERSION`. `make bump-version` changes it and copies it into
+`backend/pyproject.toml` and `frontend/package.json`, which the two images are built from;
+`make lint` fails if a copy is out of step. The backend publishes it in the OpenAPI document
+and the frontend shows it at the bottom of the sidebar.
 
 ---
 {%- if enable_rag %}

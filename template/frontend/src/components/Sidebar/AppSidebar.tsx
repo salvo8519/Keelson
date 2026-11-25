@@ -42,6 +42,12 @@ export function AppSidebar() {
         <LanguageSwitcher />
         <SidebarAppearance />
         <User user={currentUser} />
+        <p
+          className="px-2 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden"
+          data-testid="app-version"
+        >
+          {t("Version {{version}}", { version: __APP_VERSION__ })}
+        </p>
       </SidebarFooter>
     </Sidebar>
   )

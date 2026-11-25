@@ -1,4 +1,4 @@
-<!-- i18n source: README.md source_hash: ac3ec895b525 -->
+<!-- i18n source: README.md source_hash: 77282705a53a -->
 <p align="center">
   <img src="docs/_shared/assets/brand/mark.svg" alt="Keelson" width="96">
 </p>
@@ -49,9 +49,10 @@ vostro team la parte che è solo vostra.
 ```bash
 uvx copier copy --trust https://github.com/salvo8519/keelson my_service
 cd my_service
-make quickstart      # configurazione, stack di sviluppo, migrazioni, un admin di sviluppo
-make help            # ogni comando, per area
+make quickstart      # primo avvio: configurazione, stack di sviluppo, migrazioni, un admin di sviluppo
+make dev             # lo stack di sviluppo, ogni giorno dopo il primo avvio (ricarica alle modifiche)
 make prod-local      # lo stack di produzione su questa macchina: impostazioni di produzione, segreti locali
+make help            # ogni comando, per area
 ```
 
 Keelson usa [Copier](https://copier.readthedocs.io): pone alcune domande, genera il progetto e
@@ -97,7 +98,7 @@ registrata con la sua motivazione.
 | Dati e retrieval | Ingestione dei documenti nei worker in background (PDF, Word, testo), embedding e reranking facoltativo, sorgenti sincronizzate, un tenant su ogni vettore, migrazioni Alembic | test di tenancy del retrieval e di ambito della ricerca, migrazioni in avanti e indietro |
 | API | Contratto OpenAPI versionato, controllo delle modifiche incompatibili rispetto al branch di destinazione, client del frontend generato, riferimento Scalar white label, errori RFC 9457 nella lingua dell'utente | controlli di disallineamento del contratto e del client nella pipeline |
 | Sicurezza | Oscuramento di messaggi, campi ed eccezioni nei log; chiavi ruotabili per i segreti a riposo; traccia di audit in sola aggiunta; la produzione rifiuta i segreti di sviluppo; gitleaks, scansioni di dipendenze e immagini, lint di sicurezza, SBOM | test-trappola sui log e test delle impostazioni di produzione, controlli della pipeline |
-| Operatività | Log JSON con request id e trace id, OpenTelemetry, Prometheus, sonde di salute; `make prod-local`; Compose con Traefik e Let's Encrypt; manifest Kubernetes | ogni stack Compose risolto nei test |
+| Operatività | Log JSON con request id e trace id, OpenTelemetry, Prometheus, sonde di salute; `make dev` e `make prod-local`; un solo file `VERSION`, aggiornato con `make bump-version` e mostrato nell'interfaccia; Compose con Traefik e Let's Encrypt; manifest Kubernetes | ogni stack Compose risolto nei test; copie della versione verificate da `make lint` |
 | Lingue | Inglese e italiano in errori delle API, e-mail, interfaccia e documentazione | controlli dei cataloghi nella pipeline |
 
 | Livello | Stack |

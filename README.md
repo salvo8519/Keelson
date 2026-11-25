@@ -45,9 +45,10 @@ tests that run in its pipeline, and leaves your team the part that is specific t
 ```bash
 uvx copier copy --trust https://github.com/salvo8519/keelson my_service
 cd my_service
-make quickstart      # configuration, development stack, migrations, a development admin
-make help            # every command, by area
+make quickstart      # first run: configuration, development stack, migrations, a development admin
+make dev             # the development stack, every day after the first run (reload on change)
 make prod-local      # the production stack on this machine: production settings, local secrets
+make help            # every command, by area
 ```
 
 Keelson uses [Copier](https://copier.readthedocs.io): it asks a few questions, renders the
@@ -92,7 +93,7 @@ line) uses the owner login through system sessions, each logged with its reason.
 | Data and retrieval | Document ingestion in background workers (PDF, Word, text), embeddings and optional reranking, sync sources, a tenant on every vector, Alembic migrations | retrieval tenancy and search scope tests, migrations up and down |
 | API | Versioned OpenAPI contract, breaking-change check against the target branch, generated frontend client, white-label Scalar reference, RFC 9457 errors in the user's language | contract drift and client checks in the pipeline |
 | Security | Redaction of messages, fields and exceptions in logs; rotatable keys for secrets at rest; append-only audit trail; production refuses development secrets; gitleaks, dependency and image scans, security lint, SBOM | log trap and production settings tests, pipeline gates |
-| Operations | JSON logs with request and trace ids, OpenTelemetry, Prometheus, health probes; `make prod-local`; Compose with Traefik and Let's Encrypt; Kubernetes manifests | every Compose stack resolved in the tests |
+| Operations | JSON logs with request and trace ids, OpenTelemetry, Prometheus, health probes; `make dev` and `make prod-local`; one `VERSION` file, bumped with `make bump-version` and shown in the interface; Compose with Traefik and Let's Encrypt; Kubernetes manifests | every Compose stack resolved in the tests; version copies checked by `make lint` |
 | Languages | English and Italian in API errors, e-mails, the interface and the documentation | catalog checks in the pipeline |
 
 | Layer | Stack |
