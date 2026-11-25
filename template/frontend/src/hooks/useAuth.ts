@@ -14,16 +14,14 @@ import { handleError } from "@/utils"
 import useCustomToast from "./useCustomToast"
 
 const isLoggedIn = () => {
-  return session.accessToken() !== null
+  return session.isSignedIn()
 }
 
-// Keelson: stores the tokens of a sign-in (password or single sign-on) and returns true when
-// the user's saved language differs from the interface's; the page is then reloaded in it.
-const completeSignIn = async (
-  accessToken: string,
-  refreshToken: string,
-): Promise<boolean> => {
-  session.signIn(accessToken, refreshToken)
+// Keelson: completes a sign-in (password or single sign-on) once the API has set the session
+// cookies. Returns true when the user's saved language differs from the interface's; the page
+// is then reloaded in it.
+const completeSignIn = async (): Promise<boolean> => {
+  session.markSignedIn()
   const { locale } = (await UsersService.readCurrentUser()).data
   if (isSupported(locale) && locale !== currentLanguage()) {
     setLanguage(locale, { reload: false })
@@ -55,13 +53,9 @@ const useAuth = () => {
   })
 
   const login = async (data: AccessToken): Promise<boolean> => {
-    const response = await AuthService.login({
-      body: data,
-    })
-    return completeSignIn(
-      response.data.access_token,
-      response.data.refresh_token,
-    )
+    // The API sets the session cookies; the tokens in the body are for programs.
+    await AuthService.login({ body: data })
+    return completeSignIn()
   }
 
   const loginMutation = useMutation({
@@ -76,7 +70,8 @@ const useAuth = () => {
     onError: handleError.bind(showErrorToast),
   })
 
-  const logout = () => {
+  const logout = async () => {
+    await AuthService.endSession().catch(() => undefined)
     session.signOut()
     queryClient.clear()
     navigate({ to: "/login" })

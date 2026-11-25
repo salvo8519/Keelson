@@ -19,6 +19,7 @@ on every change, not written once.
 | Retrieval tenancy | A.8.3 | C1.1 | Every vector carries its tenant; a search without a reader returns nothing | `app/services/rag/tenancy.py`, `tests/test_rag_tenancy.py`, `tests/test_rag_search_scope.py` |
 | Authentication | A.8.5 | CC6.1, CC6.2 | Single sign-on with OpenID Connect (code flow with PKCE, verified ID token, accounts matched only by verified addresses); no token in URLs | `app/core/oidc.py`, `tests/test_sso.py` |
 | Authentication information | A.5.17 | CC6.1 | Passwords hashed with Argon2id, older hashes upgraded at sign-in; sign-in time does not reveal registered addresses; API key secrets stored as a keyed hash | `app/core/security.py`, `app/core/api_keys.py`, `tests/test_security.py`, `tests/test_services.py` |
+| Session protection | A.8.5, A.8.26 | CC6.1, CC6.7 | Browser tokens in HttpOnly, SameSite cookies, out of reach of page scripts; cookie-authenticated writes and WebSockets accepted only from trusted origins (CSRF) | `app/core/session_cookies.py`, `tests/test_session_cookies.py` |
 | Machine identities | A.5.16, A.8.5 | CC6.2 | CI jobs authenticate with their platform's OpenID Connect token against a configured trust (issuer, audience, repository, branch); credentials expire within the hour | `app/core/workload_identity.py`, `tests/test_workload_identity.py` |
 | API key lifecycle | A.5.18 | CC6.2 | Per organization, with scopes, expiry, rotation with a grace period, revocation and rate limits | `app/services/api_key.py`, `tests/test_api_keys.py` |
 

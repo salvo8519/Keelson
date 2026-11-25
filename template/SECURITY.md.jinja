@@ -34,6 +34,7 @@ We aim to acknowledge within 48h and ship a fix within 7 days for high-severity 
 - **Admin API key** — static `settings.API_KEY` matched via `X-API-Key` header for service-to-service calls. Constant-time compared with `secrets.compare_digest()`.
 {%- endif %}
 
+- **Browser session** — access and refresh tokens in HttpOnly, `SameSite=Lax` cookies (`Secure` outside local development), out of reach of scripts in the page; cookie-authenticated writes and WebSocket handshakes are accepted only from origins in `CORS_ORIGINS` (CSRF). Programs use `Authorization: Bearer` or API keys.
 - **Single sign-on** — any OpenID Connect provider, configured at run time (`OIDC_PROVIDERS`): code flow with PKCE, ID token verified, an existing account is matched only by an address the provider has verified (or a trusted company directory). The frontend receives a one-time code, never tokens in a URL.
 - **CI workload identity** — GitHub Actions and GitLab CI jobs exchange their OpenID Connect token, checked against `WORKLOAD_IDENTITIES` (issuer, audience, repository and branch claims), for a short-lived credential acting for one organization with API key scopes. No secret is stored in the CI.
 

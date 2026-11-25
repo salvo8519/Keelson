@@ -1,21 +1,24 @@
-// Keelson: the signed-in session in the browser. One place for the storage keys, so the API
-// client, the auth hook and the organization switcher agree.
 import type { UserRead } from "@/client"
 
-const ACCESS_TOKEN = "access_token"
-const REFRESH_TOKEN = "refresh_token"
+// Keelson: the signed-in session in the browser. The access and refresh tokens are HttpOnly
+// cookies set by the API: no script in the page can read them, so an injected script cannot
+// steal them. This module keeps only what is not secret: whether the user signed in (to route
+// without a request) and the active organization.
+const SIGNED_IN = "signed_in"
 const ACTIVE_ORGANIZATION = "active_organization_id"
+const STALE_TOKENS = ["access_token", "refresh_token"]
 
 export const session = {
-  accessToken: () => localStorage.getItem(ACCESS_TOKEN),
-  signIn: (accessToken: string, refreshToken: string) => {
-    localStorage.setItem(ACCESS_TOKEN, accessToken)
-    localStorage.setItem(REFRESH_TOKEN, refreshToken)
+  isSignedIn: () => localStorage.getItem(SIGNED_IN) === "1",
+  markSignedIn: () => {
+    localStorage.setItem(SIGNED_IN, "1")
+    // Tokens stored by an earlier version are removed for good.
+    for (const key of STALE_TOKENS) localStorage.removeItem(key)
   },
   signOut: () => {
-    localStorage.removeItem(ACCESS_TOKEN)
-    localStorage.removeItem(REFRESH_TOKEN)
+    localStorage.removeItem(SIGNED_IN)
     localStorage.removeItem(ACTIVE_ORGANIZATION)
+    for (const key of STALE_TOKENS) localStorage.removeItem(key)
   },
   activeOrganization: () => localStorage.getItem(ACTIVE_ORGANIZATION),
   setActiveOrganization: (organizationId: string) =>

@@ -338,6 +338,9 @@ msgstr "Limite di richieste superato"
 msgid "Rating not found"
 msgstr "Valutazione non trovata"
 
+msgid "Request origin not allowed"
+msgstr "Origine della richiesta non consentita"
+
 msgid "Reset link is invalid or has expired"
 msgstr "Il link di reimpostazione non è valido o è scaduto"
 

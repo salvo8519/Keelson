@@ -11,6 +11,26 @@ Passwords are hashed with Argon2id. Hashes of earlier versions (bcrypt) are veri
 replaced at the next sign-in. A sign-in with an unknown address does the same hashing work, so
 response times do not reveal which addresses are registered.
 
+## The browser session
+
+In the browser, the access and refresh tokens are HttpOnly cookies set by the API: no script
+in the page can read them, so a script injected into the page cannot steal the session.
+
+| Cookie | Sent to | Lifetime |
+| --- | --- | --- |
+| `access_token` | every API request | the access token's (`ACCESS_TOKEN_EXPIRE_MINUTES`) |
+| `refresh_token` | `/api/v1/auth/session` only | the refresh token's (`REFRESH_TOKEN_EXPIRE_MINUTES`) |
+
+Both are `SameSite=Lax`, and `Secure` outside local development. When the access token
+expires, the frontend renews the session once from the refresh cookie and repeats the request;
+the new tokens are set as cookies, never returned to the page. Signing out removes the cookies.
+
+Because a browser attaches cookies by itself, a request authenticated by a cookie that changes
+something (any method but GET, HEAD and OPTIONS), and a WebSocket opened with a cookie, must
+come from an origin listed in `CORS_ORIGINS`; otherwise it is refused (cross-site request
+forgery). Programs (scripts, services, CI) send `Authorization: Bearer` or an API key, which a
+browser never attaches by itself, and are not affected.
+
 ## Single sign-on
 
 Any OpenID Connect provider can be offered on the sign-in page: Google, Microsoft Entra ID,

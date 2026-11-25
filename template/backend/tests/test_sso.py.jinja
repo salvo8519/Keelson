@@ -150,17 +150,22 @@ async def test_a_refused_identity_returns_to_the_sign_in_page_with_a_reason(
 
 
 @pytest.mark.anyio
-async def test_the_code_is_exchanged_once(client: AsyncClient, users, mock_redis: MagicMock) -> None:
+async def test_the_code_is_exchanged_once_for_session_cookies(
+    client: AsyncClient, users, mock_redis: MagicMock
+) -> None:
+    from app.core.config import settings
+
     user = SimpleNamespace(id=uuid4(), is_active=True)
     users.get_by_id = AsyncMock(return_value=user)
     mock_redis.raw = MagicMock()
     mock_redis.raw.getdel = AsyncMock(side_effect=[str(user.id), None])
-    body = {"code": "c" * 43}
+    body, headers = {"code": "c" * 43}, {"Origin": settings.CORS_ORIGINS[0]}
 
-    first = await client.post("/api/v1/oauth/exchange", json=body)
-    second = await client.post("/api/v1/oauth/exchange", json=body)
+    first = await client.post("/api/v1/oauth/exchange", json=body, headers=headers)
+    second = await client.post("/api/v1/oauth/exchange", json=body, headers=headers)
 
-    assert first.status_code == 200 and first.json()["access_token"]
+    assert first.status_code == 204 and first.content == b"", "no token in the body"
+    assert any("HttpOnly" in c for c in first.headers.get_list("set-cookie"))
     assert second.status_code == 401
 
 

@@ -23,7 +23,7 @@ from uuid import UUID
 {%- endif %}
 {%- endif %}
 
-from fastapi import APIRouter{% if not use_delegated_auth %}, Depends, Request{% endif %}{% if not use_delegated_auth %}, status{% endif %}
+from fastapi import APIRouter{% if not use_delegated_auth %}, Depends, Request, Response{% endif %}{% if not use_delegated_auth %}, status{% endif %}
 {%- if not use_delegated_auth %}
 from fastapi.security import OAuth2PasswordRequestForm
 {%- endif %}
@@ -60,6 +60,12 @@ from app.schemas.password_reset import (
 )
 {%- endif %}
 {%- if not use_delegated_auth %}
+from app.core.session_cookies import (
+    REFRESH_COOKIE,
+    clear_session_cookies,
+    require_trusted_origin,
+    set_session_cookies,
+)
 from app.schemas.token import RefreshTokenRequest, Token
 from app.schemas.user import UserCreate, UserRead
 {%- else %}
@@ -90,6 +96,7 @@ router = APIRouter()
 )
 async def login(
     request: Request,
+    response: Response,
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
     user_service: AuthUserSvc,
 {%- if enable_session_management %}
@@ -110,6 +117,9 @@ async def login(
         user_agent=request.headers.get("User-Agent"),
     )
 {%- endif %}
+    # Keelson: browsers keep the session in HttpOnly cookies (app/core/session_cookies.py);
+    # programs read the tokens from the body, as OAuth2 password clients expect.
+    set_session_cookies(response, access_token, refresh_token)
     return Token(access_token=access_token, refresh_token=refresh_token)
 
 
@@ -128,6 +138,21 @@ async def register(
     """Register a new user."""
     user = await user_service.register(user_in)
     return user
+
+
+{%- if not enable_session_management %}
+
+
+def _refresh_subject(token: str | None) -> UUID:
+    """The user id of a valid refresh token (body or cookie)."""
+    payload = verify_token(token) if token else None
+    if not payload or payload.get("type") != "refresh":
+        raise AuthenticationError(message="Invalid or expired refresh token")
+    try:
+        return UUID(str(payload.get("sub")))
+    except ValueError as exc:
+        raise AuthenticationError(message="Invalid refresh token") from exc
+{%- endif %}
 
 
 @router.post("/refresh", response_model=Token)
@@ -150,17 +175,7 @@ async def refresh_token(
 {%- else %}
 
     # No DB-backed sessions — validate the refresh JWT directly.
-    payload = verify_token(body.refresh_token)
-    if not payload or payload.get("type") != "refresh":
-        raise AuthenticationError(message="Invalid or expired refresh token")
-    subject = payload.get("sub")
-    if not subject:
-        raise AuthenticationError(message="Invalid refresh token")
-    try:
-        user_id = UUID(str(subject))
-    except ValueError as exc:
-        raise AuthenticationError(message="Invalid refresh token") from exc
-    user = await user_service.get_by_id(user_id)
+    user = await user_service.get_by_id(_refresh_subject(body.refresh_token))
 {%- endif %}
     if not user.is_active:
         raise AuthenticationError(message="User account is disabled")
@@ -196,6 +211,39 @@ async def logout(
 {%- else %}
     """No-op without session tracking. Clients drop their JWTs locally."""
     return None
+{%- endif %}
+{%- if not enable_session_management %}
+
+
+@router.post(
+    "/session/refresh",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+{%- if enable_rate_limiting %}
+    dependencies=[AuthRateLimit],
+{%- endif %}
+)
+async def refresh_session(request: Request, response: Response, user_service: AuthUserSvc) -> None:
+    """Browsers: renew the session from the refresh cookie.
+
+    The new tokens are set as HttpOnly cookies and never returned in the body, so a script in
+    the page cannot obtain them.
+    """
+    require_trusted_origin(request)
+    user = await user_service.get_by_id(_refresh_subject(request.cookies.get(REFRESH_COOKIE)))
+    if not user.is_active:
+        raise AuthenticationError(message="User account is disabled")
+    set_session_cookies(
+        response,
+        create_access_token(subject=str(user.id)),
+        create_refresh_token(subject=str(user.id)),
+    )
+
+
+@router.post("/session/logout", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
+async def end_session(response: Response) -> None:
+    """Browsers: sign out by removing the session cookies."""
+    clear_session_cookies(response)
 {%- endif %}
 {%- endif %}
 

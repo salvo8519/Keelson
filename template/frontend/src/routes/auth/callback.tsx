@@ -1,5 +1,6 @@
 // Keelson: back from a single sign-on provider. The backend sent a one-time code (never the
-// tokens, which would stay in the browser history); it is exchanged here for the session.
+// tokens, which would stay in the browser history); it is exchanged here for the session,
+// which the API sets as HttpOnly cookies.
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useEffect, useRef } from "react"
 import { z } from "zod"
@@ -29,9 +30,7 @@ function SsoCallback() {
       return
     }
     OauthService.exchangeCode({ body: { code } })
-      .then((response) =>
-        completeSignIn(response.data.access_token, response.data.refresh_token),
-      )
+      .then(() => completeSignIn())
       .then((languageChanged) => {
         // Remove the code from the address bar and the history.
         window.history.replaceState(null, "", "/")

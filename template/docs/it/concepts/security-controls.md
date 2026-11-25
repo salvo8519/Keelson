@@ -1,4 +1,4 @@
-<!-- i18n source: concepts/security-controls.md source_hash: 4945958a00a6 -->
+<!-- i18n source: concepts/security-controls.md source_hash: e5fdd5794da7 -->
 # Controlli di sicurezza e conformità
 
 Questa pagina collega i controlli della ISO/IEC 27001:2022 (Annex A) e i Trust Services
@@ -21,6 +21,7 @@ Ogni riga indica la sua evidenza. I test girano nella pipeline del progetto, qui
 | Tenancy del retrieval | A.8.3 | C1.1 | Ogni vettore porta il proprio tenant; una ricerca senza lettore non restituisce nulla | `app/services/rag/tenancy.py`, `tests/test_rag_tenancy.py`, `tests/test_rag_search_scope.py` |
 | Autenticazione | A.8.5 | CC6.1, CC6.2 | Single sign-on con OpenID Connect (flusso authorization code con PKCE, ID token verificato, account abbinati solo tramite indirizzi verificati); nessun token negli URL | `app/core/oidc.py`, `tests/test_sso.py` |
 | Informazioni di autenticazione | A.5.17 | CC6.1 | Password salvate come hash Argon2id, hash precedenti aggiornati all'accesso; il tempo di accesso non rivela gli indirizzi registrati; segreti delle API key salvati come hash con chiave | `app/core/security.py`, `app/core/api_keys.py`, `tests/test_security.py`, `tests/test_services.py` |
+| Protezione della sessione | A.8.5, A.8.26 | CC6.1, CC6.7 | Token del browser in cookie HttpOnly e SameSite, fuori dalla portata degli script della pagina; scritture e WebSocket autenticate da cookie accettate solo da origini affidabili (CSRF) | `app/core/session_cookies.py`, `tests/test_session_cookies.py` |
 | Identità delle macchine | A.5.16, A.8.5 | CC6.2 | I job di CI si autenticano con il token OpenID Connect della loro piattaforma rispetto a un trust configurato (issuer, audience, repository, branch); le credenziali scadono entro un'ora | `app/core/workload_identity.py`, `tests/test_workload_identity.py` |
 | Ciclo di vita delle API key | A.5.18 | CC6.2 | Per organizzazione, con scope, scadenza, rotazione con periodo di tolleranza, revoca e limiti di frequenza | `app/services/api_key.py`, `tests/test_api_keys.py` |
 

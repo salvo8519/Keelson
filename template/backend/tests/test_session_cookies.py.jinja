@@ -1,0 +1,130 @@
+{%- if use_jwt and not use_delegated_auth and not enable_session_management %}
+"""The browser session in HttpOnly cookies, with CSRF protection (Keelson)."""
+
+from datetime import UTC, datetime
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
+from uuid import uuid4
+
+import pytest
+from httpx import AsyncClient
+
+from app.core.config import settings
+from app.core.security import create_access_token, create_refresh_token
+from app.core.session_cookies import ACCESS_COOKIE, REFRESH_COOKIE, trusted_origin
+from app.main import app
+from tests.overrides import override_user_service
+
+TRUSTED = settings.CORS_ORIGINS[0]
+API = settings.API_V1_STR
+
+
+@pytest.fixture
+def user() -> SimpleNamespace:
+    return SimpleNamespace(
+        id=uuid4(),
+        email="ada@example.com",
+        full_name="Ada",
+        is_active=True,
+        role="user",
+        locale=None,
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+        avatar_url=None,
+    )
+
+
+@pytest.fixture
+def users(user: SimpleNamespace) -> MagicMock:
+    service = MagicMock()
+    service.authenticate = AsyncMock(return_value=user)
+    service.get_by_id = AsyncMock(return_value=user)
+    override_user_service(app, service)
+    yield service
+    app.dependency_overrides.clear()
+
+
+def _cookie_headers(token: str, origin: str | None = None) -> dict[str, str]:
+    headers = {"Cookie": f"{ACCESS_COOKIE}={token}"}
+    if origin:
+        headers["Origin"] = origin
+    return headers
+
+
+@pytest.mark.anyio
+async def test_login_sets_http_only_cookies(client: AsyncClient, users) -> None:
+    response = await client.post(
+        f"{API}/auth/login", data={"username": "ada@example.com", "password": "pw-123456"}
+    )
+    assert response.status_code == 200
+    cookies = response.headers.get_list("set-cookie")
+    access = next(c for c in cookies if c.startswith(f"{ACCESS_COOKIE}="))
+    refresh = next(c for c in cookies if c.startswith(f"{REFRESH_COOKIE}="))
+    for cookie in (access, refresh):
+        assert "HttpOnly" in cookie and "samesite=lax" in cookie.lower()
+    assert f"Path={API}/auth/session" in refresh, "the refresh cookie goes to one path only"
+
+
+@pytest.mark.anyio
+async def test_the_cookie_authenticates_a_read(client: AsyncClient, users, user) -> None:
+    token = create_access_token(subject=str(user.id))
+    response = await client.get(f"{API}/auth/me", headers=_cookie_headers(token))
+    assert response.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_a_cookie_write_is_accepted_only_from_a_trusted_origin(
+    client: AsyncClient, users, user
+) -> None:
+    token = create_access_token(subject=str(user.id))
+    users.update_me = AsyncMock(return_value=user)
+    url, body = f"{API}/users/me", {"full_name": "Ada L."}
+
+    trusted = await client.patch(url, json=body, headers=_cookie_headers(token, TRUSTED))
+    forged = await client.patch(url, json=body, headers=_cookie_headers(token, "https://attacker.example"))
+    no_origin = await client.patch(url, json=body, headers=_cookie_headers(token))
+
+    assert trusted.status_code == 200
+    assert (forged.status_code, no_origin.status_code) == (403, 403)
+    assert users.update_me.await_count == 1
+
+
+@pytest.mark.anyio
+async def test_a_bearer_token_needs_no_origin(client: AsyncClient, users, user) -> None:
+    token = create_access_token(subject=str(user.id))
+    response = await client.get(f"{API}/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_the_session_is_renewed_from_the_refresh_cookie_only(
+    client: AsyncClient, users, user
+) -> None:
+    refresh = create_refresh_token(subject=str(user.id))
+    headers = {"Cookie": f"{REFRESH_COOKIE}={refresh}", "Origin": TRUSTED}
+
+    renewed = await client.post(f"{API}/auth/session/refresh", headers=headers)
+    refused = await client.post(
+        f"{API}/auth/session/refresh", headers={**headers, "Origin": "https://attacker.example"}
+    )
+
+    assert renewed.status_code == 204 and renewed.content == b""
+    assert any(c.startswith(f"{ACCESS_COOKIE}=") for c in renewed.headers.get_list("set-cookie"))
+    assert refused.status_code == 403
+
+
+@pytest.mark.anyio
+async def test_sign_out_removes_the_cookies(client: AsyncClient) -> None:
+    response = await client.post(f"{API}/auth/session/logout")
+    assert response.status_code == 204
+    removed = response.headers.get_list("set-cookie")
+    assert any(c.startswith(f"{ACCESS_COOKIE}=") and "Max-Age=0" in c for c in removed)
+
+
+def test_trusted_origins_are_the_cors_origins() -> None:
+    assert trusted_origin(TRUSTED)
+    assert trusted_origin(None, TRUSTED + "/settings")
+    assert not trusted_origin("https://attacker.example")
+    assert not trusted_origin(None, None)
+    assert not trusted_origin("null")
+{%- endif %}

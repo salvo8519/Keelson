@@ -3162,6 +3162,38 @@ export type authLogoutResponses = {
 
 export type authLogoutResponse = authLogoutResponses[keyof authLogoutResponses];
 
+export type authRefreshSessionData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/session/refresh';
+};
+
+export type authRefreshSessionResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type authRefreshSessionResponse = authRefreshSessionResponses[keyof authRefreshSessionResponses];
+
+export type authEndSessionData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/session/logout';
+};
+
+export type authEndSessionResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type authEndSessionResponse = authEndSessionResponses[keyof authEndSessionResponses];
+
 export type authGetCurrentUserInfoData = {
     body?: never;
     path?: never;
@@ -3780,7 +3812,7 @@ export type oauthExchangeCodeResponses = {
     /**
      * Successful Response
      */
-    200: Token;
+    204: void;
 };
 
 export type oauthExchangeCodeResponse = oauthExchangeCodeResponses[keyof oauthExchangeCodeResponses];

@@ -1,4 +1,4 @@
-<!-- i18n source: concepts/sign-in-and-workload-identity.md source_hash: 699ed6188617 -->
+<!-- i18n source: concepts/sign-in-and-workload-identity.md source_hash: 0bd858e2b152 -->
 # Accesso e identità dei workload
 
 Le persone accedono con una password o tramite il provider di identità della propria azienda.
@@ -13,6 +13,28 @@ Le password sono salvate come hash Argon2id. Gli hash delle versioni precedenti 
 vengono verificati e sostituiti al login successivo. Un login con un indirizzo sconosciuto
 esegue lo stesso lavoro di hashing, così i tempi di risposta non rivelano quali indirizzi sono
 registrati.
+
+## La sessione nel browser
+
+Nel browser, i token di accesso e di refresh sono cookie HttpOnly impostati dalle API: nessuno
+script della pagina può leggerli, quindi uno script iniettato nella pagina non può rubare la
+sessione.
+
+| Cookie | Inviato a | Durata |
+| --- | --- | --- |
+| `access_token` | ogni richiesta alle API | quella del token di accesso (`ACCESS_TOKEN_EXPIRE_MINUTES`) |
+| `refresh_token` | solo `/api/v1/auth/session` | quella del token di refresh (`REFRESH_TOKEN_EXPIRE_MINUTES`) |
+
+Entrambi sono `SameSite=Lax`, e `Secure` fuori dallo sviluppo locale. Quando il token di
+accesso scade, il frontend rinnova la sessione una volta dal cookie di refresh e ripete la
+richiesta; i nuovi token sono impostati come cookie, mai restituiti alla pagina. L'uscita
+rimuove i cookie.
+
+Poiché un browser allega i cookie da solo, una richiesta autenticata da un cookie che modifica
+qualcosa (qualsiasi metodo tranne GET, HEAD e OPTIONS), e una WebSocket aperta con un cookie,
+deve provenire da un'origine elencata in `CORS_ORIGINS`; altrimenti viene rifiutata (cross-site
+request forgery). I programmi (script, servizi, CI) inviano `Authorization: Bearer` o una API
+key, che un browser non allega mai da solo, e non sono interessati.
 
 ## Single sign-on
 

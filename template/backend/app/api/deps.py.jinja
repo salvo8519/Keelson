@@ -279,15 +279,18 @@ BillingSvc = Annotated[BillingService, Depends(get_billing_service)]
 from app.core.exceptions import AuthenticationError, AuthorizationError, NotFoundError
 from app.core.security import verify_token
 from app.db.models.user import User, UserRole
+from app.core.session_cookies import ACCESS_COOKIE, require_trusted_origin, trusted_origin
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/login")
+# Keelson: auto_error=False, so that a browser authenticated by its session cookie gets through
+# to get_current_user (app/core/session_cookies.py); programs still send the Bearer header.
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/login", auto_error=False)
 
 {%- if use_delegated_auth %}
 from app.core.security import verify_idp_token
 
 
 async def get_current_user(
-    token: Annotated[str, Depends(oauth2_scheme)],
+    token: Annotated[str | None, Depends(oauth2_scheme)],
     user_service: UserSvc,
 ) -> User:
     """Resolve the current user from an IdP-issued JWT (delegated mode).
@@ -301,7 +304,7 @@ async def get_current_user(
         AuthenticationError: invalid/expired token, or user disabled locally.
     """
 
-    payload = verify_idp_token(token)
+    payload = verify_idp_token(token) if token else None
     if payload is None:
         raise AuthenticationError(message="Invalid or expired token")
 
@@ -322,16 +325,26 @@ async def get_current_user(
     return user
 {%- else %}
 async def get_current_user(
-    token: Annotated[str, Depends(oauth2_scheme)],
+    request: Request,
+    bearer: Annotated[str | None, Depends(oauth2_scheme)],
     user_service: UserSvc,
 ) -> User:
     """Get current authenticated user from JWT token.
 
     Returns the full User object including role information.
 
+    Keelson: the token comes from the ``Authorization`` header (programs) or from the HttpOnly
+    session cookie (browsers); a cookie on an unsafe method must come from a trusted origin.
+
     Raises:
         AuthenticationError: If token is invalid or user not found.
     """
+    token = bearer
+    if token is None:
+        token = request.cookies.get(ACCESS_COOKIE)
+        if token is None:
+            raise AuthenticationError(message="Not authenticated")
+        require_trusted_origin(request)
 
     payload = verify_token(token)
     if payload is None:
@@ -586,6 +599,10 @@ async def get_current_user_ws(
     websocket.state.accept_subprotocol = app_subprotocol
 
     auth_token = subprotocol_token or access_token
+    # Keelson: a browser sends its session cookie with any WebSocket handshake, from any site:
+    # a cookie is accepted only from a trusted origin (cross-site WebSocket hijacking).
+    if not subprotocol_token and access_token and not trusted_origin(websocket.headers.get("origin")):
+        raise WebSocketException(code=4003, reason="Origin not allowed")
 
     if not auth_token:
         raise WebSocketException(code=4001, reason="Missing authentication token")
