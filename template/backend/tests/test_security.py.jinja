@@ -75,6 +75,9 @@ class TestPasswordUpgrade:
 
         assert verify_and_update_password("x", get_password_hash("y")) == (False, None)
         assert verify_password("x", "plain-text-is-not-a-hash") is False
+        # A stored value in an unknown format (plain text, a foreign scheme) is a refusal on
+        # the sign-in path too, never an accepted password.
+        assert verify_and_update_password("x", "plain-text-is-not-a-hash") == (False, None)
 
 
 class TestAccessToken:

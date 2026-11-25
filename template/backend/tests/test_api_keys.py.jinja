@@ -22,9 +22,25 @@ def test_token_round_trip() -> None:
     assert api_keys.parse(token) == (prefix, secret)
 
 
-@pytest.mark.parametrize("token", ["", "key_short.secret", "nope_abcdefghijkl.secret", "key_abcdefghijkl."])
+@pytest.mark.parametrize(
+    "token",
+    [
+        "",
+        "key_short.secret",
+        "nope_abcdefghijkl.secret",
+        "key_abcdefghijkl.",
+        # Right length and a separator, but not the key_ tag: each condition refuses alone.
+        "nope_abcdefghijk.secret",
+        "key_abcdefghijklsecret",
+    ],
+)
 def test_malformed_tokens_are_rejected(token: str) -> None:
     assert api_keys.parse(token) is None
+
+
+def test_the_prefix_ends_at_the_first_separator() -> None:
+    """The prefix never holds a separator; anything after the first one is the secret."""
+    assert api_keys.parse("key_abcdefghijkl.secret.") == ("key_abcdefghijkl", "secret.")
 
 
 def test_secret_is_stored_as_keyed_hash() -> None:

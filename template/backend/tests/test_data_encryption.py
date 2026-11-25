@@ -38,3 +38,39 @@ def test_values_written_before_the_data_keys_still_decrypt(monkeypatch: pytest.M
 def test_the_setting_accepts_a_comma_separated_list(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DATA_ENCRYPTION_KEYS", f"{NEW}, {OLD}")
     assert type(settings)().DATA_ENCRYPTION_KEYS == [NEW, OLD]
+
+
+def test_a_value_that_is_not_encrypted_is_encrypted_by_rotation(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "DATA_ENCRYPTION_KEYS", [NEW])
+    rotated = crypto.rotate_secret("plain-value")
+    assert crypto.is_encrypted(rotated) and "plain-value" not in rotated
+    assert crypto.decrypt_secret(rotated) == "plain-value"
+
+
+def test_values_of_the_legacy_channel_key_still_decrypt(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Renders with channels encrypted with ``CHANNEL_ENCRYPTION_KEY`` before the data keys."""
+    from types import SimpleNamespace
+
+    from app.core import config
+
+    legacy_key = "c" * 64
+    stored = crypto.encrypt_value("bot-token", legacy_key)
+    stub = SimpleNamespace(DATA_ENCRYPTION_KEYS=[NEW], CHANNEL_ENCRYPTION_KEY=legacy_key, SECRET_KEY=OLD)
+    monkeypatch.setattr(config, "settings", stub)
+    assert crypto.decrypt_secret(stored) == "bot-token"
+
+
+def test_only_prefixed_strings_count_as_encrypted() -> None:
+    stored = crypto.encrypt_value("value", OLD)
+    assert crypto.is_encrypted(stored)
+    assert not crypto.is_encrypted("value")
+    assert not crypto.is_encrypted(None)
+    assert not crypto.is_encrypted(b"enc:bytes")
+
+
+def test_the_single_key_helpers_round_trip_and_pass_plain_text_through() -> None:
+    stored = crypto.encrypt_value("value", OLD)
+    assert crypto.decrypt_value(stored, OLD) == "value"
+    assert crypto.decrypt_value("value", OLD) == "value"
+    with pytest.raises(InvalidToken):
+        crypto.decrypt_value(stored, NEW)

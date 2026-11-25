@@ -36,6 +36,7 @@ nav = [
   { "Project" = [
     "project/provenance.md",
     "project/contributing.md",
+    "project/mutation-testing.md",
     "project/release-notes.md",
     "project/changelog.md",
   ] },

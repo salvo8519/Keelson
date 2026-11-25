@@ -54,9 +54,40 @@ def test_unacceptable_identities_are_refused(
     assert refused.value.code == code
 
 
+def test_refusals_carry_a_reason_for_the_log() -> None:
+    with pytest.raises(SignInRefused) as refused:
+        verified_identity(PUBLIC, {"sub": "1", "email": "a@example.org"})
+    assert str(refused.value) == "the e-mail address is not verified"
+    for claims in ({"sub": "1"}, {"sub": "1", "email": "a@other.com"}):
+        with pytest.raises(SignInRefused) as refused:
+            verified_identity(ENTRA, claims)
+        assert str(refused.value) not in ("", "None")
+
+
+def test_the_verified_flag_may_be_sent_as_text() -> None:
+    """Some providers send ``email_verified`` as the string "true"."""
+    accepted = verified_identity(PUBLIC, {"sub": "1", "email": "a@example.org", "email_verified": "true"})
+    assert accepted.email == "a@example.org"
+
+
 def test_a_trusted_directory_may_send_the_sign_in_name() -> None:
     identity = verified_identity(ENTRA, {"sub": "oid", "preferred_username": "ada@example.com"})
     assert identity.email == "ada@example.com"
+
+
+def test_a_sign_in_name_that_is_not_an_address_is_no_email() -> None:
+    with pytest.raises(SignInRefused) as refused:
+        verified_identity(ENTRA, {"sub": "oid", "preferred_username": "ada"})
+    assert refused.value.code == "no_email"
+
+
+def test_the_domain_is_what_follows_the_last_at_sign() -> None:
+    """A quoted local part may hold an @: the allowed domain is read after the last one."""
+    identity = verified_identity(ENTRA, {"sub": "1", "email": '"other.com@x"@example.com'})
+    assert identity.email == '"other.com@x"@example.com'
+    with pytest.raises(SignInRefused) as refused:
+        verified_identity(ENTRA, {"sub": "1", "email": '"x@example.com"@other.com'})
+    assert refused.value.code == "domain_not_allowed"
 
 
 def test_provider_settings_are_checked() -> None:
@@ -72,8 +103,31 @@ def test_provider_settings_are_checked() -> None:
 def test_upstream_google_settings_add_a_google_provider() -> None:
     providers = configured_providers([ENTRA], "google-client", "secret")
     assert [p.name for p in providers] == ["entra", "google"]
-    with pytest.raises(ValueError):
+    google = providers[1]
+    assert (google.label, google.issuer, google.client_id, google.client_secret) == (
+        "Google",
+        "https://accounts.google.com",
+        "google-client",
+        "secret",
+    )
+    assert configured_providers([ENTRA], "google-client")[1].client_secret == ""
+    with pytest.raises(ValueError, match=r"^OIDC_PROVIDERS: provider names must be unique$"):
         configured_providers([ENTRA, ENTRA])
+
+
+def test_without_google_settings_only_the_configured_providers_are_offered() -> None:
+    assert configured_providers([]) == []
+    assert configured_providers([ENTRA]) == [ENTRA]
+
+
+def test_a_configured_google_provider_wins_over_the_upstream_settings() -> None:
+    own = OidcProvider(name="google", label="Workspace", issuer="https://accounts.google.com", client_id="own")
+    assert configured_providers([own], "google-client", "secret") == [own]
+
+
+def test_a_refusal_keeps_its_reason() -> None:
+    refused = SignInRefused("no_email", "the ID token has no e-mail address")
+    assert (refused.code, str(refused)) == ("no_email", "the ID token has no e-mail address")
 
 
 # --- Routes ---------------------------------------------------------------------------------

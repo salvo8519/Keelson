@@ -120,10 +120,11 @@ async def _jwks_client(issuer: str) -> jwt.PyJWKClient:
 async def verify(token: str, trusts: list[WorkloadTrust]) -> tuple[WorkloadTrust, dict[str, Any]]:
     """Verify a CI token against the trusted issuers and return the trust it matches."""
     try:
-        issuer = str(jwt.decode(token, options={"verify_signature": False}).get("iss", ""))
+        token_issuer = str(jwt.decode(token, options={"verify_signature": False}).get("iss", ""))
     except jwt.PyJWTError as error:
         raise WorkloadRefused(f"not a JWT: {error}") from error
-    issuer = issuer.rstrip("/")
+    # Trusts are stored without a trailing slash; the token keeps the issuer as its CI wrote it.
+    issuer = token_issuer.rstrip("/")
     if issuer not in {trust.issuer for trust in trusts}:
         raise WorkloadRefused("the issuer is not trusted")
     try:
@@ -133,7 +134,7 @@ async def verify(token: str, trusts: list[WorkloadTrust]) -> tuple[WorkloadTrust
             token,
             key.key,
             algorithms=SIGNING_ALGORITHMS,
-            issuer=issuer,
+            issuer=token_issuer,
             options={"verify_aud": False, "require": ["exp", "iat", "iss", "aud"]},
         )
     except (jwt.PyJWTError, httpx.HTTPError, KeyError) as error:

@@ -51,6 +51,10 @@ test:
 test-generated:
     python -m pytest -m generated
 
+# Mutation testing of the security-critical modules of the default project (minutes, not in check).
+mutation *args:
+    python scripts/mutation.py {{args}}
+
 # Render the template with the default answers into .generated/default.
 render:
     rm -rf {{render_dir}}
