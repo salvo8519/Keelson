@@ -97,7 +97,7 @@ jobs:
       - name: Scan the history for secrets
         run: |
           docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1 \
-            git /repo --redact --no-banner --exit-code 1
+            git /repo --config /repo/.gitleaks.toml --redact --no-banner --exit-code 1
       - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           version: ${{ env.UV_VERSION }}

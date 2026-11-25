@@ -1,0 +1,18 @@
+# Secret scan of the Keelstone repository (generated projects use the default rules only).
+
+[extend]
+useDefault = true
+
+# The log trap test (template/backend/tests/test_log_trap.py) needs values shaped like
+# secrets to prove that none reaches the logs. These two commits wrote those fake values as
+# literals; the test now builds them at run time. The history is not rewritten, so the
+# exception covers exactly that file in exactly those commits: later commits are scanned
+# in full.
+[[allowlists]]
+description = "Fake canary values of the log trap test, written as literals before the fix"
+condition = "AND"
+paths = ['''^template/backend/tests/test_log_trap\.py$''']
+commits = [
+  "a35b19cac9b0ae773ff6f152ca6dba4143b983f0",
+  "4aba11e5d381dc116f65243fc74094719459fcfa",
+]
