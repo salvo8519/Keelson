@@ -238,7 +238,7 @@ class SyncSourceService:
             NotFoundError: If sync source does not exist.
         """
         await self.get_source(source_id)  # verify exists
-        # Keelson: a delete refused by row level security removes no row; it is not a success.
+        # Keelstone: a delete refused by row level security removes no row; it is not a success.
         if not await sync_source_repo.delete(self.db, UUID(source_id)):
             raise NotFoundError(message="Sync source not found", details={"source_id": source_id})
 
@@ -268,7 +268,7 @@ class SyncSourceService:
         from app.worker.tasks.rag_tasks import sync_single_source_task
         sync_single_source_task.delay(source_id, str(sync_log.id))
 {%- elif use_taskiq %}
-        # Keelson: kiq, not Celery's delay (see rag_document.py).
+        # Keelstone: kiq, not Celery's delay (see rag_document.py).
         from app.worker.tasks.rag_tasks import sync_single_source_task
         await sync_single_source_task.kiq(source_id, str(sync_log.id))
 {%- elif use_arq %}

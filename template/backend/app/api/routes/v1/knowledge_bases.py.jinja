@@ -163,7 +163,7 @@ async def upload_kb_document(
     KBs.
     """
     kb = writer.kb
-    # Keelson: the file is streamed into a stored object, never read whole into memory. A
+    # Keelstone: the file is streamed into a stored object, never read whole into memory. A
     # personal knowledge base keeps its files as the user's; the others as the organization's.
     owner = (
         ObjectOwner.user(current_user.id)

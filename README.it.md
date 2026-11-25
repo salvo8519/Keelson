@@ -1,9 +1,9 @@
-<!-- i18n source: README.md source_hash: 77282705a53a -->
+<!-- i18n source: README.md source_hash: 8d1c45248e96 -->
 <p align="center">
-  <img src="docs/_shared/assets/brand/mark.svg" alt="Keelson" width="96">
+  <img src="docs/_shared/assets/brand/mark.svg" alt="Keelstone" width="96">
 </p>
 
-<h1 align="center">Keelson</h1>
+<h1 align="center">Keelstone</h1>
 
 <p align="center"><strong>Un servizio FastAPI per le aziende, pronto dal primo giorno.</strong><br>
 Tenant separati dal database, single sign-on, un contratto API e un livello agentico,
@@ -22,7 +22,7 @@ ognuno presidiato da test.</p>
 Avviare un servizio per le aziende significa risolvere gli stessi problemi prima della prima
 funzionalità: tenere separati i dati di ogni cliente, far accedere gli utenti con il loro
 provider di identità, dare agli altri sistemi un accesso controllato, pubblicare API che non
-rompono i client e superare una revisione di sicurezza. Keelson genera un progetto FastAPI in
+rompono i client e superare una revisione di sicurezza. Keelstone genera un progetto FastAPI in
 cui tutto questo è già fatto, verificato da test che girano nella sua pipeline, e lascia al
 vostro team la parte che è solo vostra.
 
@@ -47,7 +47,7 @@ vostro team la parte che è solo vostra.
 ## Avvio rapido
 
 ```bash
-uvx copier copy --trust https://github.com/salvo8519/keelson my_service
+uvx copier copy --trust https://github.com/salvo8519/keelstone my_service
 cd my_service
 make quickstart      # primo avvio: configurazione, stack di sviluppo, migrazioni, un admin di sviluppo
 make dev             # lo stack di sviluppo, ogni giorno dopo il primo avvio (ricarica alle modifiche)
@@ -55,8 +55,8 @@ make prod-local      # lo stack di produzione su questa macchina: impostazioni d
 make help            # ogni comando, per area
 ```
 
-Keelson usa [Copier](https://copier.readthedocs.io): pone alcune domande, genera il progetto e
-registra le risposte. Quando Keelson migliora, `uvx copier update --trust` porta le modifiche
+Keelstone usa [Copier](https://copier.readthedocs.io): pone alcune domande, genera il progetto e
+registra le risposte. Quando Keelstone migliora, `uvx copier update --trust` porta le modifiche
 nel vostro progetto e le unisce alle vostre, così un progetto non resta fermo alla versione da
 cui è stato generato. Le domande e i loro valori predefiniti sono nel
 [riferimento](docs/it/reference/questions.md).
@@ -137,7 +137,7 @@ Ogni modifica al template genera progetti ed esegue i loro controlli: la suite d
 un PostgreSQL reale (segregazione del database e migrazioni incluse, dove un test saltato conta
 come un fallimento), la build e le traduzioni del frontend, la build della documentazione, il
 contratto API e il client generato, e ogni stack Compose. La revisione del codice su cui
-Keelson si basa ha trovato difetti, tutti corretti con un test di regressione. Tra questi:
+Keelstone si basa ha trovato difetti, tutti corretti con un test di regressione. Tra questi:
 commit falliti che arrivavano al client come successi, token di accesso negli URL di
 reindirizzamento, un filtro dei log che poteva stampare password, account collegati tramite
 indirizzi e-mail non verificati, una ricerca che restituiva documenti di un'altra
@@ -146,10 +146,10 @@ organizzazione, e worker di produzione che giravano sull'immagine di sviluppo.
 
 ## Stato e limiti
 
-Keelson è in pre-release. Cosa non è ancora verificato, o non ancora costruito:
+Keelstone è in pre-release. Cosa non è ancora verificato, o non ancora costruito:
 
 - Le immagini Docker e gli stack Compose non sono ancora stati avviati nella pipeline di
-  Keelson; la loro configurazione è risolta e controllata dai test.
+  Keelstone; la loro configurazione è risolta e controllata dai test.
 - Il single sign-on è testato con un provider simulato, non ancora con un tenant reale di
   Entra ID o Keycloak.
 - I test end-to-end nel browser (Playwright) del frontend non girano nella pipeline.
@@ -168,7 +168,7 @@ Keelson è in pre-release. Cosa non è ancora verificato, o non ancora costruito
 
 Il sito della documentazione è costruito con Zensical in inglese e italiano: primi passi,
 concetti (tenancy, accesso e identità dei workload, controlli di sicurezza, lingue,
-osservabilità), il riferimento di API e impostazioni generato dal codice, e come Keelson è
+osservabilità), il riferimento di API e impostazioni generato dal codice, e come Keelstone è
 assemblato.
 
 ## Sviluppo del template
@@ -184,19 +184,26 @@ Vedi [AGENTS.md](AGENTS.md) e [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Basato su
 
-Keelson poggia su due template open source e ne mantiene visibile il lavoro. Backend, worker e
+Keelstone poggia su due template open source e ne mantiene visibile il lavoro. Backend, worker e
 livello agentico vengono dal
 [Full-Stack AI Agent Template](https://github.com/vstorm-co/full-stack-ai-agent-template) di
 Vstorm; il frontend React dal
 [Full Stack FastAPI Template](https://github.com/fastapi/full-stack-fastapi-template)
-ufficiale. Entrambi hanno licenza MIT. Keelson li importa a commit registrati, converte il
+ufficiale. Entrambi hanno licenza MIT. Keelstone li importa a commit registrati, converte il
 primo a Copier senza riscriverlo, e aggiunge i livelli di segregazione, identità, contratto,
-sicurezza e lingue descritti sopra. [Come è assemblato Keelson](docs/it/concepts/assembly.md)
+sicurezza e lingue descritti sopra. [Come è assemblato Keelstone](docs/it/concepts/assembly.md)
 spiega il metodo.
+
+## Il nome
+
+Keelstone, pronuncia /ˈkiːl.stoʊn/ (circa "kiil-stoun"), unisce la chiglia (*keel*), la trave
+che regge la nave, e la chiave di volta (*keystone*), la pietra che tiene insieme l'arco: la
+parte su cui poggia ogni servizio generato. Fino a novembre 2026 il progetto si chiamava
+Keelson; il nome è cambiato perché un altro progetto Python lo usa già.
 
 ## Licenza
 
 Apache License 2.0 (vedi [LICENSE](LICENSE) e [NOTICE](NOTICE)). Gli avvisi dei due template
 con licenza MIT sono in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) e vengono riportati in
 ogni progetto generato. La licenza non concede alcun diritto di usare il nome o il logo di
-Keelson.
+Keelstone.

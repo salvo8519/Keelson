@@ -1,4 +1,4 @@
-"""API reference with Scalar, branded and without calls to third parties (Keelson).
+"""API reference with Scalar, branded and without calls to third parties (Keelstone).
 
 The page is rendered by ``scalar-fastapi``, maintained by Scalar. Everything that would reach
 Scalar's services is switched off: telemetry, the AI agent, the hosted fonts, the request

@@ -31,7 +31,7 @@ class AppException(Exception):
         self.message = message or self.__class__.message
         self.code = code or self.__class__.code
         self.details = details
-        # Keelson: response headers, such as Retry-After on 429.
+        # Keelstone: response headers, such as Retry-After on 429.
         self.headers = headers
         super().__init__(self.message)
 

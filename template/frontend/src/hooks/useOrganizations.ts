@@ -1,4 +1,4 @@
-// Keelson: the organizations of the signed-in user and the active one.
+// Keelstone: the organizations of the signed-in user and the active one.
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 
 import { type OrganizationRead, OrganizationsService } from "@/client"

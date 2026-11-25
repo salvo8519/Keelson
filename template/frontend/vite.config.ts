@@ -8,10 +8,10 @@ import pkg from "./package.json"
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  // Keelson: the backend does not serve the frontend; it is built to dist/ and served by its
+  // Keelstone: the backend does not serve the frontend; it is built to dist/ and served by its
   // own container (frontend/Dockerfile). Port 3000 is the origin the backend allows by default
   // (CORS_ORIGINS, FRONTEND_URL).
-  // Keelson: the version shown in the sidebar, from package.json, which scripts/version.py
+  // Keelstone: the version shown in the sidebar, from package.json, which scripts/version.py
   // keeps equal to VERSION at the root of the project.
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),

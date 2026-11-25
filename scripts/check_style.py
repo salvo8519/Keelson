@@ -1,6 +1,6 @@
 """House style gate: no emoji, pictographic icons or icon shortcodes in the repository.
 
-Keelson's files follow a professional, corporate identity. Typographic symbols (arrows,
+Keelstone's files follow a professional, corporate identity. Typographic symbols (arrows,
 multiplication, minus) are fine; emoji, dingbats, check marks, geometric bullets and theme icon
 shortcodes (``:material-…:``) are not.
 

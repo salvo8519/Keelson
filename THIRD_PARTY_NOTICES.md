@@ -1,7 +1,7 @@
 # Third-party notices
 
-Keelson includes source code from the projects below, under their licences. The licence of
-each project applies to the code imported from it; Keelson's own changes are licensed under the
+Keelstone includes source code from the projects below, under their licences. The licence of
+each project applies to the code imported from it; Keelstone's own changes are licensed under the
 Apache License 2.0 (see LICENSE and NOTICE).
 
 ## Full-Stack AI Agent Template

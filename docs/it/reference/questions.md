@@ -1,6 +1,6 @@
 ---
 source: reference/questions.md
-source_hash: 80b7bf201076
+source_hash: 210f02d83318
 ---
 # Domande
 
@@ -35,6 +35,6 @@ generazione, ma il test end-to-end gira solo sui valori predefiniti.
 
 ## Scelte fisse
 
-Alcune scelte non sono domande, perché Keelson è costruito intorno a esse: PostgreSQL con
+Alcune scelte non sono domande, perché Keelstone è costruito intorno a esse: PostgreSQL con
 SQLAlchemy, Redis con cache e rate limiting, organizzazioni con ruoli (multi-tenant), email via
 SMTP, streaming via WebSocket, metriche Prometheus, Traefik con HTTPS, Python 3.13.

@@ -156,7 +156,7 @@ class SlackAdapter(ChannelAdapter):
         Slack signs requests with: v0=HMAC-SHA256(signing_secret, "v0:{timestamp}:{body}")
         The raw request body must be passed via the ``body`` parameter.
         """
-        if not secret:  # Keelson: an empty key signs for anyone
+        if not secret:  # Keelstone: an empty key signs for anyone
             return False
         timestamp = headers.get("x-slack-request-timestamp", "")
         signature = headers.get("x-slack-signature", "")

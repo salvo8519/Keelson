@@ -1,4 +1,4 @@
-"""Workload identity: a CI job trades its OpenID Connect token for a credential (Keelson)."""
+"""Workload identity: a CI job trades its OpenID Connect token for a credential (Keelstone)."""
 
 import logging
 from typing import Any

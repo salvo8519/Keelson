@@ -126,7 +126,7 @@ def validate_safe_path(
     followed) is within the expected directory. A relative path is taken from
     ``base_dir``; an absolute one must already lie inside it.
 
-    Keelson: upstream reduced the path to its last component (sanitize_filename), so
+    Keelstone: upstream reduced the path to its last component (sanitize_filename), so
     "images/photo.jpg" became "photo.jpg" and "/etc/passwd" became "etc_passwd" under
     the base directory instead of being refused.
 
@@ -200,7 +200,7 @@ def validate_webhook_url(
     - Resolves via DNS to a public IP at validation time. This does not stop DNS rebinding:
       the HTTP client resolves the name again when it connects, and a name with a short TTL
       can then point at a private address. Callers that fetch user-supplied URLs must also
-      connect to the validated address (or go through an egress proxy). Keelson keeps those
+      connect to the validated address (or go through an egress proxy). Keelstone keeps those
       callers disabled (webhooks, MCP client, fetch-URL tool); see PROVENANCE.md.
 
     Args:

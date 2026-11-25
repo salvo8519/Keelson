@@ -1,6 +1,6 @@
 # Languages
 
-Keelson projects speak the languages chosen with the Copier question `languages` (English is
+Keelstone projects speak the languages chosen with the Copier question `languages` (English is
 always included, Italian is the default second language). This page explains where each
 language comes from and how to add a text.
 

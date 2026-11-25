@@ -6,20 +6,20 @@ hide:
 
 <div class="kl-hero" markdown>
 
-![Keelson](assets/brand/mark.svg){ width="96" }
+![Keelstone](assets/brand/mark.svg){ width="96" }
 
-# Keelson
+# Keelstone
 
 <p class="kl-tagline">Enterprise FastAPI template with an agent layer.</p>
 
 <p class="kl-promise">Assembled from two proven open source templates, and improved where they stop.</p>
 
-Keelson generates a FastAPI service ready for companies: organizations as tenants, users who
+Keelstone generates a FastAPI service ready for companies: organizations as tenants, users who
 belong to several of them, asynchronous and scheduled work, an agent layer with retrieval,
 deployment on Docker and Kubernetes, and a development process for coding agents.
 
 [Generate a project](getting-started/index.md){ .md-button .md-button--primary }
-[How Keelson is assembled](concepts/assembly.md){ .md-button }
+[How Keelstone is assembled](concepts/assembly.md){ .md-button }
 
 </div>
 

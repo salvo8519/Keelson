@@ -1,5 +1,5 @@
 {%- if enable_teams and use_postgresql %}
-"""Moving stored objects between backends, and the cleanup that follows (Keelson).
+"""Moving stored objects between backends, and the cleanup that follows (Keelstone).
 
 ``migrate_object`` copies one object in streaming (S3 multipart for large objects), verifies
 the SHA-256 of the copy by reading it back, then points the object at the copy in one

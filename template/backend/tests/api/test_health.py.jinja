@@ -82,7 +82,7 @@ async def test_readiness_check_db_unhealthy(client: AsyncClient, mock_db_session
     assert response.status_code == 503
     data = response.json()
     assert data["status"] == "not_ready"
-    # Keelson: an unauthenticated probe reports a status, never the reason of the failure.
+    # Keelstone: an unauthenticated probe reports a status, never the reason of the failure.
     assert data["checks"]["database"] == {"status": "unhealthy"}
     assert data["database"] == {"status": "unhealthy"}
     assert "app_owner" not in response.text

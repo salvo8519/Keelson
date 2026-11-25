@@ -1,3 +1,3 @@
 # Changelog
 
-All notable changes to Keelson. Generated from Conventional Commits; do not edit by hand.
+All notable changes to Keelstone. Generated from Conventional Commits; do not edit by hand.

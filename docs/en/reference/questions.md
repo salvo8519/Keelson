@@ -30,6 +30,6 @@ the end-to-end test runs on the defaults only.
 
 ## Fixed choices
 
-Some choices are not questions, because Keelson is built around them: PostgreSQL with
+Some choices are not questions, because Keelstone is built around them: PostgreSQL with
 SQLAlchemy, Redis with caching and rate limiting, organizations with roles (multi-tenant),
 email over SMTP, WebSocket streaming, Prometheus metrics, Traefik with HTTPS, Python 3.13.

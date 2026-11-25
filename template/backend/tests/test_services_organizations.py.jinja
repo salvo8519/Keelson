@@ -53,7 +53,7 @@ class TestOrganizationService:
 
     @pytest.mark.anyio
     async def test_create_raises_if_slug_taken(self, service, mock_db):
-        # Keelson: the unique index decides (other tenants' slugs are hidden by row level security).
+        # Keelstone: the unique index decides (other tenants' slugs are hidden by row level security).
         taken = IntegrityError("INSERT", {}, Exception('duplicate key value violates "ix_organizations_slug"'))
         with (
             patch("app.services.organization.organization_repo.create", new=AsyncMock(side_effect=taken)),

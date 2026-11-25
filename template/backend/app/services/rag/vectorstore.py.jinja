@@ -14,7 +14,7 @@ _RESERVED_COLLECTION_NAMES = frozenset({"all"})
 
 
 class BaseVectorStore(ABC):
-    """Keelson: every vector carries a tenant (app/services/rag/tenancy.py) and every search
+    """Keelstone: every vector carries a tenant (app/services/rag/tenancy.py) and every search
     states the tenants its reader may see; both arguments are required, so no caller can skip
     the barrier. Vectors stored without a tenant are never returned."""
 
@@ -184,7 +184,7 @@ class QdrantVectorStore(BaseVectorStore):
                     distance=Distance.COSINE,
                 ),
             )
-            # Keelson: tenant index (Qdrant's multitenancy pattern), so the filter is cheap.
+            # Keelstone: tenant index (Qdrant's multitenancy pattern), so the filter is cheap.
             await self.client.create_payload_index(
                 collection_name=name,
                 field_name=TENANT_FIELD,
@@ -231,7 +231,7 @@ class QdrantVectorStore(BaseVectorStore):
             if m:
                 conditions.append(FieldCondition(key="parent_doc_id", match=MatchValue(value=m.group(1))))
         qdrant_filter = Filter(must=list(conditions)) if conditions else None
-        # Keelson: query_points replaces search, which qdrant-client 1.20 no longer has (every
+        # Keelstone: query_points replaces search, which qdrant-client 1.20 no longer has (every
         # upstream search failed with AttributeError).
         response = await self.client.query_points(
             collection_name=collection_name,
@@ -275,7 +275,7 @@ class QdrantVectorStore(BaseVectorStore):
         await self._ensure_collection(collection_name)
         records, _ = await self.client.scroll(collection_name=collection_name, limit=10000, with_payload=True)
         results = [
-            # Keelson: Qdrant returns payload None for points stored without one.
+            # Keelstone: Qdrant returns payload None for points stored without one.
             {
                 "parent_doc_id": (r.payload or {}).get("parent_doc_id"),
                 "metadata": (r.payload or {}).get("metadata", {}),
@@ -337,7 +337,7 @@ class PgVectorStore(BaseVectorStore):
         """Dispose the connection pool. Call during application shutdown."""
         await self.engine.dispose()
 
-    # Keelson: upstream named the tables rag_<collection>, so the default collection
+    # Keelstone: upstream named the tables rag_<collection>, so the default collection
     # "documents" became the application's own rag_documents table, and list_collections
     # reported application tables as collections.
     TABLE_PREFIX = "vectors_"

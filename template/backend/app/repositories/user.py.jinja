@@ -129,7 +129,7 @@ async def get_password_hash(db: AsyncSession, user_id: UUID) -> str | None:
 
 
 async def set_platform_admin(db: AsyncSession, user: User, admin: bool) -> User:
-    """Keelson: grant or revoke platform administration. The role and the flag are written
+    """Keelstone: grant or revoke platform administration. The role and the flag are written
     together, because ``User.has_role`` requires both."""
     user.role = UserRole.ADMIN.value if admin else UserRole.USER.value
     user.is_app_admin = admin

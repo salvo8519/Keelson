@@ -1,5 +1,5 @@
 {%- if enable_teams and use_postgresql %}
-"""Segregation of users and organizations enforced by PostgreSQL (Keelson).
+"""Segregation of users and organizations enforced by PostgreSQL (Keelstone).
 
 The application filters its queries by user and organization. The database enforces the same
 rules on its own, so a query that forgets a filter, or code that never applies one, still
@@ -71,7 +71,7 @@ SECURITY_SCHEMA = "app_security"
 USER_SETTING = "app.current_user_id"
 ORGANIZATION_SETTING = "app.current_organization_id"
 PRINCIPAL_SETTING = "app.current_principal"
-POLICY_PREFIX = "keelson_"
+POLICY_PREFIX = "keelstone_"
 # Tables the application login must not touch at all.
 CLOSED_TABLES = ("alembic_version",)
 
@@ -309,7 +309,7 @@ POLICIES: dict[str, list[Policy]] = {
         Policy("DELETE", using=_KB_WRITABLE),
     ],
     # Readable with a visible knowledge base, writable only with a writable one (the
-    # application's knowledge bases are visible to everyone, written by the system). Keelson:
+    # application's knowledge bases are visible to everyone, written by the system). Keelstone:
     # the row's own organization opens neither a knowledge base the user cannot write nor one
     # the user cannot read.
     "rag_documents": [Policy("SELECT", using=_DOCUMENT_VISIBLE), *_writes(_DOCUMENT_WRITABLE)],
@@ -578,7 +578,7 @@ class Principal:
     service: bool = False
 
 
-_principal: ContextVar[Principal | None] = ContextVar("keelson_principal", default=None)
+_principal: ContextVar[Principal | None] = ContextVar("keelstone_principal", default=None)
 
 
 def current_principal() -> Principal | None:

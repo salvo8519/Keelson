@@ -1,6 +1,6 @@
 # Third-party notices
 
-This project was generated from Keelson (Apache License 2.0, see NOTICE), which includes source
+This project was generated from Keelstone (Apache License 2.0, see NOTICE), which includes source
 code from the projects below under their licences. Keep this file when you distribute the
 project: the MIT License requires its notice in all copies or substantial portions.
 

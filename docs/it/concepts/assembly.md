@@ -1,40 +1,40 @@
 ---
 source: concepts/assembly.md
-source_hash: 1e8d8dd43735
+source_hash: 21df77561285
 ---
-# Come è assemblato Keelson
+# Come è assemblato Keelstone
 
-Keelson non riscrive ciò che due template open source maturi fanno già bene. Li importa,
+Keelstone non riscrive ciò che due template open source maturi fanno già bene. Li importa,
 registra cosa ha importato e aggiunge ciò che serve a un progetto enterprise e che loro non
 coprono.
 
 ## Fonti
 
-| Fonte | Licenza | Cosa prende Keelson |
+| Fonte | Licenza | Cosa prende Keelstone |
 | --- | --- | --- |
 | Full-Stack AI Agent Template (Vstorm) | MIT | Backend, organizzazioni e ruoli, worker e scheduler, framework agentici, retrieval, Docker, Kubernetes, CI, strumenti di progetto |
 | Full Stack FastAPI Template (FastAPI) | MIT | Frontend React |
 
-I commit, la procedura di import e ogni modifica che Keelson aggiunge sono registrati in
-[Provenance](https://salvo8519.github.io/keelson/project/provenance/) (in inglese).
+I commit, la procedura di import e ogni modifica che Keelstone aggiunge sono registrati in
+[Provenance](https://salvo8519.github.io/keelstone/project/provenance/) (in inglese).
 
 ## Da cookiecutter a Copier
 
 Il template del backend upstream è un template cookiecutter con circa duecento variabili,
-derivate dal suo generatore a partire da poche scelte. Keelson mantiene quei file così come
+derivate dal suo generatore a partire da poche scelte. Keelstone mantiene quei file così come
 sono e li esegue con Copier, che registra le risposte nel progetto e può aggiornarlo in
 seguito.
 
 Neanche la derivazione viene riscritta. Uno script esegue il generatore upstream su ogni
-combinazione valida delle domande di Keelson, più di tremila, e scrive ogni variabile upstream
+combinazione valida delle domande di Keelstone, più di tremila, e scrive ogni variabile upstream
 come costante o come tabella sulle poche domande che la determinano. Con le risposte
 predefinite, il progetto generato da Copier viene confrontato file per file con quello del
 generatore upstream: le uniche differenze sono quelle volute.
 
-## Cosa aggiunge Keelson
+## Cosa aggiunge Keelstone
 
 - I difetti trovati nell'audit del codice importato sono corretti e coperti da test; l'elenco
-  è in [Provenance](https://salvo8519.github.io/keelson/project/provenance/).
+  è in [Provenance](https://salvo8519.github.io/keelstone/project/provenance/).
 - Una traccia delle licenze: i progetti generati contengono `NOTICE` e
   `THIRD_PARTY_NOTICES.md`.
 - Stile della casa: niente emoji né icone nei file generati.

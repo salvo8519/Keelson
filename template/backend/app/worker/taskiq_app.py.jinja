@@ -30,7 +30,7 @@ async def startup() -> None:
 async def shutdown() -> None:
     pass
 
-# Keelson: task modules are not imported here. They import `broker` from this module, and the
+# Keelstone: task modules are not imported here. They import `broker` from this module, and the
 # API process imports them first (for `.kiq()`), so an import here closed a cycle that stopped
 # the application at start-up. Worker and scheduler load them from app.worker.taskiq_worker.
 {%- else %}

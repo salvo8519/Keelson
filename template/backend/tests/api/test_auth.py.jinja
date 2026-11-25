@@ -165,7 +165,7 @@ async def test_login_invalid_credentials(
 
 @pytest.mark.anyio
 async def test_register_success(client_with_mock_service: AsyncClient):
-    """Registration is accepted; the body does not describe the account (Keelson)."""
+    """Registration is accepted; the body does not describe the account (Keelstone)."""
     response = await client_with_mock_service.post(
         f"{settings.API_V1_STR}/auth/register",
         json={
@@ -183,7 +183,7 @@ async def test_register_duplicate_email(
     client_with_mock_service: AsyncClient,
     mock_user_service: MagicMock,
 ):
-    """A known address gets the same answer as a new one (Keelson)."""
+    """A known address gets the same answer as a new one (Keelstone)."""
     mock_user_service.register = ServiceMock(return_value=None)
 
     response = await client_with_mock_service.post(

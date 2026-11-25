@@ -1,4 +1,4 @@
-"""The OpenAPI document of the API, kept in the repository and checked against the code (Keelson).
+"""The OpenAPI document of the API, kept in the repository and checked against the code (Keelstone).
 
     cd backend && uv run python ../scripts/openapi.py export   # write openapi/openapi.json
     cd backend && uv run python ../scripts/openapi.py check    # fail if it differs from the code

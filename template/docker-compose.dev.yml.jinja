@@ -24,7 +24,7 @@ services:
     env_file:
       - ./backend/.env
 {%- if enable_file_storage %}
-      # Keelson: documents in the Garage service below (settings in garage/).
+      # Keelstone: documents in the Garage service below (settings in garage/).
       - ./garage/storage.env
       - ./garage/development.env
 {%- endif %}
@@ -232,7 +232,7 @@ services:
     env_file:
       - ./backend/.env
 {%- if enable_file_storage %}
-      # Keelson: documents in the Garage service below (settings in garage/).
+      # Keelstone: documents in the Garage service below (settings in garage/).
       - ./garage/storage.env
       - ./garage/development.env
 {%- endif %}
@@ -240,7 +240,7 @@ services:
       - DEBUG=true
       - POSTGRES_HOST=db
 {%- if use_qdrant %}
-      # Keelson: the worker ingests documents into Qdrant (it looked for it on localhost).
+      # Keelstone: the worker ingests documents into Qdrant (it looked for it on localhost).
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
 {%- endif %}
@@ -329,7 +329,7 @@ services:
     env_file:
       - ./backend/.env
 {%- if enable_file_storage %}
-      # Keelson: documents in the Garage service below (settings in garage/).
+      # Keelstone: documents in the Garage service below (settings in garage/).
       - ./garage/storage.env
       - ./garage/development.env
 {%- endif %}
@@ -337,7 +337,7 @@ services:
       - DEBUG=true
       - POSTGRES_HOST=db
 {%- if use_qdrant %}
-      # Keelson: the worker ingests documents into Qdrant (it looked for it on localhost).
+      # Keelstone: the worker ingests documents into Qdrant (it looked for it on localhost).
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
 {%- endif %}
@@ -452,7 +452,7 @@ services:
 
 {%- if enable_file_storage %}
 
-  # Keelson: S3-compatible object storage for documents (Garage by Deuxfleurs, AGPLv3, run as
+  # Keelstone: S3-compatible object storage for documents (Garage by Deuxfleurs, AGPLv3, run as
   # a separate service and never linked). Configuration in garage/garage.toml; development
   # secrets in garage/development.env. garage-init prepares the node, the key and the bucket.
   garage:

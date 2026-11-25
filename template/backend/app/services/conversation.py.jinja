@@ -418,7 +418,7 @@ class ConversationService:
 {%- endif %}
         )
 {%- if use_jwt %}
-        # Keelson: a share lets its holder read or write, not delete. Row level security
+        # Keelstone: a share lets its holder read or write, not delete. Row level security
         # refused the delete and the request still answered 204.
         if (
             user_id is not None

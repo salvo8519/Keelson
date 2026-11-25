@@ -6,7 +6,7 @@ a module (a condition negated, a constant altered, an argument dropped), runs th
 expects at least one of them to fail. A change that no test notices is a *surviving mutant*:
 behaviour that nothing pins down.
 
-Keelson applies it to the modules of a generated project where a silent change becomes a
+Keelstone applies it to the modules of a generated project where a silent change becomes a
 security defect.
 
 | Module | What it decides |

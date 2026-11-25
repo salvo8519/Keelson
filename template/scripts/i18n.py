@@ -34,7 +34,7 @@ from typing import Any
 
 import yaml
 
-# One copy serves Keelson and every generated project: DOCS_ROOT selects the repository.
+# One copy serves Keelstone and every generated project: DOCS_ROOT selects the repository.
 ROOT = Path(os.environ.get("DOCS_ROOT") or Path(__file__).resolve().parents[1]).resolve()
 EN = ROOT / "docs" / "en"
 FRONT = re.compile(r"\A---\n(.*?)\n---\n", re.DOTALL)

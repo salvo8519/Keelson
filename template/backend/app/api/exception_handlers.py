@@ -19,7 +19,7 @@ from app.core.exceptions import AppException
 from app.core.i18n import N_
 from app.core.problems import problem_response
 
-# Keelson: messages of the framework's own errors, so that they are translated too.
+# Keelstone: messages of the framework's own errors, so that they are translated too.
 FRAMEWORK_MESSAGES = (
     N_("Not authenticated"),
     N_("Not Found"),
@@ -73,7 +73,7 @@ async def app_exception_handler(
     if exc.status_code == 401:
         headers["WWW-Authenticate"] = "Bearer"
 
-    # Keelson: Problem Details (RFC 9457) with a translated detail (app/core/problems.py).
+    # Keelstone: Problem Details (RFC 9457) with a translated detail (app/core/problems.py).
     return problem_response(
         status=exc.status_code,
         code=exc.code,
@@ -108,7 +108,7 @@ async def unhandled_exception_handler(
 async def http_exception_handler(
     request: HTTPConnection, exc: StarletteHTTPException
 ) -> JSONResponse | None:
-    """Keelson: errors raised by the framework (401 of the OAuth2 scheme, unknown routes)
+    """Keelstone: errors raised by the framework (401 of the OAuth2 scheme, unknown routes)
     as Problem Details too. A non-string detail keeps the framework's response."""
     if _is_websocket(request):
         return None

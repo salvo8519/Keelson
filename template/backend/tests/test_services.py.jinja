@@ -138,7 +138,7 @@ class TestUserServicePostgresql:
 
     @pytest.mark.anyio
     async def test_register_duplicate_email(self, user_service: UserService, mock_user: MockUser):
-        """Registering a known address creates nothing and does not say so (Keelson)."""
+        """Registering a known address creates nothing and does not say so (Keelstone)."""
         mock_user.locale = None
         with patch("app.services.user.user_repo") as mock_repo:
             mock_repo.get_by_email = AsyncMock(return_value=mock_user)
@@ -192,7 +192,7 @@ class TestUserServicePostgresql:
 
             with pytest.raises(AuthenticationError):
                 await user_service.authenticate("unknown@example.com", "password")
-            # Keelson (official template): the same hashing work as for a real account.
+            # Keelstone (official template): the same hashing work as for a real account.
             check.assert_called_once_with("password", DUMMY_HASH)
 
     @pytest.mark.anyio

@@ -13,7 +13,7 @@ Sources (both MIT, see THIRD_PARTY_NOTICES.md and PROVENANCE.md):
 The upstream post-generation hook becomes ``template/_post_gen.py.jinja`` and
 runs as a Copier task.
 
-Keelson changes on top of the import live in the same files, so the script
+Keelstone changes on top of the import live in the same files, so the script
 never writes into a non-empty directory. For a re-sync, import into an empty
 scratch directory and merge it into ``template/`` with a three-way diff against
 the previous import (see PROVENANCE.md, Re-sync procedure).
@@ -36,7 +36,7 @@ VSTORM_EXCLUDED_TOP_LEVEL = {
     "frontend",  # replaced by the official React frontend
 }
 
-# Upstream top-level directories moved by Keelson (relative to the generated project root).
+# Upstream top-level directories moved by Keelstone (relative to the generated project root).
 VSTORM_RELOCATED_TOP_LEVEL = {
     # The email loader resolves emails/ next to app/, and only backend/ is in the image.
     "emails": Path("backend") / "emails",

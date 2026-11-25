@@ -2,7 +2,7 @@
 
 The pins of the component skills live in one place, ``template/skills.lock.toml.jinja``.
 Generated projects render it with their answers; this repository renders it with every
-component enabled and git sources only (``keelson_dev``), so that agents working on the
+component enabled and git sources only (``keelstone_dev``), so that agents working on the
 template get the same skills, at the same commits, as the projects it generates.
 
     python scripts/skills_lock.py           # write skills.lock.toml
@@ -23,7 +23,7 @@ TARGET = ROOT / "skills.lock.toml"
 
 # Every component the template can generate, so the repository covers all of them.
 CONTEXT = {
-    "keelson_dev": True,
+    "keelstone_dev": True,
     "use_pydantic_ai": True,
     "use_pydantic_deep": False,
     "use_langchain": False,

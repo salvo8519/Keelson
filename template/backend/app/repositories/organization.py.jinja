@@ -111,7 +111,7 @@ async def update(
         org.name = name
     if avatar_url is not None:
         org.avatar_url = avatar_url
-    if default_locale is not None:  # Keelson
+    if default_locale is not None:  # Keelstone
         org.default_locale = default_locale
     await db.flush()
     await db.refresh(org)

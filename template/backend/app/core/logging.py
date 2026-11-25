@@ -1,4 +1,4 @@
-"""Logging: PII redaction (upstream) and structured JSON records (Keelson).
+"""Logging: PII redaction (upstream) and structured JSON records (Keelstone).
 
 Every record carries the request id and, when a trace is active, the OpenTelemetry trace and
 span ids, so a log line leads to its trace and to the ``request_id`` of a Problem Details
@@ -17,7 +17,7 @@ from typing import Any, ClassVar
 from opentelemetry import trace
 
 request_id_var: ContextVar[str | None] = ContextVar("request_id", default=None)
-# Keelson: the platform administrator acting through an impersonation token, named in every
+# Keelstone: the platform administrator acting through an impersonation token, named in every
 # record and audit entry of the request (``act`` claim, app/core/security.py).
 acting_admin_var: ContextVar[str | None] = ContextVar("acting_admin_id", default=None)
 
@@ -44,7 +44,7 @@ class PiiRedactionFilter(logging.Filter):
         (re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"), "[EMAIL_REDACTED]"),
         # JWT tokens (header.payload.signature)
         (re.compile(r"eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]+"), "[JWT_REDACTED]"),
-        # Keelson API keys: the prefix identifies the key and stays, the secret goes.
+        # Keelstone API keys: the prefix identifies the key and stays, the secret goes.
         (re.compile(r"(key_[A-Za-z0-9_-]{12})\.[A-Za-z0-9_-]{20,}"), r"\1.[REDACTED]"),
         (re.compile(r"sk-[a-zA-Z0-9]{20,}"), "[API_KEY_REDACTED]"),
         (re.compile(r"sk-ant-[a-zA-Z0-9_-]{20,}"), "[API_KEY_REDACTED]"),
@@ -65,7 +65,7 @@ class PiiRedactionFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         """Redact PII from the formatted message.
 
-        Keelson: upstream redacted the template and the arguments separately. A template such
+        Keelstone: upstream redacted the template and the arguments separately. A template such
         as ``"password=%s"`` lost its ``%s`` to the redaction, formatting then failed, and
         logging printed the raw arguments, the password included, to standard error. The
         message is now formatted first and redacted as a whole.
@@ -81,7 +81,7 @@ class PiiRedactionFilter(logging.Filter):
         return value
 
 
-# Keelson: fields passed with ``extra=`` whose name says they hold a secret are never written.
+# Keelstone: fields passed with ``extra=`` whose name says they hold a secret are never written.
 # Matched on the whole name or its last part (``refresh_token``), so ``input_tokens`` stays.
 SENSITIVE_FIELD = re.compile(
     r"(^|_)(password|passwd|secret|token|api_?key|authori[sz]ation|cookies?|credentials?"
@@ -136,7 +136,7 @@ class JsonFormatter(logging.Formatter):
         }
         for key, value in vars(record).items():
             if key not in _RECORD_FIELDS and key not in _TERMINAL_FIELDS and value is not None:
-                # Keelson: upstream redacted the message only; extra fields went out as given.
+                # Keelstone: upstream redacted the message only; extra fields went out as given.
                 entry[key] = scrub(value, key)
         if record.exc_info:
             # Exceptions carry SQL parameters, request data and URLs: redacted like messages.
@@ -147,7 +147,7 @@ class JsonFormatter(logging.Formatter):
 class _AppHandler(logging.StreamHandler):  # type: ignore[type-arg]
     """The application's handler, recognised when logging is configured again.
 
-    Keelson: the whole line is redacted once more, so the text format, whose exception text
+    Keelstone: the whole line is redacted once more, so the text format, whose exception text
     is added by the formatter, gets the same protection as JSON.
     """
 

@@ -14,7 +14,7 @@ Do not open a public issue for a vulnerability.
 - The template and the projects it generates with their default configuration.
 - The tooling of this repository.
 
-Vulnerabilities in the upstream templates are reported to their maintainers as well; Keelson
+Vulnerabilities in the upstream templates are reported to their maintainers as well; Keelstone
 applies the fix and records it in `PROVENANCE.md`.
 
 ## Practices

@@ -1,4 +1,4 @@
-"""Languages of API messages, Problem Details errors and emails (Keelson)."""
+"""Languages of API messages, Problem Details errors and emails (Keelstone)."""
 {%- if enable_email %}
 
 import re
@@ -84,7 +84,7 @@ async def test_errors_are_problem_details_in_the_requested_language(language: st
 # Emails ------------------------------------------------------------------------------------
 
 PLACEHOLDER = re.compile(r"\[\[\w+\]\]")
-# Templates of features outside the Keelson profile (billing, credits) are not translated.
+# Templates of features outside the Keelstone profile (billing, credits) are not translated.
 TRANSLATED_EMAILS = [
     EmailKey.WELCOME,
     EmailKey.EMAIL_VERIFICATION,

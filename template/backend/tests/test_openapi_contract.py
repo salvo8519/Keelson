@@ -1,4 +1,4 @@
-"""The published OpenAPI document carries no internal notes (Keelson).
+"""The published OpenAPI document carries no internal notes (Keelstone).
 
 Route docstrings become operation descriptions. Notes for maintainers (why a route runs as
 the system, which upstream behaviour changed, file paths) go after a form feed (``\\f``),
@@ -10,7 +10,7 @@ from typing import Any
 
 from app.main import app
 
-INTERNAL = re.compile(r"Keelson|Upstream|upstream|app/[a-z_/]+\.py|\.py\b")
+INTERNAL = re.compile(r"Keelstone|Upstream|upstream|app/[a-z_/]+\.py|\.py\b")
 
 
 def _texts(document: dict[str, Any]) -> list[tuple[str, str]]:

@@ -1,4 +1,4 @@
-"""Sessions end when the credentials change, against a real database (Keelson).
+"""Sessions end when the credentials change, against a real database (Keelstone).
 
 Access and refresh tokens carry the session version of their user (``ver``). A password
 change, a password reset, a password set by an administrator, a deactivation and an explicit

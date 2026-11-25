@@ -1,4 +1,4 @@
-"""Log trap: secrets that pass through the application never reach the logs (Keelson).
+"""Log trap: secrets that pass through the application never reach the logs (Keelstone).
 
 Known values (a password, a JWT, an API key, a provider key, a database password) are sent
 through the logging paths the application uses: message, arguments, ``extra=`` fields, nested

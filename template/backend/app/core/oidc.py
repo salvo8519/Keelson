@@ -1,6 +1,6 @@
-"""OpenID Connect providers for sign-in (Keelson).
+"""OpenID Connect providers for sign-in (Keelstone).
 
-Upstream signs in with Google only, through Authlib. Keelson keeps Authlib and the upstream
+Upstream signs in with Google only, through Authlib. Keelstone keeps Authlib and the upstream
 flow, and lets any OpenID Connect provider be configured at run time: Google, Microsoft Entra
 ID, Keycloak, Okta, Auth0 or a company's own issuer. They differ only in configuration:
 

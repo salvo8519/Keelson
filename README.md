@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="docs/_shared/assets/brand/mark.svg" alt="Keelson" width="96">
+  <img src="docs/_shared/assets/brand/mark.svg" alt="Keelstone" width="96">
 </p>
 
-<h1 align="center">Keelson</h1>
+<h1 align="center">Keelstone</h1>
 
 <p align="center"><strong>A FastAPI service for companies, ready on day one.</strong><br>
 Tenants segregated by the database, single sign-on, an API contract and an agent layer,
@@ -21,7 +21,7 @@ English | [Italiano](README.it.md)
 Starting a service for companies means solving the same problems before the first feature:
 keeping each customer's data apart, signing in through their identity provider, giving other
 systems controlled access, publishing an API that does not break its clients, and passing a
-security review. Keelson generates a FastAPI project where these are already done, verified by
+security review. Keelstone generates a FastAPI project where these are already done, verified by
 tests that run in its pipeline, and leaves your team the part that is specific to you.
 
 ## What is already done
@@ -43,7 +43,7 @@ tests that run in its pipeline, and leaves your team the part that is specific t
 ## Quick start
 
 ```bash
-uvx copier copy --trust https://github.com/salvo8519/keelson my_service
+uvx copier copy --trust https://github.com/salvo8519/keelstone my_service
 cd my_service
 make quickstart      # first run: configuration, development stack, migrations, a development admin
 make dev             # the development stack, every day after the first run (reload on change)
@@ -51,8 +51,8 @@ make prod-local      # the production stack on this machine: production settings
 make help            # every command, by area
 ```
 
-Keelson uses [Copier](https://copier.readthedocs.io): it asks a few questions, renders the
-project and records your answers. When Keelson improves, `uvx copier update --trust` brings the
+Keelstone uses [Copier](https://copier.readthedocs.io): it asks a few questions, renders the
+project and records your answers. When Keelstone improves, `uvx copier update --trust` brings the
 changes into your project and merges them with your own, so a project does not stay at the
 version it was generated from. The questions and their defaults are in the
 [reference](docs/en/reference/questions.md).
@@ -131,7 +131,7 @@ evidence and what remains with the organization. Paths below are those of a gene
 Every change to the template renders projects and runs their checks: the backend suite
 against a real PostgreSQL (database segregation and migrations included, where a skipped test
 counts as a failure), the frontend build and translations, the documentation build, the API
-contract and the generated client, and every Compose stack. The review of the code Keelson
+contract and the generated client, and every Compose stack. The review of the code Keelstone
 builds on found defects that are fixed, each with a regression test. Among them: commits that
 reached the client as successes after failing, access tokens placed in redirect URLs, a log
 filter that could print passwords, accounts linked through unverified e-mail addresses, a
@@ -140,9 +140,9 @@ development image. [PROVENANCE.md](PROVENANCE.md) lists every change.
 
 ## Status and limits
 
-Keelson is a pre-release. What is not yet verified, or not yet built:
+Keelstone is a pre-release. What is not yet verified, or not yet built:
 
-- The Docker images and Compose stacks have not been started in Keelson's own pipeline yet;
+- The Docker images and Compose stacks have not been started in Keelstone's own pipeline yet;
   their configuration is resolved and checked by the tests.
 - Single sign-on is tested against a simulated provider, not yet against a live Entra ID or
   Keycloak tenant.
@@ -160,7 +160,7 @@ Keelson is a pre-release. What is not yet verified, or not yet built:
 
 The documentation site is built with Zensical in English and Italian: getting started,
 concepts (tenancy, sign-in and workload identity, security controls, languages,
-observability), the API and settings reference generated from the code, and how Keelson is
+observability), the API and settings reference generated from the code, and how Keelstone is
 assembled.
 
 ## Development of the template
@@ -176,17 +176,24 @@ See [AGENTS.md](AGENTS.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Built on
 
-Keelson stands on two open source templates and keeps their work visible. The backend, the
+Keelstone stands on two open source templates and keeps their work visible. The backend, the
 workers and the agent layer come from the
 [Full-Stack AI Agent Template](https://github.com/vstorm-co/full-stack-ai-agent-template) by
 Vstorm; the React frontend from the official
 [Full Stack FastAPI Template](https://github.com/fastapi/full-stack-fastapi-template). Both are
-MIT-licensed. Keelson imports them at recorded commits, converts the first to Copier without
+MIT-licensed. Keelstone imports them at recorded commits, converts the first to Copier without
 rewriting it, and adds the segregation, identity, contract, security and language layers
-described above. [How Keelson is assembled](docs/en/concepts/assembly.md) explains the method.
+described above. [How Keelstone is assembled](docs/en/concepts/assembly.md) explains the method.
+
+## The name
+
+Keelstone, pronounced /ˈkiːl.stoʊn/ (KEEL-stone), joins the keel, the beam that carries a
+ship, and the keystone, the stone that holds an arch together: the part every generated
+service rests on. Until November 2026 the project was called Keelson; the name changed because
+another Python project already publishes under it.
 
 ## Licence
 
 Apache License 2.0 (see [LICENSE](LICENSE) and [NOTICE](NOTICE)). The notices of the two
 MIT-licensed templates are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and are carried
-into every generated project. The licence grants no right to use the Keelson name or logo.
+into every generated project. The licence grants no right to use the Keelstone name or logo.

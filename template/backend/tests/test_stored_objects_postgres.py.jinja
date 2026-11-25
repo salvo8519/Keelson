@@ -1,5 +1,5 @@
 {%- if enable_teams and use_postgresql %}
-"""Stored objects against a real PostgreSQL, under row level security (Keelson).
+"""Stored objects against a real PostgreSQL, under row level security (Keelstone).
 
 Objects are written through the role of the application login, as a request writes them;
 migration and cleanup run with the owner login, as workers and the command line do. S3 is

@@ -39,7 +39,7 @@ async def _check_one(
 
 
 async def first_in_window(key: str, period_seconds: int) -> bool:
-    """Keelson: True for the first call with ``key`` in ``period_seconds`` (sampling, not limits)."""
+    """Keelstone: True for the first call with ``key`` in ``period_seconds`` (sampling, not limits)."""
     return (await _get_storage().increment_and_check(f"once:{key}", 1, period_seconds)).allowed
 
 
@@ -109,7 +109,7 @@ async def check_rate_limit(
 
 
 def _raise_429(result: RateLimitResult, category: str, scope: str) -> None:
-    # Keelson: an AppException, so the response is a Problem Details document like every other
+    # Keelstone: an AppException, so the response is a Problem Details document like every other
     # error; the details and the Retry-After header are those of the upstream response.
     retry_after = result.retry_after_seconds or 60
     raise RateLimitError(

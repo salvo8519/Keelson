@@ -1,4 +1,4 @@
-// Keelson: back from a single sign-on provider. The backend sent a one-time code (never the
+// Keelstone: back from a single sign-on provider. The backend sent a one-time code (never the
 // tokens, which would stay in the browser history); it is exchanged here for the session,
 // which the API sets as HttpOnly cookies.
 import { createFileRoute, useNavigate } from "@tanstack/react-router"

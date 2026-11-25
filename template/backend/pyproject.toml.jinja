@@ -39,11 +39,11 @@ dependencies = [
     "psycopg2-binary>=2.9.0",
     "alembic>=1.18.0",
     "greenlet>=3.2.0",
-    # Keelson: gettext catalogs of API messages (app/core/i18n.py).
+    # Keelstone: gettext catalogs of API messages (app/core/i18n.py).
     "babel>=2.16.0",
 {%- if use_jwt %}
     # PyJWT[crypto]: RSA/ECDSA verification of tokens signed by others, published as JWKS
-    # (Keelson: CI workload identity always needs it; upstream only for a delegated IdP).
+    # (Keelstone: CI workload identity always needs it; upstream only for a delegated IdP).
     "pyjwt[crypto]>=2.9.0",
     # Argon2id hashes, bcrypt verified for older ones (official FastAPI template).
     "pwdlib[argon2,bcrypt]>=0.3.1",
@@ -83,7 +83,7 @@ dependencies = [
 {%- if enable_prometheus %}
     "prometheus-fastapi-instrumentator>=7.0.0",
 {%- endif %}
-    # Keelson: API reference and tracing.
+    # Keelstone: API reference and tracing.
     "scalar-fastapi>=1.11.0",
     "opentelemetry-sdk>=1.30.0",
 {%- if not enable_logfire %}
@@ -329,10 +329,10 @@ dev = [
     "httpx>=0.28.0",
     "ruff>=0.15.0",
     "ty>=0.0.29",
-    # Keelson: the dependency audit of the CI, at the version recorded in uv.lock.
+    # Keelstone: the dependency audit of the CI, at the version recorded in uv.lock.
     "pip-audit>=2.10.1",
 {%- if enable_file_storage %}
-    # Keelson: an in-process S3 for the object storage tests (no server needed).
+    # Keelstone: an in-process S3 for the object storage tests (no server needed).
     "moto[s3]>=5.1.0",
 {%- endif %}
 {%- if enable_precommit %}
@@ -365,7 +365,7 @@ select = [
     "UP",  # pyupgrade
     "SIM", # flake8-simplify
     "RUF", # ruff-specific rules
-    "S",   # flake8-bandit: security checks (Keelson)
+    "S",   # flake8-bandit: security checks (Keelstone)
 ]
 ignore = [
     "E501", # line too long (handled by formatter)
@@ -376,7 +376,7 @@ ignore = [
     "RUF059", # unpacked variable never used (CLI destructuring pattern)
 ]
 
-# Keelson: security checks (S) with reviewed exceptions.
+# Keelstone: security checks (S) with reviewed exceptions.
 # S105/S106 flag names such as token_type or PASSWORD_RESET, not secret values: real secrets
 # come from the environment and are validated in production (app/core/config.py).
 [tool.ruff.lint.per-file-ignores]

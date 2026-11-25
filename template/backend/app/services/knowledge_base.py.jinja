@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 async def collection_tenant(db: AsyncSession, collection_name: str) -> str:
-    """Tenant of the vectors written to ``collection_name``: its knowledge base's (Keelson).
+    """Tenant of the vectors written to ``collection_name``: its knowledge base's (Keelstone).
 
     A collection without a knowledge base exists only through administration (the CLI); its
     vectors belong to the application. No request can search it: searches go through the
@@ -54,7 +54,7 @@ class KnowledgeBaseService:
     ) -> UUID | None:
         """``organization_id`` if the user is still a member of it, otherwise None.
 
-        Keelson: the organization reaches the agent from a stored conversation, which its owner
+        Keelstone: the organization reaches the agent from a stored conversation, which its owner
         keeps after leaving the organization; without this check a former member kept searching
         the organization's knowledge bases through the agent.
         """
@@ -217,7 +217,7 @@ class KnowledgeBaseService:
         organization_id: UUID | None,
         is_app_admin: bool,
     ) -> KnowledgeBase:
-        """A knowledge base the user may change (Keelson: reading one is not enough).
+        """A knowledge base the user may change (Keelstone: reading one is not enough).
 
         Raises:
             NotFoundError: The knowledge base does not exist or is not visible to the user.
@@ -243,7 +243,7 @@ class KnowledgeBaseService:
             organization_id=organization_id,
             is_app_admin=is_app_admin,
         )
-        # Keelson: the tenant of a collection's vectors is its knowledge base's, so a
+        # Keelstone: the tenant of a collection's vectors is its knowledge base's, so a
         # collection belongs to one knowledge base. Only the application's knowledge bases,
         # created by the platform administration, may name an existing collection of the
         # administration (the command line); the others get a new one.
@@ -324,7 +324,7 @@ class KnowledgeBaseService:
     ) -> None:
         """Delete a knowledge base with its documents, their files and its vectors.
 
-        Keelson: upstream deleted the row only, so the documents and the vectors stayed (and
+        Keelstone: upstream deleted the row only, so the documents and the vectors stayed (and
         reached whoever later got the same collection), and a delete refused by row level
         security answered as done.
 
@@ -363,7 +363,7 @@ class KnowledgeBaseService:
         raise NotFoundError(message="Knowledge base not found", details={"kb_id": str(kb.id)})
 
     async def _check_org_writer(self, organization_id: UUID | None, user_id: UUID) -> None:
-        """Keelson: owners, admins and members change an organization's content; viewers read.
+        """Keelstone: owners, admins and members change an organization's content; viewers read.
 
         The same rule is enforced by row level security (app/db/tenancy.py).
         """

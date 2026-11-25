@@ -3,7 +3,7 @@
 language: it
 name: Italiano
 site_description: "Template di progetto FastAPI enterprise con livello agentico, assemblato da due template open source collaudati."
-copyright: "Copyright &copy; 2026 Salvatore Miseo e i contributori di Keelson &middot; Apache License 2.0"
+copyright: "Copyright &copy; 2026 Salvatore Miseo e i contributori di Keelstone &middot; Apache License 2.0"
 sections:
   Home: Home
   Getting started: Per iniziare

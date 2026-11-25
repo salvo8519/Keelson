@@ -6,7 +6,7 @@
     GET  /oauth/<name>/callback    back from the provider: the user is found or created
     POST /oauth/exchange           the frontend trades a one-time code for the session cookies
 
-Keelson: upstream put the access and refresh tokens in the URL of the redirect to the
+Keelstone: upstream put the access and refresh tokens in the URL of the redirect to the
 frontend, where browser history, proxies and server logs keep them. The redirect now carries
 a random code, valid once for a minute and stored only as a hash; the frontend exchanges it
 in a POST for the session, set as HttpOnly cookies (app/core/session_cookies.py). The user signs in once, at the provider.

@@ -145,7 +145,7 @@ class MemberService:
                 details={"user_id": str(new_owner_user_id)},
             )
 
-        # Keelson: promote first. Only an owner may grant the owner role (row level security
+        # Keelstone: promote first. Only an owner may grant the owner role (row level security
         # too), so the requester is demoted once the new owner is in place.
         await member_repo.update_role(self.db, new_owner, role=OrgRole.OWNER.value)
         await member_repo.update_role(self.db, requester, role=OrgRole.ADMIN.value)

@@ -202,7 +202,7 @@ async def search_documents(
     use_reranker: bool = Query(False, description="Whether to use reranking (if configured)"),
 ) -> Any:
     """Search for relevant document chunks. Supports multi-collection search."""
-    # Keelson: second barrier, in the vector store: only vectors of the reader's tenants.
+    # Keelstone: second barrier, in the vector store: only vectors of the reader's tenants.
 {%- if enable_teams and use_jwt %}
     tenants = TenantFilter.for_reader(user.id, active_org.id)
 {%- elif use_jwt %}
@@ -211,7 +211,7 @@ async def search_documents(
     tenants = TenantFilter.for_reader(None, None)
 {%- endif %}
 {%- if enable_teams and use_jwt %}
-    # Keelson: only the collections of knowledge bases the user can see in the active
+    # Keelstone: only the collections of knowledge bases the user can see in the active
     # organization. Upstream searched any collection by name, so a user of one organization
     # could read the documents of another (the vector store has no row level security).
     requested = request.collection_names or [request.collection_name]
@@ -287,7 +287,7 @@ async def ingest_file(
     replace: bool = Query(False),
 ) -> Any:
     """Upload and queue a file for ingestion into a collection."""
-    # Keelson: streamed into a stored object of the active organization.
+    # Keelstone: streamed into a stored object of the active organization.
     return await rag_doc_svc.dispatch_upload(
         collection_name=name,
         upload=file,
@@ -551,7 +551,7 @@ async def rag_status_stream(
     EventSource API.
 
     \f
-    Keelson: one Redis pub/sub channel per organization, ``rag_status:<id>``.
+    Keelstone: one Redis pub/sub channel per organization, ``rag_status:<id>``.
 
     The endpoint is itself an async generator: FastAPI's native SSE producer
     streams what it yields. Returning the generator object instead (with

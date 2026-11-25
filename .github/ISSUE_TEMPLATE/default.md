@@ -1,6 +1,6 @@
 ---
 name: Task
-about: A change to Keelson, with its acceptance criteria
+about: A change to Keelstone, with its acceptance criteria
 ---
 
 ## Problem or goal

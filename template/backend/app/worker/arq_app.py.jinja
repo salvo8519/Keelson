@@ -48,7 +48,7 @@ class WorkerSettings:
 
     functions = [
 {%- if enable_rag %}
-        # Keelson: the jobs the API enqueues by name are registered (upstream registered only
+        # Keelstone: the jobs the API enqueues by name are registered (upstream registered only
         # the sync of one source, so uploads and local syncs never ran).
         ingest_document_task,
         sync_collection_task,

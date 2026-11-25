@@ -1,4 +1,4 @@
-"""API keys of organizations: format, hashing and scopes (Keelson).
+"""API keys of organizations: format, hashing and scopes (Keelstone).
 
 A key is shown once, at creation, as ``<prefix>.<secret>``:
 

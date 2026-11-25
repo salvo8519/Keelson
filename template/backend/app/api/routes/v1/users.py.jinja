@@ -44,7 +44,7 @@ async def update_current_user(
     """Update current user profile.
 
     \f
-    Keelson: only profile fields. Upstream accepted ``UserUpdate`` here, so a user could set a
+    Keelstone: only profile fields. Upstream accepted ``UserUpdate`` here, so a user could set a
     new password without the current one and change their own account status.
     """
     return await user_service.update_me(current_user, user_in)
@@ -64,7 +64,7 @@ async def update_current_user_password(
     change keeps its own session: it receives new session cookies.
     """
     await user_service.change_password(current_user, body.current_password, body.new_password)
-    # Keelson: the browser session (cookie, no bearer token) is renewed in the new version.
+    # Keelstone: the browser session (cookie, no bearer token) is renewed in the new version.
     if request.cookies.get(ACCESS_COOKIE) and "authorization" not in request.headers:
         set_session_cookies(response, *issue_session_tokens(current_user))
 
@@ -112,7 +112,7 @@ async def get_avatar(user_id: UUID, user_service: UserSvc, _: CurrentUser) -> An
     """Get the avatar image of a user who shares an organization with the caller.
 
     \f
-    Keelson: upstream served it without authentication, so under row level security the
+    Keelstone: upstream served it without authentication, so under row level security the
     lookup had no principal and always answered 404. It now needs a signed-in user, and the
     users policy (the user or someone sharing an organization) decides who is found.
     """

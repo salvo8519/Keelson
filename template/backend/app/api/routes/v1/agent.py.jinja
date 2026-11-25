@@ -104,13 +104,13 @@ async def agent_websocket(
                 data = await websocket.receive_json()
             except WebSocketDisconnect:
                 break
-            # Keelson: the model and effort of any frame are those the deployment offers; a frame
+            # Keelstone: the model and effort of any frame are those the deployment offers; a frame
             # that starts a turn (text or files, app/services/agent.py) also needs a current
             # session and a turn of the quota.
             problem = turn_options_problem(data)
             if problem is None and starts_turn(data):
 {%- if websocket_auth_jwt and not use_delegated_auth %}
-                # Keelson: a session ended since the handshake (password change, deactivation,
+                # Keelstone: a session ended since the handshake (password change, deactivation,
                 # sign out everywhere) ends the connection before the next turn.
                 if not await session_still_current(user, session_version):
                     await websocket.close(code=4001, reason="Session ended")

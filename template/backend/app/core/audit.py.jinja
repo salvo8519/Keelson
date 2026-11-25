@@ -1,7 +1,7 @@
 {%- if enable_teams %}
 """Audit log helpers for recording privileged actions.
 
-Keelson changes two things from upstream:
+Keelstone changes two things from upstream:
 
 * The entry is written with a plain INSERT, without RETURNING. The application login may
   add audit entries but never read them (app/db/tenancy.py), and PostgreSQL checks a
@@ -35,7 +35,7 @@ async def record_audit(
 ) -> None:
     """Add an audit log entry in the caller's transaction; raises if it cannot be written.
 
-    Keelson: under an impersonation token the actor is the impersonated user; the
+    Keelstone: under an impersonation token the actor is the impersonated user; the
     administrator who acts through it is added to the details (``acting_admin_id``).
     """
     if acting_admin := acting_admin_var.get():
@@ -47,7 +47,7 @@ async def record_audit(
             organization_id=organization_id,
             target_type=target_type,
             target_id=str(target_id) if target_id is not None else None,
-            # Keelson: a request body may carry a password or a token; the audit never keeps it.
+            # Keelstone: a request body may carry a password or a token; the audit never keeps it.
             details=without_secrets(details),
             ip_address=ip_address,
         )
@@ -56,7 +56,7 @@ async def record_audit(
 
 
 async def record_refusal(reason: str, **entry: Any) -> None:
-    """Keelson: an entry that must outlive the caller's transaction. A refusal is followed by
+    """Keelstone: an entry that must outlive the caller's transaction. A refusal is followed by
     an error, which rolls the request back with anything written in it; this entry is written
     and committed in a system session of its own."""
     async with system_session(reason) as db:

@@ -2794,7 +2794,7 @@ export type UserRead = {
 /**
  * UserRegister
  *
- * Self-registration (Keelson, from the official template): no role, no status.
+ * Self-registration (Keelstone, from the official template): no role, no status.
  *
  * Upstream registered with ``UserCreate``, so anyone could send ``"role": "admin"``.
  */
@@ -2939,7 +2939,7 @@ export type UserUpdate = {
 /**
  * UserUpdateMe
  *
- * Fields a user may change on their own profile (Keelson, from the official template).
+ * Fields a user may change on their own profile (Keelstone, from the official template).
  *
  * Password, role and account status are excluded: the password changes through
  * ``UpdatePassword``, which requires the current one; role and status are for administrators.

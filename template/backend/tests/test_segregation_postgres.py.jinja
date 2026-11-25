@@ -1,5 +1,5 @@
 {%- if enable_teams and use_postgresql %}
-"""Segregation of users and organizations enforced by PostgreSQL (Keelson).
+"""Segregation of users and organizations enforced by PostgreSQL (Keelstone).
 
 The first tests need no database: every table of the project must have policies or be closed
 with a stated reason, so a new table cannot be forgotten. The others attack every table
@@ -699,7 +699,7 @@ async def test_any_password_creates_a_working_application_login(world: World) ->
 
     from app.core.config import settings
 
-    user, password = f"keelson_login_{uuid.uuid4().hex[:8]}", "p'w$$; DROP TABLE users; --$$x"
+    user, password = f"keelstone_login_{uuid.uuid4().hex[:8]}", "p'w$$; DROP TABLE users; --$$x"
     async with world.db.system() as session:
         for statement in login_statements(user, password):
             await session.execute(text(statement))

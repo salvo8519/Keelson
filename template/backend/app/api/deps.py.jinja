@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db_session, system_session
 
-# Keelson: scope="function" commits the session when the route returns, before the response
+# Keelstone: scope="function" commits the session when the route returns, before the response
 # is sent. With the default scope FastAPI sends the response first, so a failed commit (a
 # constraint, a row level security check) reached the client as a success.
 DBSession = Annotated[AsyncSession, Depends(get_db_session, scope="function")]
@@ -96,7 +96,7 @@ from fastapi import Request
 
 
 async def get_system_db_session(request: Request) -> AsyncGenerator[AsyncSession, None]:
-    """Keelson: a system session for a route that acts before anyone is known (sign-in,
+    """Keelstone: a system session for a route that acts before anyone is known (sign-in,
     registration, tokens). The route is logged as the reason (app/db/session.py)."""
     async with system_session(f"{request.method} {request.url.path}") as session:
         yield session
@@ -282,7 +282,7 @@ from app.core.security import ACCESS, read_session_token
 from app.db.models.user import User, UserRole
 from app.core.session_cookies import ACCESS_COOKIE, require_trusted_origin, trusted_origin
 
-# Keelson: auto_error=False, so that a browser authenticated by its session cookie gets through
+# Keelstone: auto_error=False, so that a browser authenticated by its session cookie gets through
 # to get_current_user (app/core/session_cookies.py); programs still send the Bearer header.
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/login", auto_error=False)
 
@@ -334,7 +334,7 @@ async def get_current_user(
 
     Returns the full User object including role information.
 
-    Keelson: the token comes from the ``Authorization`` header (programs) or from the HttpOnly
+    Keelstone: the token comes from the ``Authorization`` header (programs) or from the HttpOnly
     session cookie (browsers); a cookie on an unsafe method must come from a trusted origin.
 
     Raises:
@@ -351,7 +351,7 @@ async def get_current_user(
     if claims is None:
         raise AuthenticationError(message="Invalid or expired token")
 {%- if enable_teams and use_postgresql %}
-    # Keelson: the verified subject becomes the principal of the request before any query, so
+    # Keelstone: the verified subject becomes the principal of the request before any query, so
     # the database applies its policies as this user (app/db/tenancy.py).
     await bind_user(user_service.db, claims.user_id)
 {%- endif %}
@@ -361,7 +361,7 @@ async def get_current_user(
         raise AuthenticationError(message="Invalid or expired token") from None
     if not user.is_active:
         raise AuthenticationError(message="User account is disabled")
-    # Keelson: a token of an earlier session version was ended (password change, sign-out
+    # Keelstone: a token of an earlier session version was ended (password change, sign-out
     # from every device; app/core/security.py).
     if not claims.is_current_for(user):
         raise AuthenticationError(message="Invalid or expired token")
@@ -369,7 +369,7 @@ async def get_current_user(
         acting_admin_var.set(claims.actor_id)
         request.state.acting_admin_id = claims.actor_id
 
-    # Keelson: the user's language wins over the organization's and the header's.
+    # Keelstone: the user's language wins over the organization's and the header's.
     set_language(getattr(user, "locale", None), LanguageSource.USER)
     return user
 {%- endif %}
@@ -451,7 +451,7 @@ async def get_active_organization(
     when the header is absent. Raises 404 if the user is not a member.
 {%- if use_postgresql %}
 
-    Keelson: the request's database session is then bound to the organization, so row level
+    Keelstone: the request's database session is then bound to the organization, so row level
     security restricts every later query of the request to it (app/db/tenancy.py).
 {%- endif %}
     """
@@ -489,7 +489,7 @@ from app.services.rag_status import RAGStatusService
 
 
 def get_rag_status_service(redis: Redis, org: ActiveOrg) -> RAGStatusService:
-    """Keelson: the ingestion events of the active organization, on the shared Redis client.
+    """Keelstone: the ingestion events of the active organization, on the shared Redis client.
 
     Upstream built the service without its client (TypeError on every call) and without
     authentication, on a channel shared by all organizations.
@@ -529,7 +529,7 @@ RequireOwner = Annotated[Organization, Depends(RequireOrgRole(OrgRole.OWNER.valu
 RequireAdminPlus = Annotated[
     Organization, Depends(RequireOrgRole(OrgRole.OWNER.value, OrgRole.ADMIN.value))
 ]
-# Keelson: the roles that change the organization's content (viewers read it).
+# Keelstone: the roles that change the organization's content (viewers read it).
 RequireMemberPlus = Annotated[Organization, Depends(RequireOrgRole(*ORG_WRITER_ROLES))]
 {%- if enable_rag and use_jwt and use_postgresql %}
 from contextlib import AbstractAsyncContextManager
@@ -539,13 +539,13 @@ from app.db.models.knowledge_base import KBScope, KnowledgeBase
 
 
 def is_platform_admin(user: User) -> bool:
-    """The platform administration: the admin role and the is_app_admin flag (Keelson)."""
+    """The platform administration: the admin role and the is_app_admin flag (Keelstone)."""
     return user.has_role(UserRole.ADMIN)
 
 
 class PlatformSession:
     """The system session for a platform administrator's write to the application's
-    knowledge bases (Keelson). Row level security opens them to nobody: every tenant reads
+    knowledge bases (Keelstone). Row level security opens them to nobody: every tenant reads
     them, so only the platform administration writes them, and each write is logged."""
 
     def __init__(self, request: Request, user: CurrentUser) -> None:
@@ -563,7 +563,7 @@ PlatformWrites = Annotated[PlatformSession, Depends()]
 
 @dataclass
 class KnowledgeBaseWrite:
-    """A knowledge base the user may change, with the services that change it (Keelson)."""
+    """A knowledge base the user may change, with the services that change it (Keelstone)."""
 
     kb: KnowledgeBase
     knowledge_bases: KnowledgeBaseService
@@ -667,7 +667,7 @@ async def get_current_user_ws(
     websocket.state.accept_subprotocol = app_subprotocol
 
     auth_token = subprotocol_token or access_token
-    # Keelson: a browser sends its session cookie with any WebSocket handshake, from any site:
+    # Keelstone: a browser sends its session cookie with any WebSocket handshake, from any site:
     # a cookie is accepted only from a trusted origin (cross-site WebSocket hijacking).
     if not subprotocol_token and access_token and not trusted_origin(websocket.headers.get("origin")):
         raise WebSocketException(code=4003, reason="Origin not allowed")
@@ -709,7 +709,7 @@ async def get_current_user_ws(
         raise WebSocketException(code=4001, reason="Invalid or expired token")
 {%- if enable_teams and use_postgresql %}
 
-    # Keelson: the connection acts as this user; agent turns, started as tasks of the
+    # Keelstone: the connection acts as this user; agent turns, started as tasks of the
     # connection, inherit it (app/db/tenancy.py).
     await bind_user(None, claims.user_id)
 {%- endif %}
@@ -723,7 +723,7 @@ async def get_current_user_ws(
 
         if not user.is_active:
             raise WebSocketException(code=4001, reason="User account is disabled")
-        # Keelson: the same session version check as get_current_user. An open connection
+        # Keelstone: the same session version check as get_current_user. An open connection
         # is not closed when the version changes; a new handshake is refused.
         if not claims.is_current_for(user):
             raise WebSocketException(code=4001, reason="Invalid or expired token")
@@ -743,7 +743,7 @@ CurrentUserWS = Annotated[User, Depends(get_current_user_ws)]
 
 
 async def session_still_current(user: User, version: int) -> bool:
-    """Keelson: whether the session a WebSocket was opened with is still the user's.
+    """Keelstone: whether the session a WebSocket was opened with is still the user's.
 
     A connection outlives its handshake: a password change, a deactivation or "sign out
     everywhere" must also stop the turns of chats already open.
@@ -790,7 +790,7 @@ async def verify_api_key(
 ValidAPIKey = Annotated[str, Depends(verify_api_key)]
 {%- if enable_teams and use_postgresql %}
 
-# Keelson: per-organization API keys with scopes (app/core/api_keys.py). The single static
+# Keelstone: per-organization API keys with scopes (app/core/api_keys.py). The single static
 # key above stays for compatibility with the upstream template; prefer these.
 from dataclasses import dataclass
 from datetime import datetime
@@ -811,7 +811,7 @@ from app.services.rate_limit import RateLimitCategory, check_rate_limit, client_
 class ApiKeyPrincipal:
     """The organization and scopes a request authenticated by an API key acts with.
 
-    Keelson: also a CI job authenticated by workload identity (app/core/workload_identity.py):
+    Keelstone: also a CI job authenticated by workload identity (app/core/workload_identity.py):
     then ``key`` is None and ``label`` names the trust.
     """
 
@@ -849,13 +849,13 @@ async def get_api_key_principal(
             expires_at=workload.expires_at,
         )
     else:
-        # Keelson: the key is found by its prefix before anyone is known: a system lookup.
+        # Keelstone: the key is found by its prefix before anyone is known: a system lookup.
         async with system_session("API key authentication") as system_db:
 {%- if enable_rate_limiting %}
             try:
                 key = await ApiKeyService(system_db).authenticate(api_key)
             except AuthenticationError:
-                # Keelson: a caller that keeps sending refused keys gets 429 instead of 401.
+                # Keelstone: a caller that keeps sending refused keys gets 429 instead of 401.
                 await check_rate_limit(category=RateLimitCategory.API_KEY_REFUSAL, client_ip=client_ip(request))
                 raise
 {%- else %}
@@ -1061,7 +1061,7 @@ UserSlashCommandSvc = Annotated[
 {%- if enable_teams and use_postgresql and use_jwt %}
 
 
-# --- Keelson: work outside row level security, declared ------------------------------------
+# --- Keelstone: work outside row level security, declared ------------------------------------
 # Each of these opens the owner login through system_session(reason): the platform
 # administration (only after the admin check, naming the admin), and the public routes that
 # find their data by a token before anyone is known.

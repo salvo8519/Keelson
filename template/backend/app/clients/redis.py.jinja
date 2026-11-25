@@ -81,7 +81,7 @@ class RedisClient:
     def raw(self) -> aioredis.Redis:
         """Access the underlying aioredis client for advanced operations.
 
-        Keelson: the single place that checks the connection (upstream repeated the check in
+        Keelstone: the single place that checks the connection (upstream repeated the check in
         every method).
         """
         if not self.client:

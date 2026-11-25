@@ -1,4 +1,4 @@
-"""One version per generated project: VERSION, copied into the manifests (Keelson)."""
+"""One version per generated project: VERSION, copied into the manifests (Keelstone)."""
 
 from __future__ import annotations
 

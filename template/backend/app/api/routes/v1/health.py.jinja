@@ -28,7 +28,7 @@ from app.services.health import build_health_response
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# Keelson: the probes are unauthenticated, so a check reports only its status. The reason of
+# Keelstone: the probes are unauthenticated, so a check reports only its status. The reason of
 # a failure (driver messages carry host names, user names and versions) goes to the log.
 HEALTHY = {"status": "healthy"}
 UNHEALTHY = {"status": "unhealthy"}

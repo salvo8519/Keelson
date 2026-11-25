@@ -246,7 +246,7 @@ async def _run_ingestion(rag_document_id: str, collection_name: str, stored_obje
     try:
         async with get_worker_db_context() as db:
             tenant = await collection_tenant(db, collection_name)
-        # Keelson: the worker reads the stored original (local disk or S3) into a private
+        # Keelstone: the worker reads the stored original (local disk or S3) into a private
         # temporary directory, removed when the ingestion ends; it needs no disk shared with
         # the API.
         with tempfile.TemporaryDirectory(prefix="ingest_") as tmp_dir:
@@ -256,7 +256,7 @@ async def _run_ingestion(rag_document_id: str, collection_name: str, stored_obje
             result = await ingestion_service.ingest_file(filepath=file_path, collection_name=collection_name, tenant=tenant, replace=replace, source_path=source_path)
         async with get_worker_db_context() as db:
             documents = RAGDocumentService(db)
-            # Keelson: a document deleted during its ingestion takes the vectors just written.
+            # Keelstone: a document deleted during its ingestion takes the vectors just written.
             if not await documents.finish_ingestion(
                 rag_document_id,
                 collection_name=collection_name,
@@ -283,7 +283,7 @@ async def _run_sync(sync_log_id: str, source: str, collection_name: str, mode: s
     if not Path(path).exists():
         await _update_sync_log(sync_log_id, "error", error_message=f"Path not found: {path}")
         return {"status": "error", "message": f"Path not found: {path}"}
-    # Keelson: only files inside RAG_LOCAL_SYNC_ROOT, symbolic links included.
+    # Keelstone: only files inside RAG_LOCAL_SYNC_ROOT, symbolic links included.
     files = local_sync_files(path)
 
     allowed = {ext.value for ext in DocumentExtensions}

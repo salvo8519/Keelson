@@ -2,7 +2,7 @@
 
 Zensical builds one language per site, so each language is a separate site sharing the same
 assets: English at the site root, other languages under /<lang>/, linked by the language
-selector. One copy serves Keelson and every generated project (DOCS_ROOT selects the root).
+selector. One copy serves Keelstone and every generated project (DOCS_ROOT selects the root).
 
     python scripts/docs.py build           # every site into site/ and site/<lang>/ (strict)
     python scripts/docs.py serve --lang it # live preview of one language
@@ -194,7 +194,7 @@ def llms_txt() -> None:
 GENERATED = ROOT / ".generated" / "docs"
 
 
-UNRELEASED_TITLE = "## Keelson Unreleased"
+UNRELEASED_TITLE = "## Keelstone Unreleased"
 
 
 def undated_draft(draft: str) -> str:

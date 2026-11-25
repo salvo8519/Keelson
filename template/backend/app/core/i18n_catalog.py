@@ -1,4 +1,4 @@
-"""Extraction and coverage of the message catalogs (Keelson).
+"""Extraction and coverage of the message catalogs (Keelstone).
 
 The messages of the API are the string arguments of the application exceptions
 (``raise NotFoundError(message="...")``) and of ``N_()``. This module extracts them with Babel

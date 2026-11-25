@@ -1,6 +1,6 @@
 ---
 source: getting-started/index.md
-source_hash: fa56e2a79130
+source_hash: ae7727737ec4
 ---
 # Generare un progetto
 
@@ -18,7 +18,7 @@ Copier pone le domande elencate nel [riferimento](../reference/questions.md). L'
 risposte e formatta il codice.
 
 ```bash
-uvx copier copy --trust https://github.com/salvo8519/keelson my_service
+uvx copier copy --trust https://github.com/salvo8519/keelstone my_service
 ```
 
 Per accettare tutti i valori predefiniti aggiungi `--defaults`. Per fornire le risposte senza
@@ -46,7 +46,7 @@ python scripts/agent_skills.py install
 Le skill dei componenti scelti vengono installate per Claude Code, Codex e gli altri agenti
 che leggono `.agents/skills/`. Vedi [Skill per gli agenti](../concepts/agent-skills.md).
 
-## Aggiornare da una versione più recente di Keelson
+## Aggiornare da una versione più recente di Keelstone
 
 Il file `.copier-answers.yml` registra la versione del template e le tue risposte. Per portare
 nel progetto una versione più recente del template:

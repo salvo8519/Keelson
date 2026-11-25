@@ -63,7 +63,7 @@ class User(TimestampMixin, SQLModel, table=True):
         sa_column=Column(Integer, nullable=False, server_default="0"),
     )
 {%- endif %}
-    # Keelson: session version, see the SQLAlchemy model below.
+    # Keelstone: session version, see the SQLAlchemy model below.
     token_epoch: int = Field(
         default=0,
         sa_column=Column(Integer, nullable=False, server_default="0"),
@@ -99,7 +99,7 @@ class User(TimestampMixin, SQLModel, table=True):
 
     def has_role(self, required_role: UserRole) -> bool:
         """Check if user has the required role or higher."""
-        # Keelson: a platform administrator has the admin role and the is_app_admin flag, the
+        # Keelstone: a platform administrator has the admin role and the is_app_admin flag, the
         # column the application login cannot change (app/db/tenancy.py, FROZEN_COLUMNS).
         if self.role == UserRole.ADMIN.value and self.is_app_admin:
             return True
@@ -150,7 +150,7 @@ class User(Base, TimestampMixin):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
-    # Keelson: deferred, and hidden from the application login (app/db/tenancy.py, HIDDEN_COLUMNS).
+    # Keelstone: deferred, and hidden from the application login (app/db/tenancy.py, HIDDEN_COLUMNS).
     hashed_password: Mapped[str | None] = mapped_column(String(255), nullable=True, deferred=True)
     full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
@@ -160,9 +160,9 @@ class User(Base, TimestampMixin):
     onboarding_completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    # Keelson: preferred language of the interface and of API messages (app/core/i18n.py).
+    # Keelstone: preferred language of the interface and of API messages (app/core/i18n.py).
     locale: Mapped[str | None] = mapped_column(String(8), nullable=True)
-    # Keelson: session version. Access and refresh tokens carry the version in force when they
+    # Keelstone: session version. Access and refresh tokens carry the version in force when they
     # were issued (``ver``); raising it ends every session (app/core/security.py).
     token_epoch: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0", default=0)
 {%- if enable_email %}
@@ -200,7 +200,7 @@ class User(Base, TimestampMixin):
 
         Admin role has access to everything.
         """
-        # Keelson: a platform administrator has the admin role and the is_app_admin flag, the
+        # Keelstone: a platform administrator has the admin role and the is_app_admin flag, the
         # column the application login cannot change (app/db/tenancy.py, FROZEN_COLUMNS).
         if self.role == UserRole.ADMIN.value and self.is_app_admin:
             return True

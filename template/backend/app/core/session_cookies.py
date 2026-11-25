@@ -1,4 +1,4 @@
-"""The browser session in HttpOnly cookies (Keelson).
+"""The browser session in HttpOnly cookies (Keelstone).
 
 Upstream's React frontend kept the access and refresh tokens in localStorage, where any script
 running in the page, an injected one included, can read and send them elsewhere. Browsers now

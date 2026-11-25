@@ -164,7 +164,7 @@ class ConversationUpdate(BaseSchema):
 
 
 class ConversationAdminUpdate(ConversationUpdate):
-    """Keelson: what only the platform administration changes. Kept out of
+    """Keelstone: what only the platform administration changes. Kept out of
     ConversationUpdate so that a user cannot publish a conversation as a public demo."""
 
     is_demo: bool | None = None

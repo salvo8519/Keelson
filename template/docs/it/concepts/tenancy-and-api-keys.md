@@ -1,7 +1,7 @@
-<!-- i18n source: concepts/tenancy-and-api-keys.md source_hash: b925412aac85 -->
+<!-- i18n source: concepts/tenancy-and-api-keys.md source_hash: 4ee4a12118c9 -->
 # Tenancy e API key
 
-I progetti Keelson servono più organizzazioni con un solo deploy. Questa pagina spiega come
+I progetti Keelstone servono più organizzazioni con un solo deploy. Questa pagina spiega come
 i loro dati restano separati e come gli altri sistemi ottengono l'accesso.
 
 ## Organizzazioni e organizzazione attiva

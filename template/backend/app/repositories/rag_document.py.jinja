@@ -136,7 +136,7 @@ class DeletedDocument(NamedTuple):
 async def delete(db: AsyncSession, doc_id: UUID) -> DeletedDocument | None:
     """Delete a RAG document by ID; None when no row was deleted.
 
-    Keelson: the deleted row is the answer. A row the session can read and row level security
+    Keelstone: the deleted row is the answer. A row the session can read and row level security
     does not let it delete matches nothing; the ORM's delete of a loaded object reported that
     as success. The vectors are read from the deleted row itself, so an ingestion completed
     while the delete waited for the row is not missed.
@@ -161,7 +161,7 @@ async def mark_ingested(
     chunk_count: int,
     completed_at: Any,
 ) -> bool:
-    """Record a finished ingestion; False when the document no longer exists (Keelson)."""
+    """Record a finished ingestion; False when the document no longer exists (Keelstone)."""
     result = await db.execute(
         sql_update(RAGDocument)
         .where(RAGDocument.id == doc_id)

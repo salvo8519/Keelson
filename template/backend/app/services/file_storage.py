@@ -1,6 +1,6 @@
 """Storage of file contents: one interface, two interchangeable backends.
 
-Keelson: upstream stored chat files on the local disk only. Documents and chat files are now
+Keelstone: upstream stored chat files on the local disk only. Documents and chat files are now
 stored objects (``app/services/stored_object.py``): the database holds their owner, size,
 SHA-256 and the backend and key of their bytes; this module moves the bytes.
 
@@ -457,7 +457,7 @@ class S3FileStorage(BaseFileStorage):
     async def presigned_url(
         self, key: str, *, content_type: str, content_disposition: str, ttl: int
     ) -> str | None:
-        # Keelson: the Content-Disposition is built by the caller (app/core/user_content.py).
+        # Keelstone: the Content-Disposition is built by the caller (app/core/user_content.py).
         return await asyncio.to_thread(
             self.client.generate_presigned_url,
             "get_object",
@@ -499,7 +499,7 @@ def get_file_storage(backend: StorageBackendName | str | None = None) -> BaseFil
     raise ValueError(f"Unknown storage backend: {name}")
 
 
-# --- Avatars (Keelson) ------------------------------------------------------------------------
+# --- Avatars (Keelstone) ------------------------------------------------------------------------
 # Avatars stay on the local disk under a folder of their owner. The record keeps the path, so
 # a path is served or deleted only inside its owner's folder: a value written in the record by
 # anything but the upload (upstream let organization admins set ``avatar_url``) cannot reach

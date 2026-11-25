@@ -10,7 +10,7 @@ from app.schemas.base import BaseSchema, TimestampSchema
 
 
 def _supported_locale(value: str | None) -> str | None:
-    """Keelson: a language code accepted by the API (app/core/i18n.py), or ValueError."""
+    """Keelstone: a language code accepted by the API (app/core/i18n.py), or ValueError."""
     if value is None:
         return None
     from app.core.i18n import SUPPORTED_LANGUAGES, supported
@@ -42,7 +42,7 @@ class UserBase(BaseSchema):
 
 
 class UserRegister(BaseSchema):
-    """Self-registration (Keelson, from the official template): no role, no status.
+    """Self-registration (Keelstone, from the official template): no role, no status.
 
     Upstream registered with ``UserCreate``, so anyone could send ``"role": "admin"``.
     """
@@ -94,7 +94,7 @@ class UserUpdate(BaseSchema):
 
 
 class UserUpdateMe(BaseSchema):
-    """Fields a user may change on their own profile (Keelson, from the official template).
+    """Fields a user may change on their own profile (Keelstone, from the official template).
 
     Password, role and account status are excluded: the password changes through
     ``UpdatePassword``, which requires the current one; role and status are for administrators.

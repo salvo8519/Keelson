@@ -135,7 +135,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    # Keelson: one image for the API and the workers. The workers used the development image
+    # Keelstone: one image for the API and the workers. The workers used the development image
     # (:dev), so production ran whatever had last been built for development.
     image: {{ project_slug }}_backend:prod
     container_name: {{ project_slug }}_backend
@@ -147,7 +147,7 @@ services:
     env_file:
       - ./backend/.env
 {%- if enable_file_storage %}
-      # Keelson: documents in the Garage service (S3 keys in backend/.env).
+      # Keelstone: documents in the Garage service (S3 keys in backend/.env).
       - ./garage/storage.env
 {%- endif %}
     environment:
@@ -180,7 +180,7 @@ services:
       - TASKIQ_BROKER_URL=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/1
       - TASKIQ_RESULT_BACKEND=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/1
 {%- endif %}
-    # Keelson: websockets-sansio as in development (the default implementation breaks the
+    # Keelstone: websockets-sansio as in development (the default implementation breaks the
     # chat WebSocket), and the client address and scheme from the proxy. Uvicorn trusts the
     # X-Forwarded-* headers only from the addresses in FORWARDED_ALLOW_IPS (environment above).
     command: uvicorn app.main:app --host 0.0.0.0 --port {{ backend_port }} --workers 4 --ws websockets-sansio --proxy-headers
@@ -265,7 +265,7 @@ services:
   redis:
     image: valkey/valkey:9-alpine
     container_name: {{ project_slug }}_redis
-    # Keelson: the password reaches Valkey as a Compose secret (a file in /run/secrets), written
+    # Keelstone: the password reaches Valkey as a Compose secret (a file in /run/secrets), written
     # to a configuration file readable by the valkey user only; the image's entrypoint then
     # drops root. On the command line (`--requirepass`) it was visible in the process list and
     # in `docker inspect`. The health check reads it into REDISCLI_AUTH for the same reason.
@@ -416,7 +416,7 @@ services:
     env_file:
       - ./backend/.env
 {%- if enable_file_storage %}
-      # Keelson: documents in the Garage service (S3 keys in backend/.env).
+      # Keelstone: documents in the Garage service (S3 keys in backend/.env).
       - ./garage/storage.env
 {%- endif %}
     environment:
@@ -559,7 +559,7 @@ services:
     env_file:
       - ./backend/.env
 {%- if enable_file_storage %}
-      # Keelson: documents in the Garage service (S3 keys in backend/.env).
+      # Keelstone: documents in the Garage service (S3 keys in backend/.env).
       - ./garage/storage.env
 {%- endif %}
     environment:
@@ -656,7 +656,7 @@ services:
     env_file:
       - ./backend/.env
 {%- if enable_file_storage %}
-      # Keelson: documents in the Garage service (S3 keys in backend/.env).
+      # Keelstone: documents in the Garage service (S3 keys in backend/.env).
       - ./garage/storage.env
 {%- endif %}
     environment:
@@ -707,7 +707,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      # Keelson: the React frontend (Vite) reads the API address at build time, from
+      # Keelstone: the React frontend (Vite) reads the API address at build time, from
       # VITE_API_URL; it must be reachable from the browser. Upstream passed the variables of
       # its Next.js frontend, which this one does not read. Rebuild after changing it.
       args:
@@ -751,7 +751,7 @@ services:
 
 {%- if enable_file_storage %}
 
-  # Keelson: S3-compatible object storage for documents (Garage by Deuxfleurs, AGPLv3, run as
+  # Keelstone: S3-compatible object storage for documents (Garage by Deuxfleurs, AGPLv3, run as
   # a separate service and never linked). GARAGE_RPC_SECRET, GARAGE_ADMIN_TOKEN, S3_ACCESS_KEY
   # and S3_SECRET_KEY are required in backend/.env (see docs/en/concepts/document-storage.md).
   garage:
@@ -795,7 +795,7 @@ networks:
 {%- if include_traefik_service %}
   traefik-public:
     driver: bridge
-    # Keelson: a known subnet, the only source the API trusts for X-Forwarded-* headers.
+    # Keelstone: a known subnet, the only source the API trusts for X-Forwarded-* headers.
     ipam:
       config:
         - subnet: ${PROXY_NETWORK_SUBNET:-{{ proxy_network_subnet }}}

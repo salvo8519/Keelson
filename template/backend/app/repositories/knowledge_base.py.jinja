@@ -99,7 +99,7 @@ async def update(
 async def delete(db: AsyncSession, kb_id: UUID) -> bool:
     """Delete by ID; False when no row was deleted (absent, or refused by row level security).
 
-    Keelson: the row count is the answer; the ORM's delete of a loaded object reported a
+    Keelstone: the row count is the answer; the ORM's delete of a loaded object reported a
     delete refused by row level security as done.
     """
     result = await db.execute(sql_delete(KnowledgeBase).where(KnowledgeBase.id == kb_id))

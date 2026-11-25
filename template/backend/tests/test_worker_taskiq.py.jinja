@@ -43,7 +43,7 @@ class TestTaskRegistration:
         assert "app.worker.tasks.schedules" in sys.modules
 
     def test_task_module_imports_first_in_a_fresh_interpreter(self):
-        """Keelson regression: the API imports a task module before the broker module.
+        """Keelstone regression: the API imports a task module before the broker module.
 
         A side-effect import of the schedules in taskiq_app closed a cycle
         (tasks -> taskiq_app -> schedules -> tasks) and the application did not start.

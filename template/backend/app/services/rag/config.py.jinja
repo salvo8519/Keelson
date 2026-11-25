@@ -10,7 +10,7 @@ RAG_STATUS_CHANNEL = "rag_status"
 
 
 def rag_status_channel(organization_id: object | None) -> str:
-    """Keelson: the Redis channel of an organization's ingestion events.
+    """Keelstone: the Redis channel of an organization's ingestion events.
 
     Upstream published every organization's events on one channel, streamed without
     authentication. Documents without an organization use the ``none`` channel.

@@ -1,4 +1,4 @@
-// Keelson: white label footer (the official template linked to the FastAPI accounts).
+// Keelstone: white label footer (the official template linked to the FastAPI accounts).
 import { BRAND_NAME } from "@/brand"
 
 export function Footer() {

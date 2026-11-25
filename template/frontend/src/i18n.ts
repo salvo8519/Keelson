@@ -1,4 +1,4 @@
-// Keelson: translation of the interface with i18next.
+// Keelstone: translation of the interface with i18next.
 //
 // The English text is the key: t("Save") returns "Save" in English and the translation from
 // src/locales/<language>.json in other languages. `bun run i18n:check` fails when a key used in

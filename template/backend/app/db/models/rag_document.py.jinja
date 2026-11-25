@@ -81,7 +81,7 @@ class RAGDocument(TimestampMixin, Base):
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
     filesize: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     filetype: Mapped[str] = mapped_column(String(20), nullable=False)
-    # Keelson: the original file is a stored object (app/services/stored_object.py); NULL for
+    # Keelstone: the original file is a stored object (app/services/stored_object.py); NULL for
     # documents synced from a source, which keep no copy.
     stored_object_id: Mapped[uuid.UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),

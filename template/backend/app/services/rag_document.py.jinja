@@ -163,7 +163,7 @@ class RAGDocumentService:
           2. storage as a stored object of ``owner``, streamed and size-checked on the way;
           3. RAGDocument tracking-record creation;
           4. lazy creation of the target vector collection;
-          5. dispatch of the ingestion task, which reads the stored object (Keelson: upstream
+          5. dispatch of the ingestion task, which reads the stored object (Keelstone: upstream
              passed a copy under ``MEDIA_DIR/_rag_tmp``, which only a worker sharing that disk
              could read, and which was never removed).
         """
@@ -240,7 +240,7 @@ class RAGDocumentService:
             replace=replace,
         )
 {%- elif use_taskiq %}
-        # Keelson: Taskiq enqueues with kiq (upstream called Celery's delay, which Taskiq tasks
+        # Keelstone: Taskiq enqueues with kiq (upstream called Celery's delay, which Taskiq tasks
         # do not have: every upload failed with AttributeError).
         from app.worker.tasks.rag_tasks import ingest_document_task
         await ingest_document_task.kiq(
@@ -313,7 +313,7 @@ class RAGDocumentService:
     ) -> bool:
         """Record the vectors a worker wrote; False when the document was deleted meanwhile.
 
-        Keelson: a document deleted while it was ingested had no vectors to remove yet, and the
+        Keelstone: a document deleted while it was ingested had no vectors to remove yet, and the
         worker's vectors stayed searchable with no row to delete them. The worker removes what
         it wrote when the document is gone.
         """
@@ -343,7 +343,7 @@ class RAGDocumentService:
     async def retry_ingestion(self, doc_id: str) -> RAGDocument:
         """Queue a failed document for ingestion again, from its stored original.
 
-        Keelson: upstream only reset the status, so the document stayed "processing" for ever.
+        Keelstone: upstream only reset the status, so the document stayed "processing" for ever.
 
         Raises:
             NotFoundError: If document does not exist.
@@ -380,7 +380,7 @@ class RAGDocumentService:
     async def delete_document(self, doc_id: str, ingestion: "IngestionService") -> None:
         """Delete a document, its vectors and its stored file.
 
-        Keelson: the vectors are part of the delete, not an optional extra (upstream kept them
+        Keelstone: the vectors are part of the delete, not an optional extra (upstream kept them
         when no ingestion service was passed, so a deleted document stayed searchable), and a
         delete that removes no row (absent, or refused by row level security) is not a success.
         The row goes first, so a refused delete touches nothing else; a vector store failure
@@ -407,7 +407,7 @@ class RAGDocumentService:
 {%- if enable_teams and use_jwt %}
 
     async def delete_for_knowledge_base(self, kb_id: UUID) -> None:
-        """Delete the documents of a knowledge base and their stored files (Keelson).
+        """Delete the documents of a knowledge base and their stored files (Keelstone).
 
         The vectors go with the knowledge base's collection (KnowledgeBaseService.delete).
         """

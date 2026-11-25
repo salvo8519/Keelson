@@ -1,4 +1,4 @@
-"""Workload identity: CI jobs authenticate with their own OpenID Connect token (Keelson)."""
+"""Workload identity: CI jobs authenticate with their own OpenID Connect token (Keelstone)."""
 
 import time
 import uuid

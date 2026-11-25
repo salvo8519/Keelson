@@ -1,6 +1,6 @@
 # Governance
 
-Keelson is maintained by Salvatore Miseo (GitHub: salvo8519), who decides on the roadmap,
+Keelstone is maintained by Salvatore Miseo (GitHub: salvo8519), who decides on the roadmap,
 reviews security-tier changes and publishes releases.
 
 Decisions that change the structure of the template are discussed in an issue before the

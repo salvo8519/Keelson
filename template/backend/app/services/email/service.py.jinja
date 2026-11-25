@@ -93,7 +93,7 @@ class EmailService:
     ) -> SendResult:
         """`force=True` skips category opt-out checks — use for critical notifications.
 
-        Keelson: the email is written in ``language`` (the recipient's saved preference) when
+        Keelstone: the email is written in ``language`` (the recipient's saved preference) when
         given and supported, otherwise in the language of the current request.
         """
         subject, html, text = render_email(key.value, context, self.language(language))
@@ -145,7 +145,7 @@ class EmailService:
     async def send_account_exists(
         self, *, to: str, name: str, login_url: str, reset_url: str, language: str | None = None
     ) -> SendResult:
-        """Keelson: someone tried to register with an address that has an account."""
+        """Keelstone: someone tried to register with an address that has an account."""
         return await self.send(
             key=EmailKey.ACCOUNT_EXISTS,
             to=to,
@@ -161,7 +161,7 @@ class EmailService:
     async def send_magic_link(
         self, *, to: str, name: str, magic_url: str, language: str | None = None
     ) -> SendResult:
-        """Keelson: upstream sent the sign-in link with the welcome template."""
+        """Keelstone: upstream sent the sign-in link with the welcome template."""
         expires_in = duration_text(MAGIC_LINK_TTL, self.language(language))
         return await self.send(
             key=EmailKey.MAGIC_LINK,

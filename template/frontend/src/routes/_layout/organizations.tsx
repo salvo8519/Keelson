@@ -1,4 +1,4 @@
-// Keelson: organizations of the user (tenants) and the members of the active one.
+// Keelstone: organizations of the user (tenants) and the members of the active one.
 import { useQuery } from "@tanstack/react-query"
 import { createFileRoute } from "@tanstack/react-router"
 

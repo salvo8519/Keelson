@@ -106,7 +106,7 @@ async def login(
 {%- endif %}
 ) -> Any:
     """OAuth2 password login, returns access and refresh tokens."""
-    # Keelson: a page of another site must not sign the browser into an account of its
+    # Keelstone: a page of another site must not sign the browser into an account of its
     # choice (login CSRF). Programs send no Origin and no Referer and are accepted.
     refuse_foreign_origin(request)
     user = await user_service.authenticate(form_data.username, form_data.password)
@@ -121,7 +121,7 @@ async def login(
         user_agent=request.headers.get("User-Agent"),
     )
 {%- endif %}
-    # Keelson: browsers keep the session in HttpOnly cookies (app/core/session_cookies.py);
+    # Keelstone: browsers keep the session in HttpOnly cookies (app/core/session_cookies.py);
     # programs read the tokens from the body, as OAuth2 password clients expect.
     set_session_cookies(response, access_token, refresh_token)
     return Token(access_token=access_token, refresh_token=refresh_token)
@@ -151,7 +151,7 @@ async def register(
 async def _refreshing_user(
     request: Request, token: str | None, user_service: UserService, redis: Redis
 ) -> tuple[User, SessionClaims]:
-    """Keelson: the user of a refresh token (body or cookie) that is still in force.
+    """Keelstone: the user of a refresh token (body or cookie) that is still in force.
 
     A refresh token is refused when it is invalid, of an earlier session version (password
     change, sign-out from every device), signed out (app/core/revoked_tokens.py), or when
@@ -231,7 +231,7 @@ async def logout(
     """Sign out: the refresh token can no longer be exchanged.
 
     \f
-    Keelson: upstream did nothing without session tracking, so the token kept working for
+    Keelstone: upstream did nothing without session tracking, so the token kept working for
     its whole lifetime.
     """
 {%- if enable_session_management %}

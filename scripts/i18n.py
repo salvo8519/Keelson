@@ -1,4 +1,4 @@
-"""Keelson runs the documentation tool of generated projects (template/scripts/i18n.py) on its
+"""Keelstone runs the documentation tool of generated projects (template/scripts/i18n.py) on its
 own repository, so there is one copy of it. Same commands: see that file."""
 
 import os

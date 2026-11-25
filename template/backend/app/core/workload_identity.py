@@ -1,4 +1,4 @@
-"""Workload identity: CI jobs authenticate with their own OpenID Connect token (Keelson).
+"""Workload identity: CI jobs authenticate with their own OpenID Connect token (Keelstone).
 
 GitHub Actions and GitLab CI give every job a short-lived token signed by their issuer that
 names the repository, the branch and the workflow. A trust in the settings says which of

@@ -1,5 +1,5 @@
 {%- if enable_teams and use_postgresql and (use_celery or use_taskiq or use_arq) %}
-"""Storage tasks: move stored objects between backends, and clean up after them (Keelson).
+"""Storage tasks: move stored objects between backends, and clean up after them (Keelstone).
 
 ``migrate-storage`` (``app/commands/storage.py``) enqueues one migration per object; the
 cleanup runs every day and on demand (``storage-cleanup``). The work itself is in

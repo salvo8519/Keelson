@@ -1,5 +1,5 @@
 {%- if enable_rag and (use_celery or use_taskiq) %}
-"""Uploads reach the worker through the API of the configured task backend (Keelson).
+"""Uploads reach the worker through the API of the configured task backend (Keelstone).
 
 Upstream called Celery's ``delay`` on Taskiq tasks too, which have no such method: every
 upload of a Taskiq project failed before reaching the worker.
@@ -40,7 +40,7 @@ def _assert_enqueued_once(task: MagicMock) -> None:
     task.delay.assert_called_once()
     kwargs = task.delay.call_args.kwargs
 {%- endif %}
-    # Keelson: the worker receives the stored object, not a path on a disk it may not share.
+    # Keelstone: the worker receives the stored object, not a path on a disk it may not share.
     assert "stored_object_id" in kwargs and "filepath" not in kwargs
 
 

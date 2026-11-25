@@ -1,4 +1,4 @@
-"""Languages of API messages (Keelson).
+"""Languages of API messages (Keelstone).
 
 Messages are written in English in the code; English is the msgid of the gettext catalogs in
 ``app/locales/<language>/LC_MESSAGES/messages.po``. The language of a request is chosen in
@@ -60,7 +60,7 @@ class LanguageSource(IntEnum):
 
 
 _current: ContextVar[tuple[str, LanguageSource]] = ContextVar(
-    "keelson_language", default=(DEFAULT_LANGUAGE, LanguageSource.DEFAULT)
+    "keelstone_language", default=(DEFAULT_LANGUAGE, LanguageSource.DEFAULT)
 )
 
 

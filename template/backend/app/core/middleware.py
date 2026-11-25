@@ -11,7 +11,7 @@ from starlette.types import ASGIApp
 
 from app.core.logging import request_id_var
 
-# Keelson: a client-supplied X-Request-ID is kept only when it is a plain identifier; anything
+# Keelstone: a client-supplied X-Request-ID is kept only when it is a plain identifier; anything
 # else (too long, spaces, control characters) would end up verbatim in the logs.
 _REQUEST_ID = re.compile(r"[A-Za-z0-9._:-]{1,128}")
 
@@ -39,7 +39,7 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
 
 
 class LanguageMiddleware(BaseHTTPMiddleware):
-    """Keelson: choose the language of the request from Accept-Language (app/core/i18n.py).
+    """Keelstone: choose the language of the request from Accept-Language (app/core/i18n.py).
 
     Authentication can later replace it with the user's or the organization's language.
     """
@@ -96,7 +96,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     ) -> None:
         super().__init__(app)
         self.csp_directives = csp_directives or self.DEFAULT_CSP_DIRECTIVES
-        # Keelson: nothing is excluded by default; the API reference sets its own policy, which
+        # Keelstone: nothing is excluded by default; the API reference sets its own policy, which
         # is kept (upstream skipped /docs, /redoc and a non-existent /openapi.json).
         self.exclude_paths = exclude_paths or set()
 

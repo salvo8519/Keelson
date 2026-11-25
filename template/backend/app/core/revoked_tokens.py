@@ -1,4 +1,4 @@
-"""Refresh tokens ended by signing out (Keelson).
+"""Refresh tokens ended by signing out (Keelstone).
 
 Signing out ends one session: the id (``jti``) of its refresh token is kept in Redis until the
 token would have expired, and a refresh with it is refused. Ending every session of a user is

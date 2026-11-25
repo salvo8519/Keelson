@@ -48,7 +48,7 @@ def is_encrypted(value: object) -> bool:
     return isinstance(value, str) and value.startswith(_PREFIX)
 
 
-# --- Keelson: keys for data at rest, separate from the signing key ----------------------------
+# --- Keelstone: keys for data at rest, separate from the signing key ----------------------------
 # ``DATA_ENCRYPTION_KEYS`` (newest first) encrypts secrets stored in the database. Older keys,
 # and SECRET_KEY used before, still decrypt, so rotating means adding a key in front; values
 # are re-encrypted with the newest key when written again (or by ``rotate_secret``). With no

@@ -36,7 +36,7 @@ type FormData = z.infer<typeof formSchema>
 
 export const Route = createFileRoute("/login")({
   component: Login,
-  // Keelson: a single sign-on that did not complete comes back with the reason.
+  // Keelstone: a single sign-on that did not complete comes back with the reason.
   validateSearch: z.object({ error: z.string().optional() }),
   beforeLoad: async () => {
     if (isLoggedIn()) {

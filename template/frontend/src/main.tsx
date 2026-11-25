@@ -18,14 +18,14 @@ import "./index.css"
 import "./brand.css"
 import { routeTree } from "./routeTree.gen"
 
-// Keelson: the session travels in HttpOnly cookies (src/lib/session.ts), sent with every
+// Keelstone: the session travels in HttpOnly cookies (src/lib/session.ts), sent with every
 // request to the API's origin.
 client.setConfig({
   baseURL: import.meta.env.VITE_API_URL ?? "",
   withCredentials: true,
 })
 
-// Keelson: every request carries the active organization (the backend checks the membership)
+// Keelstone: every request carries the active organization (the backend checks the membership)
 // and the language of the interface (used when the user has no saved preference).
 client.instance.interceptors.request.use((config) => {
   const organizationId = session.activeOrganization()
@@ -36,7 +36,7 @@ client.instance.interceptors.request.use((config) => {
   return config
 })
 
-// Keelson: an expired access token is renewed once from the refresh cookie, and the request is
+// Keelstone: an expired access token is renewed once from the refresh cookie, and the request is
 // sent again; when renewal fails the session is over. One renewal serves concurrent requests.
 const SESSION_URL = "/api/v1/auth/session"
 let renewal: Promise<unknown> | null = null

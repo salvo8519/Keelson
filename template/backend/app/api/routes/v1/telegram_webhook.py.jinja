@@ -41,7 +41,7 @@ async def telegram_webhook(
     if bot is None:
         return Response(status_code=200)
 
-    # Keelson: fail closed. A bot without a webhook secret (polling mode) receives no webhook;
+    # Keelstone: fail closed. A bot without a webhook secret (polling mode) receives no webhook;
     # upstream accepted unsigned updates for it on this public route.
     if not bot.webhook_secret or not adapter.verify_webhook_signature(headers, bot.webhook_secret):
         raise HTTPException(status_code=403, detail="Invalid webhook signature")

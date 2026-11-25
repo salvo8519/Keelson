@@ -1,6 +1,6 @@
 # .agents: the project's agent configuration
 
-The single, tool-agnostic source of truth for AI agents working on Keelson. Project-wide
+The single, tool-agnostic source of truth for AI agents working on Keelstone. Project-wide
 instructions are in `AGENTS.md` (all agents) and `CLAUDE.md` (Claude Code specifics). The
 `.claude/` folders are generated from here by `scripts/sync_agents.py`.
 
@@ -26,5 +26,5 @@ instructions are in `AGENTS.md` (all agents) and `CLAUDE.md` (Claude Code specif
 
 ## Provisional
 
-These files are adapted from Fairmark and Wayloop. Keelson will take its process
+These files are adapted from Fairmark and Wayloop. Keelstone will take its process
 from Wayloop as it matures, and this folder will keep only what is specific to the template.

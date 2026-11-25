@@ -1,4 +1,4 @@
-// Keelson: every key used with t("...") or N_("...") in src/ has a translation in each catalog of
+// Keelstone: every key used with t("...") or N_("...") in src/ has a translation in each catalog of
 // src/locales (English, the source language, needs none). Run: bun run i18n:check
 import { readdirSync, readFileSync, statSync } from "node:fs"
 import { join } from "node:path"

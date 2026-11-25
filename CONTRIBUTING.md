@@ -1,6 +1,6 @@
-# Contributing to Keelson
+# Contributing to Keelstone
 
-Thank you for helping. Keelson is a template: every change is judged by the projects it
+Thank you for helping. Keelstone is a template: every change is judged by the projects it
 generates, so a change to `template/` is tested on a rendered project.
 
 ## Set up

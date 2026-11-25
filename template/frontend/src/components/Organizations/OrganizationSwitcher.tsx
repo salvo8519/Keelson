@@ -1,4 +1,4 @@
-// Keelson: choose the organization every request acts on (X-Organization-Id).
+// Keelstone: choose the organization every request acts on (X-Organization-Id).
 
 import {
   Select,

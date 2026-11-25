@@ -1,7 +1,7 @@
 {%- if enable_email %}
 """Template loader — reads pre-rendered HTML/text from emails/compiled/.
 
-Keelson: a translated template lives in emails/compiled/<language>/; when a language has no
+Keelstone: a translated template lives in emails/compiled/<language>/; when a language has no
 translation of a template, the English one in emails/compiled/ is used.
 """
 
@@ -11,7 +11,7 @@ from pathlib import Path
 
 from app.services.email.exceptions import EmailTemplateError
 
-# Keelson: the compiled emails live in backend/emails/compiled, so they are part of the backend
+# Keelstone: the compiled emails live in backend/emails/compiled, so they are part of the backend
 # image. Upstream kept them at the project root and mounted them in Compose only, which left
 # local runs and Kubernetes without emails.
 _DIST_DIR = Path(__file__).parent.parent.parent.parent / "emails" / "compiled"
@@ -42,7 +42,7 @@ _PLACEHOLDER = re.compile(r"\[\[(\w+)\]\]")
 def _render(template: str, context: dict, *, html: bool = False, single_line: bool = False) -> str:
     """Replace [[variable]] placeholders with context values, in one pass.
 
-    Keelson: values come from users (names, organization names), so they are escaped in HTML
+    Keelstone: values come from users (names, organization names), so they are escaped in HTML
     (upstream inserted them raw: a name could carry a link into an invitation sent from the
     service's domain), kept on one line in the subject (no header injection), and never
     expanded again (a value containing ``[[reset_url]]`` stays text).

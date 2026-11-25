@@ -1,6 +1,6 @@
 # Tenancy and API keys
 
-Keelson projects serve several organizations from one deployment. This page explains how
+Keelstone projects serve several organizations from one deployment. This page explains how
 their data is kept apart and how other systems get access.
 
 ## Organizations and the active organization

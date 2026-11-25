@@ -511,7 +511,7 @@ class TestConversationServiceDelete:
     async def test_a_shared_conversation_is_deleted_by_its_owner_only(
         self, service: ConversationService, permission: str
     ):
-        """Keelson: row level security lets only the owner delete; a share answered 204 for a
+        """Keelstone: row level security lets only the owner delete; a share answered 204 for a
         delete that removed nothing."""
         conv_id = uuid4()
         mock_conv = MockConversation(id=conv_id, user_id=uuid4())

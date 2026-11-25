@@ -6,7 +6,7 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 WORKDIR /app
 
-# Install uv. Keelson: the release pinned for the CI as well (uv_version), not "latest".
+# Install uv. Keelstone: the release pinned for the CI as well (uv_version), not "latest".
 COPY --from=ghcr.io/astral-sh/uv:{{ uv_version }} /uv /bin/uv
 ENV UV_COMPILE_BYTECODE=1
 ENV UV_LINK_MODE=copy
@@ -58,7 +58,7 @@ USER appuser
 
 EXPOSE {{ backend_port }}
 
-# Health check. Keelson: raise_for_status, so an error answer (5xx) marks the container
+# Health check. Keelstone: raise_for_status, so an error answer (5xx) marks the container
 # unhealthy; upstream failed only when the connection itself failed.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import httpx; httpx.get('http://localhost:{{ backend_port }}/api/v1/health', timeout=5).raise_for_status()" || exit 1

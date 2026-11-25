@@ -1,4 +1,4 @@
-"""The project's version: one file, VERSION, and the manifests that must carry it (Keelson).
+"""The project's version: one file, VERSION, and the manifests that must carry it (Keelstone).
 
 VERSION at the root of the project is the only place to change the version. The backend and
 the frontend are built from their own folders (each Docker build sees only its folder), so

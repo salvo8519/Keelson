@@ -16,7 +16,7 @@ git: the lock file is what you commit.
     python scripts/agent_skills.py scan             # scan the installed skills (exit 1 on a block)
     python scripts/agent_skills.py digest           # content digests, to pin in the lock file
 
-Supply chain (Keelson). A skill is text that an agent follows, so it is checked like code:
+Supply chain (Keelstone). A skill is text that an agent follows, so it is checked like code:
 
 * a git source is pinned to a commit and, with ``sha256``, to the digest of its content: a
   different content (a rewritten tag, a compromised mirror, a tampered cache) is refused;
@@ -49,7 +49,7 @@ ROOT = Path.cwd()
 TARGETS = (Path(".agents") / "skills", Path(".claude") / "skills")
 MARKER = ".skill-source.json"
 CACHE = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "agent-skills"
-# Keelson: what a lock entry may contain. The name becomes a folder under TARGETS and the path
+# Keelstone: what a lock entry may contain. The name becomes a folder under TARGETS and the path
 # a sparse checkout pattern, so neither may climb out of its place; a package source runs an
 # interpreter, so only this one or the project's backend environment.
 NAME_PATTERN = re.compile(r"[a-z0-9][a-z0-9-]*")
@@ -88,7 +88,7 @@ class Skill:
 
 
 def _validate(skill: Skill) -> None:
-    """Refuse a lock entry that could write, fetch or run outside what it declares (Keelson)."""
+    """Refuse a lock entry that could write, fetch or run outside what it declares (Keelstone)."""
     if not NAME_PATTERN.fullmatch(skill.name):
         raise SkillError(repr(skill.name), "a name is lower case letters, digits and hyphens")
     parts = skill.path.split("/")
@@ -201,7 +201,7 @@ def _digest(folder: Path) -> str:
     return h.hexdigest()
 
 
-# --- Content scan (Keelson) -------------------------------------------------------------------
+# --- Content scan (Keelstone) -------------------------------------------------------------------
 
 BLOCK = "block"
 WARN = "warn"
@@ -281,7 +281,7 @@ def blocking(skill: Skill, findings: list[Finding]) -> list[Finding]:
 def _verified_source(skill: Skill) -> Path:
     """The skill's source, checked against its pinned digest and scanned."""
     source = _from_git(skill) if skill.repository else _from_package(skill)
-    # Keelson: a link would be copied as the file it points to (copytree follows links), so a
+    # Keelstone: a link would be copied as the file it points to (copytree follows links), so a
     # skill could bring any file of this machine into the project; links are refused.
     links = sorted(p.relative_to(source).as_posix() for p in source.rglob("*") if p.is_symlink())
     if links:

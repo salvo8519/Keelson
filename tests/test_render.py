@@ -69,7 +69,7 @@ def test_every_project_is_complete_and_clean(render: Render, case: str) -> None:
         assert (project / name).is_file(), name
     recorded = yaml.safe_load((project / ".copier-answers.yml").read_text(encoding="utf-8"))
     assert recorded["_src_path"], "the answers file records the template source"
-    assert "Keelson" in (project / "NOTICE").read_text(encoding="utf-8")
+    assert "Keelstone" in (project / "NOTICE").read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("case", list(CASES))
@@ -169,8 +169,8 @@ def test_ci_runs_only_existing_frontend_scripts(render: Render, case: str) -> No
 
 
 @pytest.mark.parametrize("case", list(CASES))
-def test_keelson_tooling_survives_the_upstream_hook(render: Render, case: str) -> None:
-    """The upstream hook removed scripts/ wholesale; Keelson tooling lives there."""
+def test_keelstone_tooling_survives_the_upstream_hook(render: Render, case: str) -> None:
+    """The upstream hook removed scripts/ wholesale; Keelstone tooling lives there."""
     project = render(answers(case))
     assert (project / "scripts" / "agent_skills.py").is_file()
     assert not (project / "scripts" / "export_demo_html.py").exists()

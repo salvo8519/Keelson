@@ -1,9 +1,9 @@
-# Development tooling of the Keelson repository: template tests, documentation, process checks.
+# Development tooling of the Keelstone repository: template tests, documentation, process checks.
 # The template itself is rendered by Copier (copier.yml); this file ships nothing to users.
 [project]
-name = "keelson-dev"
+name = "keelstone-dev"
 version = "0.0.0"
-description = "Development tooling of Keelson. Not published."
+description = "Development tooling of Keelstone. Not published."
 requires-python = ">=3.12"
 dependencies = []
 
@@ -53,11 +53,11 @@ explicit_package_bases = true
 mypy_path = ["scripts", "tests", "template/scripts"]
 
 [tool.towncrier]
-name = "Keelson"
+name = "Keelstone"
 directory = "changes"
 filename = "RELEASE_NOTES.md"
 start_string = "<!-- release notes start -->\n"
-title_format = "## Keelson {version} - {project_date}"
+title_format = "## Keelstone {version} - {project_date}"
 issue_format = "#{issue}"
 underlines = ["", "", ""]
 wrap = false

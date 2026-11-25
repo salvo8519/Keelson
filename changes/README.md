@@ -2,4 +2,4 @@
 
 One file per user-facing change: `<issue>.<type>.md`, with type `breaking`, `feature`,
 `improvement` or `fix`. Write one or two sentences for the people who generate projects with
-Keelson. `towncrier` assembles them into `RELEASE_NOTES.md` at release time.
+Keelstone. `towncrier` assembles them into `RELEASE_NOTES.md` at release time.

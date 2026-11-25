@@ -33,7 +33,7 @@ from app.worker.background.rag import sync_local_in_background
 def local_sync_root() -> Path | None:
     """The directory local sync may read, or None for any (local and development only).
 
-    Keelson: upstream ingested any path of the server named by the request.
+    Keelstone: upstream ingested any path of the server named by the request.
 
     Raises:
         BadRequestError: Deployed without ``RAG_LOCAL_SYNC_ROOT``: local sync is disabled.
@@ -146,7 +146,7 @@ class RAGSyncService:
     ) -> SyncLog:
         """Persist a sync log and dispatch the local-sync task on the configured backend.
 
-        Keelson: the path stays inside ``RAG_LOCAL_SYNC_ROOT``{% if enable_teams and use_jwt %}, and the
+        Keelstone: the path stays inside ``RAG_LOCAL_SYNC_ROOT``{% if enable_teams and use_jwt %}, and the
         collection is one of the application's knowledge bases: files of the server carry no
         tenant of their own{% endif %}.
 

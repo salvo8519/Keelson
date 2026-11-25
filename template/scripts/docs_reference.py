@@ -1,4 +1,4 @@
-"""Reference pages generated from the code at every documentation build (Keelson).
+"""Reference pages generated from the code at every documentation build (Keelstone).
 
     cd backend && uv run python ../scripts/docs_reference.py   (make docs runs it)
 

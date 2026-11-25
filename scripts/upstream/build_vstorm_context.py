@@ -4,9 +4,9 @@ The upstream Full-Stack AI Agent Template (vstorm-co, MIT) is a cookiecutter
 template whose ~200 context variables are derived by its own generator
 (``fastapi_gen.config.ProjectConfig``) from a handful of user choices.
 
-Keelson keeps the upstream Jinja files as they are, so instead of rewriting
+Keelstone keeps the upstream Jinja files as they are, so instead of rewriting
 that derivation by hand we ask the upstream generator for the context of every
-valid combination of the Keelson axes, then express each variable as:
+valid combination of the Keelstone axes, then express each variable as:
 
 * a constant, when it never changes across combinations;
 * a Jinja lookup keyed on the smallest set of axes that determines it.
@@ -31,7 +31,7 @@ from typing import Any
 from fastapi_gen.config import ProjectConfig, RAGFeatures
 
 # ---------------------------------------------------------------------------
-# Keelson axes: the only choices exposed as Copier questions that change the
+# Keelstone axes: the only choices exposed as Copier questions that change the
 # upstream context. Everything else is fixed by FIXED_OPTIONS below.
 # ---------------------------------------------------------------------------
 AXES: dict[str, list[Any]] = {
@@ -45,7 +45,7 @@ AXES: dict[str, list[Any]] = {
     "logfire": [False, True],
 }
 
-# Opinionated Keelson baseline: multi-company, async, observable, deployable.
+# Opinionated Keelstone baseline: multi-company, async, observable, deployable.
 FIXED_OPTIONS: dict[str, Any] = {
     "database": "postgresql",
     "orm_type": "sqlalchemy",
@@ -64,18 +64,18 @@ FIXED_OPTIONS: dict[str, Any] = {
     "enable_admin_panel": False,
     "reverse_proxy": "traefik_included",
     "python_version": "3.13",
-    # Upstream i18n is next-intl only; Keelson ships its own i18n (M3).
+    # Upstream i18n is next-intl only; Keelstone ships its own i18n (M3).
     "enable_i18n": False,
     "enable_billing": False,
     "use_telegram": False,
     "use_slack": False,
-    # Upstream's S3 settings and boto3; Keelson adds the object store behind them
+    # Upstream's S3 settings and boto3; Keelstone adds the object store behind them
     # (app/services/file_storage.py, docs/en/concepts/document-storage.md).
     "enable_file_storage": True,
 }
 
 # Context keys that come straight from Copier questions, not from this file.
-# Keelson question names never collide with upstream keys unless listed here
+# Keelstone question names never collide with upstream keys unless listed here
 # as an identical pass-through (checked in build()).
 PASSTHROUGH = {
     "project_name",
@@ -87,7 +87,7 @@ PASSTHROUGH = {
     "generator_name",
     "generator_version",
     "generated_at",
-    # Same name and same values as the Keelson questions: passed through.
+    # Same name and same values as the Keelstone questions: passed through.
     "ai_framework",
     "llm_provider",
 }
@@ -101,7 +101,7 @@ class ContextError(ValueError):
 
 
 # Sentinel project values used only to build configs; never emitted.
-_PLACEHOLDER_NAME = "keelson_probe"
+_PLACEHOLDER_NAME = "keelstone_probe"
 
 
 def _to_config_kwargs(axis_values: dict[str, Any]) -> dict[str, Any]:
@@ -114,7 +114,7 @@ def _to_config_kwargs(axis_values: dict[str, Any]) -> dict[str, Any]:
         **FIXED_OPTIONS,
         "project_name": _PLACEHOLDER_NAME,
         # Upstream renders backend wiring for a frontend only when one exists;
-        # Keelson replaces the upstream Next.js app with the official React one.
+        # Keelstone replaces the upstream Next.js app with the official React one.
         "frontend": "nextjs" if axis_values["web_frontend"] == "react" else "none",
         "background_tasks": axis_values["task_backend"],
         "ai_framework": axis_values["ai_framework"],
@@ -124,7 +124,7 @@ def _to_config_kwargs(axis_values: dict[str, Any]) -> dict[str, Any]:
         "enable_kubernetes": axis_values["kubernetes"],
         "enable_logfire": axis_values["logfire"],
         # Upstream's OAuth sign-in (Authlib, identities on the user, the session middleware)
-        # needs a frontend for its callback. Keelson generalises it to any OpenID Connect
+        # needs a frontend for its callback. Keelstone generalises it to any OpenID Connect
         # provider configured at run time (app/core/oauth.py); Google is one of them.
         "oauth_provider": "google" if axis_values["web_frontend"] == "react" else "none",
     }
@@ -201,7 +201,7 @@ def _yaml_scalar(value: Any) -> str:
 def build(rows: list[tuple[dict[str, Any], dict[str, Any]]]) -> str:
     for axis in AXES:
         if axis in rows[0][1] and axis not in PASSTHROUGH:
-            raise ContextError(axis, "Keelson question collides with an upstream key")
+            raise ContextError(axis, "Keelstone question collides with an upstream key")
     for axis_values, ctx in rows:
         for key in PASSTHROUGH & set(AXES):
             if ctx[key] != axis_values[key]:

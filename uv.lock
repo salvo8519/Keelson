@@ -233,7 +233,7 @@ wheels = [
 ]
 
 [[package]]
-name = "keelson-dev"
+name = "keelstone-dev"
 version = "0.0.0"
 source = { virtual = "." }
 

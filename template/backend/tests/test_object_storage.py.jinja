@@ -1,5 +1,5 @@
 {%- if enable_teams and use_postgresql %}
-"""Storage backends and the Garage bootstrap (Keelson). No database, no S3 server.
+"""Storage backends and the Garage bootstrap (Keelstone). No database, no S3 server.
 
 The S3 backend runs against moto, an in-process S3; the Garage administration API against an
 httpx mock transport that keeps the state of one node.

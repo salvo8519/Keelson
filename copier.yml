@@ -1,4 +1,4 @@
-# Keelson: enterprise FastAPI project template (agent profile).
+# Keelstone: enterprise FastAPI project template (agent profile).
 # Questions are grouped as: identity, brand, stack axes, delivery.
 # Upstream-derived variables live in copier/vstorm.yml (generated, do not edit).
 
@@ -124,9 +124,9 @@ ai_framework:
   choices:
     Pydantic AI: pydantic_ai
     LangGraph: langgraph
-    LangChain (experimental in Keelson): langchain
-    Deep Agents (experimental in Keelson): deepagents
-    Pydantic Deep (experimental in Keelson): pydantic_deep
+    LangChain (experimental in Keelstone): langchain
+    Deep Agents (experimental in Keelstone): deepagents
+    Pydantic Deep (experimental in Keelstone): pydantic_deep
   default: pydantic_ai
 
 llm_provider:
@@ -219,16 +219,16 @@ storage_bucket:
   default: "{{ project_slug | replace('_', '-') }}"
 
 # --- Provenance ----------------------------------------------------------------
-keelson_url:
+keelstone_url:
   type: str
   when: false
   # Single source of the template's home, used by NOTICE and README of generated projects.
-  default: https://github.com/salvo8519/keelson
+  default: https://github.com/salvo8519/keelstone
 
 generator_name:
   type: str
   when: false
-  default: keelson
+  default: keelstone
 
 generator_version:
   type: str

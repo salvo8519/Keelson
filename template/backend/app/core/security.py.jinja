@@ -104,7 +104,7 @@ def verify_idp_token(token: str) -> dict[str, Any] | None:
 {%- endif %}
 
 
-# Keelson: every access and refresh token carries the session version of its user (``ver``),
+# Keelstone: every access and refresh token carries the session version of its user (``ver``),
 # the value of ``users.token_epoch`` when it was issued. Raising the version (a password change
 # or reset, a password set by an administrator, a deactivation, a sign-out from every device)
 # ends every session issued before, as ``magic_link_epoch`` does for sign-in links. A refresh
@@ -220,7 +220,7 @@ def password_epoch(hashed_password: str | None) -> str:
     return hashlib.sha256((hashed_password or "").encode("utf-8")).hexdigest()[:16]
 
 
-# Keelson: lifetimes of the links sent by email, shared with the email texts.
+# Keelstone: lifetimes of the links sent by email, shared with the email texts.
 PASSWORD_RESET_TTL = timedelta(hours=1)
 MAGIC_LINK_TTL = timedelta(minutes=15)
 
@@ -281,7 +281,7 @@ def verify_special_token(token: str, expected_type: str) -> dict[str, Any] | Non
     return payload
 
 
-# Keelson, from the official FastAPI template: new passwords are hashed with Argon2id (RFC 9106,
+# Keelstone, from the official FastAPI template: new passwords are hashed with Argon2id (RFC 9106,
 # OWASP's first choice); bcrypt hashes of earlier versions are still verified and replaced with
 # Argon2id at the next sign-in (verify_and_update_password). Passwords are never stored.
 password_hash = PasswordHash((Argon2Hasher(), BcryptHasher()))

@@ -243,7 +243,7 @@ if not enable_web_fetch and use_frontend:
 
 # Self-contained HTML demo export (Vite single-file bundle + exporter script).
 # Only meaningful with a frontend to bundle; drop everything otherwise.
-# Keelson: scripts/ also holds Keelson tooling (agent_skills.py, generate-client.sh), so only
+# Keelstone: scripts/ also holds Keelstone tooling (agent_skills.py, generate-client.sh), so only
 # the exporter is removed, not the folder.
 if not (enable_demo_export and use_frontend):
     remove_dir(os.path.join(os.getcwd(), "frontend", "demo-export"))
@@ -540,7 +540,7 @@ if not (
 ):
     remove_file(os.path.join(os.getcwd(), "backend", "tests", "test_conversation_resume.py"))
 
-# Keelson: the row level security migration exists only with organizations on PostgreSQL.
+# Keelstone: the row level security migration exists only with organizations on PostgreSQL.
 if not (enable_teams and use_postgresql):
     remove_file(os.path.join(os.getcwd(), "backend", "alembic", "versions",
                              "k0004_database_segregation.py"))
@@ -796,7 +796,7 @@ if os.path.exists(backend_dir) and not _render_only:
 if os.path.exists(backend_dir) and not _render_only:
     ruff_cmd = None
 
-    # Keelson: the ruff version recorded in backend/uv.lock (the dev group), so the generated
+    # Keelstone: the ruff version recorded in backend/uv.lock (the dev group), so the generated
     # code is formatted by the same ruff that `make lint` runs; upstream ran the latest ruff
     # from the index (`uvx ruff`), whatever it was on the day.
     locked_ruff = None

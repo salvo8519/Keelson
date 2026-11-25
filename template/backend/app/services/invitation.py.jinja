@@ -90,7 +90,7 @@ class InvitationService:
             requester_user = await user_repo.get_by_id(self.db, requester_id)
             frontend = settings.FRONTEND_URL.rstrip("/")
             accept_url = f"{frontend}/invitations/{invite.token}"
-            # Keelson: the invitee may have no account yet: the organization's language.
+            # Keelstone: the invitee may have no account yet: the organization's language.
             language = EmailService.language(org.default_locale if org else None)
             await get_email_service().send_invitation(
                 to=normalized_email,

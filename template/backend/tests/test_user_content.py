@@ -1,4 +1,4 @@
-"""Content uploaded by users is served so that it cannot act in the API's origin (Keelson)."""
+"""Content uploaded by users is served so that it cannot act in the API's origin (Keelstone)."""
 
 from pathlib import Path
 

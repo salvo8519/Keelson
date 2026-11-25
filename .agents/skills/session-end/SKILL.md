@@ -1,6 +1,6 @@
 ---
 name: session-end
-description: Closes a working session on Keelson so that any agent can resume it. Use when the session is over, before switching issue, or before the context runs out.
+description: Closes a working session on Keelstone so that any agent can resume it. Use when the session is over, before switching issue, or before the context runs out.
 ---
 
 Talk to the maintainer in their preferred language (`CLAUDE.local.md`); everything written to the repository or to GitHub is in English, without icons.

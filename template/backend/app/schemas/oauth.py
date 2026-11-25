@@ -1,4 +1,4 @@
-"""Single sign-on schemas (Keelson)."""
+"""Single sign-on schemas (Keelstone)."""
 
 from pydantic import Field
 

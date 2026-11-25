@@ -1,4 +1,4 @@
-"""Workload identity schemas (Keelson)."""
+"""Workload identity schemas (Keelstone)."""
 
 from datetime import datetime
 from uuid import UUID

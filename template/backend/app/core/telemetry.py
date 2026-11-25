@@ -1,4 +1,4 @@
-"""OpenTelemetry tracing (Keelson).
+"""OpenTelemetry tracing (Keelstone).
 
 Traces are exported over OTLP/HTTP to the collector in ``OTEL_EXPORTER_OTLP_ENDPOINT``
 (Jaeger, Tempo, Honeycomb, Datadog and others accept it). Without an endpoint nothing is

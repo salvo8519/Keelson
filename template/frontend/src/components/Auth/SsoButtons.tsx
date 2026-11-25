@@ -1,4 +1,4 @@
-// Keelson: single sign-on. One button per OpenID Connect provider configured on the backend
+// Keelstone: single sign-on. One button per OpenID Connect provider configured on the backend
 // (OIDC_PROVIDERS); nothing is shown when there is none. The button leaves for the provider's
 // sign-in page; the user comes back to /auth/callback, already signed in.
 import { useQuery } from "@tanstack/react-query"

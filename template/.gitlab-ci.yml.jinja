@@ -12,7 +12,7 @@ stages:
 
 variables:
   PYTHON_VERSION: "{{ python_version }}"
-  # Keelson: the uv release is pinned, and every job installs the versions recorded in uv.lock.
+  # Keelstone: the uv release is pinned, and every job installs the versions recorded in uv.lock.
   UV_VERSION: "{{ uv_version }}"
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
   UV_CACHE_DIR: "$CI_PROJECT_DIR/.cache/uv"
@@ -75,7 +75,7 @@ i18n-check:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
-# Keelson: openapi/openapi.json is the contract of the API. It must match the code, and a merge
+# Keelstone: openapi/openapi.json is the contract of the API. It must match the code, and a merge
 # request must not break it (scripts/openapi-breaking.sh: pinned oasdiff, checksum verified).
 api-contract:
   stage: lint
@@ -96,7 +96,7 @@ api-contract:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 {%- if use_frontend %}
 
-# Keelson: the official React frontend (Biome, translations, tsc and Vite). Its Playwright
+# Keelstone: the official React frontend (Biome, translations, tsc and Vite). Its Playwright
 # suite needs a running stack and is not part of this job.
 frontend:
   stage: lint
@@ -108,7 +108,7 @@ frontend:
     - bunx biome check ./
     - bun run i18n:check
     - bun run build
-    # Keelson: known vulnerabilities in the frontend dependencies.
+    # Keelstone: known vulnerabilities in the frontend dependencies.
     - bun audit --audit-level=high
   cache:
     key: "$CI_COMMIT_REF_SLUG-frontend"
@@ -175,15 +175,15 @@ security-scan:
   script:
     # pip-audit is a dev dependency, at the version recorded in uv.lock.
     - uv run pip-audit --require-hashes=false --progress-spinner=off
-    # Keelson: agent skills are pinned (commit and content digest) and scanned before install.
+    # Keelstone: agent skills are pinned (commit and content digest) and scanned before install.
     - apt-get update -qq && apt-get install -y -qq git >/dev/null
     - cd "$CI_PROJECT_DIR" && python3 scripts/agent_skills.py install && python3 scripts/agent_skills.py scan
-  # Keelson: a known vulnerability or a refused skill fails the pipeline (upstream allowed it).
+  # Keelstone: a known vulnerability or a refused skill fails the pipeline (upstream allowed it).
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
-# Keelson: secrets committed by mistake, in the whole history (gitleaks, pinned).
+# Keelstone: secrets committed by mistake, in the whole history (gitleaks, pinned).
 secret-scan:
   stage: security
   image:
@@ -242,7 +242,7 @@ docker-build:
 {%- endif %}
 
 # =============================================================================
-# Documentation (Keelson): Zensical site, reference generated from the code,
+# Documentation (Keelstone): Zensical site, reference generated from the code,
 # strict build and current translations; published on GitLab Pages.
 # =============================================================================
 

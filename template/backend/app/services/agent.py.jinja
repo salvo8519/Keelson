@@ -62,12 +62,12 @@ CONTROL_FRAME_TYPES = frozenset({"stop", "ask_user_response", "resume"})
 
 
 def starts_turn(data: dict[str, Any]) -> bool:
-    """Keelson: whether a frame starts an agent turn, as the sessions decide it: a text or files."""
+    """Keelstone: whether a frame starts an agent turn, as the sessions decide it: a text or files."""
     return data.get("type") not in CONTROL_FRAME_TYPES and bool(data.get("message") or data.get("file_ids"))
 
 
 def turn_options_problem(data: dict[str, Any]) -> str | None:
-    """Keelson: why the options of a turn are refused, or None.
+    """Keelstone: why the options of a turn are refused, or None.
 
     The client chooses the model and the thinking effort of a turn; upstream passed any value
     to the provider, so a user could run models the deployment does not offer (and pay for).
@@ -360,7 +360,7 @@ async def resolve_kb_collections(
     IDs come from the client — collection names are always resolved against
     the user's accessible KBs server-side.
 
-    Keelson: it also sets the reader of the turn (app/services/rag/tenancy.py), so the
+    Keelstone: it also sets the reader of the turn (app/services/rag/tenancy.py), so the
     vector store returns only vectors of the user, of an organization they still belong to,
     and of the application, whichever collection the tools search.
     """

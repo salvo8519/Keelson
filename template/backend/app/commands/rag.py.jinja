@@ -234,7 +234,7 @@ async def ingest_path_async(
                     if result.message and "replaced" in result.message:
                         replaced_count += 1
                     async with system_session("command line: rag") as db:
-                        # Keelson: a document deleted meanwhile takes the vectors just written.
+                        # Keelstone: a document deleted meanwhile takes the vectors just written.
                         await RAGDocumentService(db).finish_ingestion(
                             doc_id,
                             collection_name=collection,

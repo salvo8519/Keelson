@@ -2,7 +2,7 @@
 # Agent skills published by the maintainers of the components of this project.
 # Install or refresh: python scripts/agent_skills.py install   (check: ... check)
 # Only official skills are listed, and only for the components this project uses (the
-# Keelson repository adds security review skills at the end).
+# Keelstone repository adds security review skills at the end).
 # Git sources are pinned to a commit and to the digest of their content; package sources
 # follow the installed version. Every skill is scanned before it is installed.
 

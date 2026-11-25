@@ -1,4 +1,4 @@
-// Keelson: API keys of the active organization (owners and administrators).
+// Keelstone: API keys of the active organization (owners and administrators).
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { createFileRoute } from "@tanstack/react-router"
 import { useState } from "react"

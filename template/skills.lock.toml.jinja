@@ -1,7 +1,7 @@
 # Agent skills published by the maintainers of the components of this project.
 # Install or refresh: python scripts/agent_skills.py install   (check: ... check)
 # Only official skills are listed, and only for the components this project uses (the
-# Keelson repository adds security review skills at the end).
+# Keelstone repository adds security review skills at the end).
 # Git sources are pinned to a commit and to the digest of their content; package sources
 # follow the installed version. Every skill is scanned before it is installed.
 {%- set backend_python = "backend/.venv/bin/python" %}
@@ -10,8 +10,8 @@
 name = "fastapi"
 maintainer = "FastAPI"
 license = "MIT"
-path = "{{ 'fastapi/' if keelson_dev | default(false) }}.agents/skills/fastapi"
-{%- if keelson_dev | default(false) %}
+path = "{{ 'fastapi/' if keelstone_dev | default(false) }}.agents/skills/fastapi"
+{%- if keelstone_dev | default(false) %}
 repository = "https://github.com/fastapi/fastapi"
 commit = "05e6df7e906c3decba377c37548019973f40bf15"
 sha256 = "5e5d00cb0608243ab7e51d0bec43a774be6ed8d2047b74cbb32acdfa1fbc78d0"
@@ -34,7 +34,7 @@ path = "skills/pydantic"
 name = "building-pydantic-ai-agents"
 maintainer = "Pydantic"
 license = "MIT"
-{%- if keelson_dev | default(false) %}
+{%- if keelstone_dev | default(false) %}
 repository = "https://github.com/pydantic/skills"
 commit = "98f591c0886eb11df0bdd57804419e11439efc93"
 sha256 = "f988ee6e8c0982ffc12155daba5a356038f28516bdfc8521dec5fbecbd592c4d"
@@ -115,7 +115,7 @@ sha256 = "0cb8e8f9f827e3c65efbccb94e94cade6f884876497cbe270cf6257d6ef45fd9"
 path = "skills/shadcn"
 note = "Runs 'npx shadcn@latest info --json' (read-only) when the skill loads, to read components.json."
 {%- endif %}
-{%- if keelson_dev | default(false) %}
+{%- if keelstone_dev | default(false) %}
 
 # Security review skills by Trail of Bits, for the maintainers of this repository only.
 # CC-BY-SA-4.0: installed from the pinned commit, never copied into the repository.

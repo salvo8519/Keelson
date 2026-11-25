@@ -176,7 +176,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[{% if enable_redis or enable_
     state["redis"] = redis_client
 {%- endif %}
 {%- if use_taskiq %}
-    # Keelson: the API process enqueues tasks (kiq), so it starts the broker as a producer.
+    # Keelstone: the API process enqueues tasks (kiq), so it starts the broker as a producer.
     from app.worker.taskiq_app import broker as taskiq_broker
 
     if not taskiq_broker.is_worker_process:
@@ -275,7 +275,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[{% if enable_redis or enable_
     _first_admin = getattr(settings, "FIRST_ADMIN_EMAIL", "")
     if _first_admin:
         try:
-            # Keelson: a system session; the application login sees no user without a principal,
+            # Keelstone: a system session; the application login sees no user without a principal,
             # so the promotion silently did nothing.
             async with system_session("startup: FIRST_ADMIN_EMAIL promotion") as _db:
                 _u = await user_repo.get_by_email(_db, _first_admin)
@@ -342,7 +342,7 @@ SHOW_DOCS_ENVIRONMENTS = ("local", "staging", "development")
 
 
 def custom_generate_unique_id(route: APIRoute) -> str:
-    """Operation ids as ``<tag>-<function>`` (Keelson, from the official FastAPI template).
+    """Operation ids as ``<tag>-<function>`` (Keelstone, from the official FastAPI template).
 
     The generated TypeScript client groups operations by tag and names each method after the
     function, so the frontend calls ``UsersService.readCurrentUser()``.
@@ -481,10 +481,10 @@ Every error is a Problem Details document (RFC 9457, `application/problem+json`)
 language of the user, the organization or the `Accept-Language` header. Branch on `code`,
 which does not change with the language.
         """.strip(),
-        # Keelson: the version of the backend package (pyproject.toml), one source.
+        # Keelstone: the version of the backend package (pyproject.toml), one source.
         version=metadata.version("{{ project_slug }}"),
         openapi_url=openapi_url,
-        # Keelson: the reference is Scalar at /docs (app/core/api_docs.py); Swagger UI and ReDoc
+        # Keelstone: the reference is Scalar at /docs (app/core/api_docs.py); Swagger UI and ReDoc
         # load FastAPI's assets from a CDN and carry its branding.
         docs_url=None,
         redoc_url=None,
@@ -506,13 +506,13 @@ which does not change with the language.
     instrument_app(app)
 {%- endif %}
 
-    # Keelson: upstream defined SecurityHeadersMiddleware without adding it. Responses that set
+    # Keelstone: upstream defined SecurityHeadersMiddleware without adding it. Responses that set
     # their own policy (the API reference) keep it.
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(LanguageMiddleware)
     app.add_middleware(RequestIDMiddleware)
 {%- if enable_teams and use_postgresql %}
-    # Keelson: who acts is set by authentication, per request (app/db/tenancy.py).
+    # Keelstone: who acts is set by authentication, per request (app/db/tenancy.py).
     app.add_middleware(PrincipalScope)
 {%- endif %}
 {%- if not enable_logfire %}
@@ -546,7 +546,7 @@ which does not change with the language.
     from prometheus_client import CollectorRegistry, GCCollector, PlatformCollector, ProcessCollector
     from prometheus_fastapi_instrumentator import Instrumentator
 
-    # Keelson: one registry per application (upstream used the process-wide one, so a second
+    # Keelstone: one registry per application (upstream used the process-wide one, so a second
     # create_app() failed with duplicated metrics), with the standard process collectors.
     registry = CollectorRegistry()
     for collector in (ProcessCollector, PlatformCollector, GCCollector):
@@ -587,7 +587,7 @@ which does not change with the language.
 
 {%- if (enable_admin_panel and admin_require_auth and not admin_env_disabled) or enable_oauth %}
 
-    # Keelson: the session only carries the state of a sign-in in progress (Authlib's state,
+    # Keelstone: the session only carries the state of a sign-in in progress (Authlib's state,
     # nonce and PKCE verifier); in production its cookie is sent over HTTPS only.
     app.add_middleware(
         SessionMiddleware,

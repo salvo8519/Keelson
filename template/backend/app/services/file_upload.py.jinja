@@ -261,7 +261,7 @@ class FileUploadService:
         file_type = self.classify_file(content_type or "", filename)
         parsed_content = await self.parse_content(file_data, file_type, content_type or "")
 
-        # Keelson: the content is a personal stored object of the uploader (hashed while it
+        # Keelstone: the content is a personal stored object of the uploader (hashed while it
         # is written); the chat file references it, not a path.
         mime_type = content_type or "application/octet-stream"
         stored = await StoredObjectService(self.db).store(

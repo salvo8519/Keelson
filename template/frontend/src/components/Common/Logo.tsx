@@ -1,4 +1,4 @@
-// Keelson: white label. The brand mark (initial on the primary color) and the brand name,
+// Keelstone: white label. The brand mark (initial on the primary color) and the brand name,
 // instead of the FastAPI logo of the official template.
 import { Link } from "@tanstack/react-router"
 

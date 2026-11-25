@@ -1,4 +1,4 @@
-// Keelson: choose the language of the interface; it is also saved in the user's profile, so
+// Keelstone: choose the language of the interface; it is also saved in the user's profile, so
 // that API messages and emails use it.
 import { UsersService } from "@/client"
 import {

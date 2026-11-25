@@ -17,7 +17,7 @@ const isLoggedIn = () => {
   return session.isSignedIn()
 }
 
-// Keelson: completes a sign-in (password or single sign-on) once the API has set the session
+// Keelstone: completes a sign-in (password or single sign-on) once the API has set the session
 // cookies. Returns true when the user's saved language differs from the interface's; the page
 // is then reloaded in it.
 const completeSignIn = async (): Promise<boolean> => {
@@ -41,7 +41,7 @@ const useAuth = () => {
     enabled: isLoggedIn(),
   })
 
-  // Keelson: the API answers a registration the same way whether or not the address already
+  // Keelstone: the API answers a registration the same way whether or not the address already
   // has an account (its owner is told by e-mail), so the page says both.
   const signUpMutation = useMutation({
     mutationFn: (data: UserRegister) => AuthService.register({ body: data }),

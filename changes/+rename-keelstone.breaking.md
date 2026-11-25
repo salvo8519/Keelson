@@ -1,0 +1,1 @@
+The template is renamed from Keelson to Keelstone, because another Python project already publishes as `keelson`. The repository moves to `salvo8519/keelstone` (the old address redirects). In generated projects the row level security policies are named `keelstone_*` instead of `keelson_*` and the `generator_name` answer is `keelstone`.

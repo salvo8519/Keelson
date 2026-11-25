@@ -1,4 +1,4 @@
-"""Serving content that users uploaded (Keelson).
+"""Serving content that users uploaded (Keelstone).
 
 Documents, chat files and avatars are served from the API's origin, where the session cookie
 lives. A file that a browser renders as a page (HTML, SVG, XML, scripts) would run with that

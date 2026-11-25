@@ -1,7 +1,7 @@
 # Agent skills
 
 Coding agents work better on a library when they read guidance written by the people who
-maintain it. Keelson installs those skills, and only those, for the components a project uses.
+maintain it. Keelstone installs those skills, and only those, for the components a project uses.
 
 ## What is installed
 

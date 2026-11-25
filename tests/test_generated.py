@@ -58,7 +58,7 @@ print(json.dumps({"checked": [name for name in checked if name in shipped], "sta
 
 
 def test_kubernetes_secret_stand_ins_do_not_start_in_production(render: Render) -> None:
-    """The values of kubernetes/secret.yaml, deployed unchanged, are refused (Keelson)."""
+    """The values of kubernetes/secret.yaml, deployed unchanged, are refused (Keelstone)."""
     project = render({"project_name": "acme_service"})
     backend = project / "backend"
     shipped = yaml.safe_load((project / "kubernetes" / "secret.yaml").read_text(encoding="utf-8"))
@@ -84,7 +84,7 @@ def test_kubernetes_secret_stand_ins_do_not_start_in_production(render: Render) 
 
 
 def test_default_project_frontend_passes_its_checks(render: Render) -> None:
-    """The official React frontend: Biome, translations, tsc and Vite against the Keelson API."""
+    """The official React frontend: Biome, translations, tsc and Vite against the Keelstone API."""
     frontend = render({"project_name": "acme_service"}) / "frontend"
     _run(["bun", "install"], frontend)
     _run(["bunx", "biome", "check", "./"], frontend)
@@ -155,7 +155,7 @@ def test_default_project_compose_stacks_are_valid(render: Render) -> None:
     }
     local = resolved["prod-local"]["services"]
     assert "traefik" not in local, "the rehearsal publishes ports instead of running Traefik"
-    # Keelson hardening: secrets readable by their owner only, the rehearsal on the loopback
+    # Keelstone hardening: secrets readable by their owner only, the rehearsal on the loopback
     # interface, the Valkey password off every command line, forwarded headers from the proxy.
     assert (project / ".env.prod-local").stat().st_mode & 0o077 == 0
     for name in ("app", "frontend"):

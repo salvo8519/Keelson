@@ -107,7 +107,7 @@ async def test_register_duplicate_email_returns_409(error_client: AsyncClient):
     )
     assert response.status_code == 409
     data = response.json()
-    # Keelson: errors are Problem Details (RFC 9457).
+    # Keelstone: errors are Problem Details (RFC 9457).
     assert response.headers["content-type"].startswith("application/problem+json")
     assert data["code"] == "ALREADY_EXISTS"
     assert data["status"] == response.status_code
@@ -125,7 +125,7 @@ async def test_invalid_login_returns_401(error_client: AsyncClient):
     )
     assert response.status_code == 401
     data = response.json()
-    # Keelson: errors are Problem Details (RFC 9457).
+    # Keelstone: errors are Problem Details (RFC 9457).
     assert response.headers["content-type"].startswith("application/problem+json")
     assert data["code"] == "AUTHENTICATION_ERROR"
     assert data["status"] == response.status_code

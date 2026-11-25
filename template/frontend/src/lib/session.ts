@@ -1,6 +1,6 @@
 import type { UserRead } from "@/client"
 
-// Keelson: the signed-in session in the browser. The access and refresh tokens are HttpOnly
+// Keelstone: the signed-in session in the browser. The access and refresh tokens are HttpOnly
 // cookies set by the API: no script in the page can read them, so an injected script cannot
 // steal them. This module keeps only what is not secret: whether the user signed in (to route
 // without a request) and the active organization.

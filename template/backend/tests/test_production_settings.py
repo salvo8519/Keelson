@@ -1,4 +1,4 @@
-"""A production start refuses development defaults for secrets (Keelson).
+"""A production start refuses development defaults for secrets (Keelstone).
 
 Evidence for configuration management: every secret with a development default must be set
 before the application runs with ENVIRONMENT=production.

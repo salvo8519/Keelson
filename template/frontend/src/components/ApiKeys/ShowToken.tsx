@@ -1,4 +1,4 @@
-// Keelson: the token of a new or rotated key, shown once.
+// Keelstone: the token of a new or rotated key, shown once.
 import { Button } from "@/components/ui/button"
 import {
   Dialog,

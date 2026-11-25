@@ -1,5 +1,5 @@
 {%- if enable_teams and use_postgresql %}
-"""Stored objects: the contents of documents and chat files (Keelson).
+"""Stored objects: the contents of documents and chat files (Keelstone).
 
 One access point over the storage backends of ``app/services/file_storage.py``:
 
@@ -94,7 +94,7 @@ class StoredObjectService:
         On any failure the transaction rolls back and the backend keeps nothing. Bytes written
         by a transaction that rolls back later are removed by ``storage-cleanup --reconcile``.
         """
-        # Keelson: UUIDv4. Python 3.13 has no uuid7 and the project has no helper for it.
+        # Keelstone: UUIDv4. Python 3.13 has no uuid7 and the project has no helper for it.
         object_id = uuid4()
         storage = get_file_storage()
         stored = await stored_object_repo.create(
@@ -157,7 +157,7 @@ class StoredObjectService:
         stored = await self.get(object_id)
         storage = self.storage_of(stored)
         media_type = media_type or stored.content_type
-        # Keelson: user content, sandboxed and an attachment when active (app/core/user_content.py).
+        # Keelstone: user content, sandboxed and an attachment when active (app/core/user_content.py).
         # The caller's headers cannot replace these.
         protection = user_content_headers(media_type, disposition, filename)
         if settings.S3_PRESIGNED_DOWNLOADS:
@@ -199,7 +199,7 @@ class StoredObjectService:
             return
         backend, key = stored.backend, stored.storage_key
         if not await stored_object_repo.delete(self.db, stored):
-            # Keelson: refused by row level security; the bytes stay with their record.
+            # Keelstone: refused by row level security; the bytes stay with their record.
             raise NotFoundError(message="Stored object not found", details={"object_id": str(object_id)})
         try:
             await get_file_storage(backend).delete(key)

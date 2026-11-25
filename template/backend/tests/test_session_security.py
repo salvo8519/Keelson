@@ -1,4 +1,4 @@
-"""Session security without a database (Keelson): versions, CSRF, limits, impersonation.
+"""Session security without a database (Keelstone): versions, CSRF, limits, impersonation.
 
 The database side (the version raised by a password change, under row level security) is in
 ``tests/test_session_revocation_postgres.py``.

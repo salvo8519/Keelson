@@ -24,7 +24,7 @@ class RAGStatusService:
 
     def __init__(self, client: aioredis.Redis, organization_id: object | None) -> None:
         self._client = client
-        # Keelson: only the events of the caller's organization.
+        # Keelstone: only the events of the caller's organization.
         self.channel = rag_status_channel(organization_id)
 
     async def stream_events(self) -> AsyncIterator[ServerSentEvent]:

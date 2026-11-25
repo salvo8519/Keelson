@@ -1,7 +1,7 @@
-<!-- i18n source: concepts/languages.md source_hash: d127c525a148 -->
+<!-- i18n source: concepts/languages.md source_hash: ffc317fc753b -->
 # Lingue
 
-I progetti Keelson parlano le lingue scelte con la domanda di Copier `languages` (l'inglese è
+I progetti Keelstone parlano le lingue scelte con la domanda di Copier `languages` (l'inglese è
 sempre incluso, l'italiano è la seconda lingua predefinita). Questa pagina spiega da dove viene
 ogni lingua e come aggiungere un testo.
 

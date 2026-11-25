@@ -1,5 +1,5 @@
-// Keelson: test users are created through the public registration endpoint; the official
-// template used a private endpoint that the Keelson backend does not expose.
+// Keelstone: test users are created through the public registration endpoint; the official
+// template used a private endpoint that the Keelstone backend does not expose.
 import { AuthService } from "../../src/client"
 import { client } from "../../src/client/client.gen"
 

@@ -61,7 +61,7 @@ class OrganizationService:
     async def _insert(
         self, *, name: str, slug: str, chosen: bool, created_by_user_id: UUID, is_personal: bool
     ) -> Organization:
-        """Keelson: slugs are unique across tenants, and row level security hides the other
+        """Keelstone: slugs are unique across tenants, and row level security hides the other
         tenants' slugs from the checks above: the unique index decides. A chosen slug that is
         taken is a conflict; a generated one gets a random suffix (upstream answered 500)."""
         base = slug

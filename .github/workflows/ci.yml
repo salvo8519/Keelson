@@ -1,4 +1,4 @@
-# Pipeline of the Keelson repository. The CI of generated projects lives in
+# Pipeline of the Keelstone repository. The CI of generated projects lives in
 # template/.github/workflows (GitHub) and template/.gitlab-ci.yml.jinja (GitLab).
 name: CI
 

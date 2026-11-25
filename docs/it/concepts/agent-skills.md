@@ -1,11 +1,11 @@
 ---
 source: concepts/agent-skills.md
-source_hash: 75b10dcaac08
+source_hash: 813dcbbec8fe
 ---
 # Skill per gli agenti
 
 Gli agenti di programmazione lavorano meglio su una libreria quando leggono indicazioni scritte
-da chi la mantiene. Keelson installa quelle skill, e solo quelle, per i componenti usati dal
+da chi la mantiene. Keelstone installa quelle skill, e solo quelle, per i componenti usati dal
 progetto.
 
 ## Cosa viene installato

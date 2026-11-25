@@ -14,7 +14,7 @@ Copier asks the questions listed in the [reference](../reference/questions.md). 
 exclude and formats the code.
 
 ```bash
-uvx copier copy --trust https://github.com/salvo8519/keelson my_service
+uvx copier copy --trust https://github.com/salvo8519/keelstone my_service
 ```
 
 To accept every default, add `--defaults`. To set answers without prompts, add
@@ -41,7 +41,7 @@ python scripts/agent_skills.py install
 The skills of the components you chose are installed for Claude Code, Codex and the other
 agents that read `.agents/skills/`. See [Agent skills](../concepts/agent-skills.md).
 
-## Update from a newer Keelson
+## Update from a newer Keelstone
 
 The file `.copier-answers.yml` records the template version and your answers. To bring in a
 newer version of the template:

@@ -1,4 +1,4 @@
-"""Error responses as Problem Details for HTTP APIs, RFC 9457 (Keelson).
+"""Error responses as Problem Details for HTTP APIs, RFC 9457 (Keelstone).
 
 Every error the application raises is returned as ``application/problem+json``:
 

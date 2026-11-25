@@ -1,4 +1,4 @@
-"""Async PostgreSQL sessions (Keelson: two logins, see app/db/tenancy.py).
+"""Async PostgreSQL sessions (Keelstone: two logins, see app/db/tenancy.py).
 
 * ``get_db_session`` / ``get_db_context``: the **application login**, under row level
   security. Every transaction states the request's principal (user, organization or API key);
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 system_logger = logging.getLogger("app.db.system")
 
 # Marks the sessions of the application login; read by the listener in app/db/tenancy.py.
-REQUEST_SESSION = "keelson_request"
+REQUEST_SESSION = "keelstone_request"
 
 
 def _engine(url: str) -> AsyncEngine:
@@ -34,7 +34,7 @@ def _engine(url: str) -> AsyncEngine:
         pool_size=settings.DB_POOL_SIZE,
         max_overflow=settings.DB_MAX_OVERFLOW,
         pool_timeout=settings.DB_POOL_TIMEOUT,
-        # Keelson: errors and echo carry the values of a statement (hashes, e-mail addresses,
+        # Keelstone: errors and echo carry the values of a statement (hashes, e-mail addresses,
         # message text); they reach the logs only when debugging.
         hide_parameters=not settings.DEBUG,
     )

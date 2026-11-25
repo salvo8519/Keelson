@@ -3,25 +3,25 @@ hide:
 - navigation
 - toc
 source: index.md
-source_hash: 2a3c2ef6005c
+source_hash: 4c8974a4a3fa
 ---
 <div class="kl-hero" markdown>
 
-![Keelson](assets/brand/mark.svg){ width="96" }
+![Keelstone](assets/brand/mark.svg){ width="96" }
 
-# Keelson
+# Keelstone
 
 <p class="kl-tagline">Template FastAPI enterprise con livello agentico.</p>
 
 <p class="kl-promise">Assemblato da due template open source collaudati, e migliorato dove si fermano.</p>
 
-Keelson genera un servizio FastAPI pronto per le aziende: organizzazioni come tenant, utenti
+Keelstone genera un servizio FastAPI pronto per le aziende: organizzazioni come tenant, utenti
 che appartengono a più organizzazioni, lavoro asincrono e schedulato, un livello agentico con
 retrieval, deploy su Docker e Kubernetes, e un processo di sviluppo pensato per gli agenti di
 programmazione.
 
 [Genera un progetto](getting-started/index.md){ .md-button .md-button--primary }
-[Come è assemblato Keelson](concepts/assembly.md){ .md-button }
+[Come è assemblato Keelstone](concepts/assembly.md){ .md-button }
 
 </div>
 

@@ -1,4 +1,4 @@
-"""Secrets stored in the database: separate keys and rotation (Keelson)."""
+"""Secrets stored in the database: separate keys and rotation (Keelstone)."""
 
 import pytest
 from cryptography.fernet import InvalidToken
