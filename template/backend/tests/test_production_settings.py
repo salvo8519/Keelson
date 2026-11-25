@@ -10,7 +10,16 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from app.core.config import MAX_DEPLOYED_ACCESS_TOKEN_MINUTES, SECRETS_WHEN_DEPLOYED, Settings, is_placeholder_secret
+from app.core.config import (
+    MAX_DEPLOYED_ACCESS_TOKEN_MINUTES,
+    MIN_DEPLOYED_SECRET_DISTINCT_CHARACTERS,
+    MIN_DEPLOYED_SECRET_LENGTH,
+    OPTIONAL_SECRETS_WHEN_DEPLOYED,
+    PUBLISHED_DEVELOPMENT_SECRETS,
+    SECRETS_WHEN_DEPLOYED,
+    Settings,
+    is_placeholder_secret,
+)
 
 DEFAULTED_SECRETS = tuple(
     name
@@ -25,6 +34,10 @@ DEFAULTED_SECRETS = tuple(
     if name in Settings.model_fields
 )
 ENV_EXAMPLE = Path(__file__).resolve().parents[1] / ".env.example"
+# Published with the project, outside the backend image: the settings keep a copy of its values.
+GARAGE_DEVELOPMENT_ENV = Path(__file__).resolve().parents[2] / "garage" / "development.env"
+DEPLOYED_SECRETS = tuple(name for name in SECRETS_WHEN_DEPLOYED if name in Settings.model_fields)
+OPTIONAL_SECRETS = tuple(name for name in OPTIONAL_SECRETS_WHEN_DEPLOYED if name in Settings.model_fields)
 
 
 def _example_secrets() -> dict[str, str]:
@@ -107,6 +120,80 @@ def test_stand_ins_are_recognised_in_any_spelling(value: str) -> None:
 def test_random_secrets_are_not_stand_ins() -> None:
     assert not is_placeholder_secret(secrets.token_hex(32))
     assert not is_placeholder_secret(secrets.token_urlsafe(32).replace("x", "y"))
+
+
+def _env_values(path: Path) -> set[str]:
+    lines = path.read_text(encoding="utf-8").splitlines()
+    return {line.partition("=")[2].strip() for line in lines if "=" in line and not line.startswith("#")}
+
+
+def test_the_published_development_secrets_are_those_of_the_garage_file() -> None:
+    """The backend image lacks garage/development.env: its copy must follow the file."""
+    assert PUBLISHED_DEVELOPMENT_SECRETS == _env_values(GARAGE_DEVELOPMENT_ENV)
+
+
+@pytest.mark.parametrize("name", [*DEPLOYED_SECRETS, *OPTIONAL_SECRETS])
+@pytest.mark.parametrize("value", sorted(PUBLISHED_DEVELOPMENT_SECRETS))
+def test_deployed_environments_refuse_the_published_development_secrets(name: str, value: str) -> None:
+    with pytest.raises(ValidationError, match=name):
+        _production(**{name: value})
+
+
+@pytest.mark.parametrize("value", ["Development_Only", " DEVELOPMENT ONLY ", "development.only"])
+def test_published_development_secrets_are_refused_in_any_case_and_separator(value: str) -> None:
+    with pytest.raises(ValidationError, match="API_KEY"):
+        _production(API_KEY=value)
+
+
+def test_optional_secrets_may_be_left_empty() -> None:
+    assert _production(**dict.fromkeys(OPTIONAL_SECRETS, "")).ENVIRONMENT == "production"
+
+
+@pytest.mark.parametrize("name", [*DEPLOYED_SECRETS, *OPTIONAL_SECRETS])
+@pytest.mark.parametrize(
+    "value",
+    [
+        "1",
+        "x",
+        "a",
+        "0" * 64,
+        "ab" * 32,
+        # One character short of the minimum, every character different.
+        "abcdefghijklmnopqrstuvwxyz0123456789"[: MIN_DEPLOYED_SECRET_LENGTH - 1],
+        # Long enough, one distinct character short of the minimum.
+        ("abcdefghijklmnopqrstuvwxyz"[: MIN_DEPLOYED_SECRET_DISTINCT_CHARACTERS - 1] * 64)[:64],
+    ],
+)
+def test_deployed_environments_refuse_weak_secrets(name: str, value: str) -> None:
+    with pytest.raises(ValidationError, match=name):
+        _production(**{name: value})
+
+
+def test_weak_data_encryption_keys_are_refused() -> None:
+    with pytest.raises(ValidationError, match="DATA_ENCRYPTION_KEYS"):
+        _production(DATA_ENCRYPTION_KEYS=["0" * 64])
+
+
+def test_secrets_at_the_minimum_strength_start() -> None:
+    value = "abcdefghijklmnopqrstuvwxyz"[:MIN_DEPLOYED_SECRET_DISTINCT_CHARACTERS]
+    value = (value * MIN_DEPLOYED_SECRET_LENGTH)[:MIN_DEPLOYED_SECRET_LENGTH]
+    names = [name for name in (*DEPLOYED_SECRETS, *OPTIONAL_SECRETS) if name != "SECRET_KEY"]
+    assert _production(**dict.fromkeys(names, value)).ENVIRONMENT == "production"
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        secrets.token_hex(32),  # openssl rand -hex 32, the documented generator
+        secrets.token_hex(24),  # make prod-local, database and Valkey passwords
+        "GK" + secrets.token_hex(12),  # make prod-local, the Garage key
+        # The shape of an AWS access key id, built at run time: no key-shaped literal in the code.
+        "AKIA" + secrets.token_hex(8).upper(),
+    ],
+)
+def test_the_generators_of_the_project_satisfy_the_minimum(value: str) -> None:
+    assert len(value) >= MIN_DEPLOYED_SECRET_LENGTH
+    assert len(set(value)) >= MIN_DEPLOYED_SECRET_DISTINCT_CHARACTERS
 
 
 @pytest.mark.parametrize("environment", ["staging", "production"])

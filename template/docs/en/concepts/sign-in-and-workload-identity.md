@@ -182,5 +182,5 @@ For GitLab, useful claims are `project_id`, `ref`, `ref_protected` and `environm
 
 A refused token gets the same answer whatever the reason; the reason is in the server log.
 Every request checks its credential against the trusts configured at that moment: removing a
-trust, moving it to another organization or removing scopes applies at once to credentials
-already issued.
+trust, moving it to another organization, changing its issuer, audience or claims, shortening
+its `ttl_seconds` or removing scopes applies at once to credentials already issued.

@@ -48,8 +48,9 @@ class McpServerConfig(BaseModel):
 
 # Keelstone: secrets that must be real wherever the application is deployed, one rule for all
 # of them. A value is refused when it is empty, a stand-in from this file, .env.example or the
-# Kubernetes secret ("change-me...", "CHANGE_ME_IN_PRODUCTION", "...xxx") or a well-known
-# password. Settings absent from a project, and optional ones left unset (None), are skipped.
+# Kubernetes secret ("change-me...", "CHANGE_ME_IN_PRODUCTION", "...xxx"), a well-known
+# password, a value published with the project or shorter or less varied than the minimum
+# below. Settings absent from a project, and optional ones left unset (None), are skipped.
 DEPLOYED_ENVIRONMENTS = frozenset({"staging", "production"})
 SECRETS_WHEN_DEPLOYED = (
     "SECRET_KEY",
@@ -68,11 +69,32 @@ SECRETS_WHEN_DEPLOYED = (
 # held by a browser or a program until it expires; refresh tokens carry the long sessions.
 MAX_DEPLOYED_ACCESS_TOKEN_MINUTES = 60
 # Credentials that may be left empty (S3 from the instance role, for example) but, when set,
-# must not be a stand-in: the Kubernetes secret ships them as "CHANGE_ME".
-OPTIONAL_SECRETS_WHEN_DEPLOYED = ("S3_ACCESS_KEY", "S3_SECRET_KEY")
+# must be real: the Kubernetes secret ships the S3 keys as "CHANGE_ME", garage/development.env
+# publishes development keys, and the shared secret of delegated sign-in verifies user tokens.
+OPTIONAL_SECRETS_WHEN_DEPLOYED = (
+    "S3_ACCESS_KEY",
+    "S3_SECRET_KEY",
+    "S3_RAG_ACCESS_KEY",
+    "S3_RAG_SECRET_KEY",
+    "IDP_SHARED_SECRET",
+)
 # Compared after _normalise_secret, so "CHANGE_ME", "change_this" and "Change-Me" all match.
 _PLACEHOLDER_MARKERS = ("changeme", "changethis", "xxx")
 _WELL_KNOWN_SECRETS = frozenset({"postgres", "password", "admin", "secret", "redis", "root"})
+# The least a deployed secret may be. Every generator of the project exceeds it: openssl rand
+# -hex 32 (64 hexadecimal digits), make prod-local (48 or more, the Garage key GK and 24), and
+# so do the keys of the cloud providers (an AWS access key id has 20 characters).
+MIN_DEPLOYED_SECRET_LENGTH = 16
+MIN_DEPLOYED_SECRET_DISTINCT_CHARACTERS = 8
+# The values of garage/development.env, published with the project. The backend image does not
+# contain the file: tests/test_production_settings.py keeps this copy equal to it.
+PUBLISHED_DEVELOPMENT_SECRETS = frozenset(
+    {
+        "0000000000000000000000000000000000000000000000000000000000000000",
+        "GK000000000000000000000000",
+        "development-only",
+    }
+)
 
 
 def _normalise_secret(value: str) -> str:
@@ -87,6 +109,21 @@ def is_placeholder_secret(value: str) -> bool:
         not normalised
         or normalised in _WELL_KNOWN_SECRETS
         or any(marker in normalised for marker in _PLACEHOLDER_MARKERS)
+    )
+
+
+# Compared like the stand-ins, so "Development_Only" is the published "development-only".
+_PUBLISHED_NORMALISED = frozenset(_normalise_secret(value) for value in PUBLISHED_DEVELOPMENT_SECRETS)
+
+
+def is_weak_secret(value: str) -> bool:
+    """True for a value a deployed environment must not use as a secret."""
+    value = value.strip()
+    return (
+        is_placeholder_secret(value)
+        or _normalise_secret(value) in _PUBLISHED_NORMALISED
+        or len(value) < MIN_DEPLOYED_SECRET_LENGTH
+        or len(set(value)) < MIN_DEPLOYED_SECRET_DISTINCT_CHARACTERS
     )
 
 
@@ -848,22 +885,24 @@ class Settings(BaseSettings):
         """Keelstone: a deployed environment starts only with real secrets and without debug."""
         if self.ENVIRONMENT not in DEPLOYED_ENVIRONMENTS:
             return self
-        placeholders = [
+        weak = [
             name
             for name in SECRETS_WHEN_DEPLOYED
-            if isinstance(value := getattr(self, name, None), str) and is_placeholder_secret(value)
+            if isinstance(value := getattr(self, name, None), str) and is_weak_secret(value)
         ]
-        placeholders += [
+        weak += [
             name
             for name in OPTIONAL_SECRETS_WHEN_DEPLOYED
-            if (value := getattr(self, name, None)) and is_placeholder_secret(value)
+            if (value := getattr(self, name, None)) and is_weak_secret(value)
         ]
-        if any(is_placeholder_secret(key) for key in getattr(self, "DATA_ENCRYPTION_KEYS", [])):
-            placeholders.append("DATA_ENCRYPTION_KEYS")
-        if placeholders:
+        if any(is_weak_secret(key) for key in getattr(self, "DATA_ENCRYPTION_KEYS", [])):
+            weak.append("DATA_ENCRYPTION_KEYS")
+        if weak:
             raise ValueError(
-                f"{', '.join(placeholders)} must be set to real secrets in {self.ENVIRONMENT}: "
-                "openssl rand -hex 32"
+                f"{', '.join(weak)} must be set to real secrets in {self.ENVIRONMENT}: at least "
+                f"{MIN_DEPLOYED_SECRET_LENGTH} characters, {MIN_DEPLOYED_SECRET_DISTINCT_CHARACTERS} "
+                "of them different, neither a stand-in nor a published development value "
+                "(openssl rand -hex 32)"
             )
         if self.DEBUG:
             raise ValueError(f"DEBUG must be false in {self.ENVIRONMENT}")

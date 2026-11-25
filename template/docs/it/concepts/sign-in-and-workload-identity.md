@@ -1,4 +1,4 @@
-<!-- i18n source: concepts/sign-in-and-workload-identity.md source_hash: e75708bcb48c -->
+<!-- i18n source: concepts/sign-in-and-workload-identity.md source_hash: 81cbb8bafd06 -->
 # Accesso e identità dei workload
 
 Le persone accedono con una password o tramite il provider di identità della propria azienda.
@@ -189,5 +189,6 @@ Per GitLab, i claim utili sono `project_id`, `ref`, `ref_protected` e `environme
 
 Un token rifiutato riceve la stessa risposta qualunque sia il motivo; il motivo è nel log del
 server. Ogni richiesta verifica la sua credenziale rispetto ai trust configurati in quel
-momento: rimuovere un trust, spostarlo su un'altra organizzazione o togliergli degli scope vale
-subito anche per le credenziali già emesse.
+momento: rimuovere un trust, spostarlo su un'altra organizzazione, cambiarne issuer, audience o
+claim, accorciarne `ttl_seconds` oppure togliergli degli scope vale subito anche per le
+credenziali già emesse.

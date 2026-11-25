@@ -50,6 +50,12 @@ the commit of a release tag with `git ls-remote https://github.com/<owner>/<repo
 refs/tags/<tag>` (the `^{}` line for an annotated tag) and keep the version in the comment.
 `tests/test_render.py` keeps the uv and Bun versions of this pipeline equal to the template's.
 
+Container images in the template are pinned by tag, not by digest: a digest is read from the
+registry and some tags depend on the answers (the Python version). Generated projects pin them
+once: Renovate does it on its first run (`docker:pinDigests` in `renovate.json`); with
+Dependabot, which only keeps an existing digest current, the step from a machine with registry
+access is in the generated `CONTRIBUTING.md`, Container images.
+
 ## Re-sync with the upstream templates
 
 Follow `PROVENANCE.md`, Re-sync procedure, or the `/upstream-sync` skill.

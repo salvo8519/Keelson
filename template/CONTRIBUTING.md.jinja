@@ -77,6 +77,33 @@ uv run pre-commit install
 Will run ruff + (frontend lint if present) on every commit. Bypass with `--no-verify` only when fixing a hook bug.
 {%- endif %}
 
+## Container images
+
+The base images of the Dockerfiles, the Compose files and the CI are pinned by tag: the
+generator has no registry access to read their digests. A tag can be moved to other content; a
+digest (`image:tag@sha256:...`) cannot.
+{%- if use_gitlab_ci %}
+
+Renovate (`renovate.json`, preset `docker:pinDigests`) adds the digests in its first merge
+requests and keeps tag and digest current afterwards. Review and merge them; no manual step.
+{%- else %}
+
+Dependabot (`.github/dependabot.yml`) keeps a digest current only once it is present. Pin
+every image once, from a machine with registry access:
+
+```bash
+# The digest of the multi-platform index: the value to pin.
+docker buildx imagetools inspect postgres:16-alpine | grep -m1 '^Digest:'
+```
+
+Write it after the tag wherever the image appears (`grep -rn "postgres:16-alpine" .`), for
+example `postgres:16-alpine@sha256:<digest>`, and keep the tag: Dependabot reads it to propose
+the next version and updates tag and digest together. Images built by this project
+(`{{ project_slug }}_backend`) are not pinned. Dependabot reads the Dockerfiles and the Compose
+files; the service images of `.github/workflows/ci.yml` are updated by hand, digest included,
+when their tag changes.
+{%- endif %}
+
 ## Pull-request checklist
 
 - [ ] `uv run ruff check . && uv run ruff format --check .` clean

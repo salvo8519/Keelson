@@ -81,17 +81,40 @@ class PiiRedactionFilter(logging.Filter):
         return value
 
 
-# Keelstone: fields passed with ``extra=`` whose name says they hold a secret are never written.
-# Matched on the whole name or its last part (``refresh_token``), so ``input_tokens`` stays.
-SENSITIVE_FIELD = re.compile(
-    r"(^|_)(password|passwd|secret|token|api_?key|authori[sz]ation|cookies?|credentials?"
-    r"|private_?key|hashed_password)$",
-    re.IGNORECASE,
+# Keelstone: fields passed with ``extra=`` (and audit details) whose name says they hold a secret
+# are never written. A name is split into words at "_", "-", ".", spaces and camelCase
+# ("newPassword", "X-API-Key", "S3_SECRET_KEY" all give their words). These words mark a secret
+# wherever they stand ("password_confirm", "credentials_json"):
+SECRET_WORDS = frozenset(
+    {"password", "passwords", "passwd", "passphrase", "secret", "secrets", "credential", "credentials"}
 )
+# These only as the last word ("refresh_token", "set_cookie"), so "token_type" and
+# "input_tokens" stay visible:
+SECRET_LAST_WORDS = frozenset(
+    {"token", "authorization", "authorisation", "cookie", "cookies", "apikey", "privatekey"}
+)
+# "key" or "keys" as the last word of a compound ("api_key", "aws_secret_access_key",
+# "DATA_ENCRYPTION_KEYS"); a bare "key" is the public prefix of an API key or the name of an
+# e-mail template, and "key_id" stays.
+_COMPOUND_KEYS = frozenset({"key", "keys"})
+_WORD_BOUNDARY = re.compile(r"[^0-9a-zA-Z]+|(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
+
+
+def is_secret_name(name: str) -> bool:
+    """True for a field name that says the field holds a secret."""
+    words = [word.lower() for word in _WORD_BOUNDARY.split(name) if word]
+    if not words:
+        return False
+    last = words[-1]
+    return (
+        any(word in SECRET_WORDS for word in words)
+        or last in SECRET_LAST_WORDS
+        or (last in _COMPOUND_KEYS and len(words) > 1)
+    )
 
 
 def _walk(value: Any, name: str, text: Callable[[str], str]) -> Any:
-    if name and SENSITIVE_FIELD.search(name):
+    if name and is_secret_name(name):
         return "[REDACTED]"
     if isinstance(value, str):
         return text(value)

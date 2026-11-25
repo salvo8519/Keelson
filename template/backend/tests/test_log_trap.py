@@ -14,7 +14,7 @@ from uuid import UUID
 
 import pytest
 
-from app.core.logging import JsonFormatter, _AppHandler, scrub, setup_logging
+from app.core.logging import JsonFormatter, _AppHandler, scrub, setup_logging, without_secrets
 
 
 def _b64(text: str) -> str:
@@ -128,6 +128,58 @@ def test_fields_named_like_secrets_are_replaced_whatever_they_hold() -> None:
     }
     assert scrub((EMAIL, 7)) == ["[EMAIL_REDACTED]", 7]
     assert scrub(7) == 7
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "password",
+        "api_key",
+        "secret_key",
+        "SECRET_KEY",
+        "aws_secret_access_key",
+        "S3_SECRET_KEY",
+        "secretAccessKey",
+        "access_key",
+        "encryption_key",
+        "DATA_ENCRYPTION_KEYS",
+        "private_keys",
+        "passwords",
+        "client_secrets",
+        "private_key",
+        "APIKey",
+        "apikey",
+        "api-key",
+        "X-API-Key",
+        "passphrase",
+        "newPassword",
+        "password_confirm",
+        "hashed_password",
+        "credentials_json",
+        "credential",
+        "client_secret",
+        "webhookSecret",
+        "refresh_token",
+        "X-Auth-Token",
+        "token",
+        "Authorization",
+        "Set-Cookie",
+    ],
+)
+def test_names_of_secrets_are_recognised_in_any_spelling(name: str) -> None:
+    assert scrub("value", name) == "[REDACTED]"
+    assert without_secrets({name: "value"}) == {name: "[REDACTED]"}
+
+
+# Names the application writes to logs and audit entries: an API key's public prefix ("key",
+# "previous"), an e-mail template ("key"), token counters and types.
+@pytest.mark.parametrize(
+    "name",
+    ["key", "keys", "key_id", "prefix", "previous", "token_type", "input_tokens", "max_tokens", "tokens", "monkey", "keyword"],
+)
+def test_harmless_names_stay_visible(name: str) -> None:
+    assert scrub("value", name) == "value"
+    assert without_secrets({name: "value"}) == {name: "value"}
 
 
 def test_the_exception_is_written_redacted_in_json() -> None:

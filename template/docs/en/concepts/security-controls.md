@@ -20,7 +20,7 @@ on every change, not written once.
 | Authentication | A.8.5 | CC6.1, CC6.2 | Single sign-on with OpenID Connect (code flow with PKCE, verified ID token, accounts matched only by verified addresses); no token in URLs | `app/core/oidc.py`, `tests/test_sso.py` |
 | Authentication information | A.5.17 | CC6.1 | Passwords hashed with Argon2id, older hashes upgraded at sign-in; sign-in time does not reveal registered addresses; API key secrets stored as a keyed hash | `app/core/security.py`, `app/core/api_keys.py`, `tests/test_security.py`, `tests/test_services.py` |
 | Session protection | A.8.5, A.8.26 | CC6.1, CC6.7 | Browser tokens in HttpOnly, SameSite cookies, out of reach of page scripts; cookie-authenticated writes and WebSockets accepted only from trusted origins (CSRF) | `app/core/session_cookies.py`, `tests/test_session_cookies.py` |
-| Machine identities | A.5.16, A.8.5 | CC6.2 | CI jobs authenticate with their platform's OpenID Connect token against a configured trust (issuer, audience, repository, branch); credentials expire within the hour | `app/core/workload_identity.py`, `tests/test_workload_identity.py` |
+| Machine identities | A.5.16, A.8.5 | CC6.2 | CI jobs authenticate with their platform's OpenID Connect token against a configured trust (issuer, audience, repository, branch); credentials expire within the hour and stop when their trust is removed, moved or changed | `app/core/workload_identity.py`, `tests/test_workload_identity.py` |
 | API key lifecycle | A.5.18 | CC6.2 | Per organization, with scopes, expiry, rotation with a grace period, revocation and rate limits | `app/services/api_key.py`, `tests/test_api_keys.py` |
 
 ## Cryptography and data protection
@@ -28,7 +28,7 @@ on every change, not written once.
 | Control | ISO 27001 | SOC 2 | What the project does | Evidence |
 | --- | --- | --- | --- | --- |
 | Secrets at rest | A.8.24 | CC6.1, C1.1 | Connector credentials and tokens encrypted with dedicated, rotatable keys (`DATA_ENCRYPTION_KEYS`), separate from the token signing key | `app/core/crypto.py`, `tests/test_data_encryption.py` |
-| Data leakage in logs | A.8.12 | CC6.7 | Messages, extra fields and exception text redacted; fields named like secrets dropped; SQL parameters hidden outside debug mode | `app/core/logging.py`, `tests/test_log_trap.py` |
+| Data leakage in logs | A.8.12 | CC6.7 | Messages, extra fields and exception text redacted; fields named like secrets dropped, in any spelling (`newPassword`, `X-API-Key`, `S3_SECRET_KEY`); SQL parameters hidden outside debug mode | `app/core/logging.py`, `tests/test_log_trap.py` |
 | Data leakage in the API | A.8.12 | CC6.7 | Maintainer notes kept out of the published API reference | `tests/test_openapi_contract.py` |
 | Transport | A.8.24 | CC6.7 | TLS terminated by Traefik with Let's Encrypt in the production stack, with HSTS; Content Security Policy and the other security headers on the API and the frontend | `docker-compose.prod.yml`, `app/core/middleware.py`, `frontend/security-headers.conf` (with a frontend) |
 
@@ -44,7 +44,7 @@ on every change, not written once.
 
 | Control | ISO 27001 | SOC 2 | What the project does | Evidence |
 | --- | --- | --- | --- | --- |
-| Secure configuration | A.8.9 | CC7.1 | A staging or production start refuses development defaults and stand-ins for secrets (the values of `.env.example` and of the Kubernetes secret included), debug mode, metrics without a token and token signing algorithms other than HMAC; the production Compose stack stops when a required value is missing, keeps the Valkey password off the command line and trusts forwarded client addresses only from the proxy network | `app/core/config.py`, `tests/test_production_settings.py`, `docker-compose.prod.yml` |
+| Secure configuration | A.8.9 | CC7.1 | A staging or production start refuses development defaults and stand-ins for secrets (the values of `.env.example`, of the Kubernetes secret and of `garage/development.env` included), secrets too short or too uniform (`MIN_DEPLOYED_SECRET_LENGTH`, `MIN_DEPLOYED_SECRET_DISTINCT_CHARACTERS`), debug mode, metrics without a token and token signing algorithms other than HMAC; the production Compose stack stops when a required value is missing, keeps the Valkey password off the command line and trusts forwarded client addresses only from the proxy network | `app/core/config.py`, `tests/test_production_settings.py`, `docker-compose.prod.yml` |
 | Change management | A.8.32 | CC8.1 | The API contract is versioned; drift and breaking changes fail the pipeline; migrations tested up and down | `scripts/openapi.py`, `tests/test_migrations.py`, CI workflow |
 | Secure coding | A.8.28 | CC8.1 | Security lint rules (Ruff `S`, from Bandit) with reviewed exceptions | `backend/pyproject.toml` |
 | Security testing | A.8.29 | CC7.1 | Attack tests against a real PostgreSQL, log trap, authentication tests | the tests named above |
@@ -65,4 +65,6 @@ The software does not cover, and an auditor will ask about:
 - log retention, alerting and incident response (A.5.24 to A.5.28; SOC 2 CC7.3 to CC7.5);
 - penetration tests and supplier assessments of the model providers and hosting;
 - base images pinned by digest (`image:tag@sha256:...`): the generator cannot fetch digests,
-  so the images are pinned by tag; pin them once and Dependabot or Renovate keep them current.
+  so the images are pinned by tag. Renovate adds the digests on its first run; with Dependabot,
+  pin them once from a machine with registry access (`CONTRIBUTING.md`, Container images) and
+  Dependabot keeps tag and digest current.

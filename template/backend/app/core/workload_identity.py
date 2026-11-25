@@ -21,6 +21,8 @@ repository name, which another account can take after a rename, a transfer or a 
 
 from __future__ import annotations
 
+import hashlib
+import json
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -90,6 +92,17 @@ class WorkloadCredential:
     expires_at: datetime
 
 
+def trust_digest(trust: WorkloadTrust) -> str:
+    """Digest of what the trust accepts: issuer, audience and claims, in a canonical form.
+
+    A credential carries the digest of its trust at issue time; when the trust is changed to
+    accept other tokens, the credentials it issued before stop.
+    """
+    accepted = {"issuer": trust.issuer, "audience": trust.audience, "claims": trust.claims}
+    canonical = json.dumps(accepted, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
 def _audiences(claims: dict[str, Any]) -> set[str]:
     audience = claims.get("aud")
     return {audience} if isinstance(audience, str) else set(audience or [])
@@ -155,6 +168,7 @@ def issue(trust: WorkloadTrust, secret: str, now: float | None = None) -> tuple[
         "sub": f"workload:{trust.name}",
         "org": str(trust.organization_id),
         "scopes": sorted(trust.scopes),
+        "trust": trust_digest(trust),
         "iat": issued,
         "exp": expires,
     }
@@ -165,9 +179,10 @@ def issue(trust: WorkloadTrust, secret: str, now: float | None = None) -> tuple[
 def read(credential: str, secret: str, trusts: list[WorkloadTrust]) -> WorkloadCredential | None:
     """The workload credential sent as an API key, or None if it is not a valid one.
 
-    The credential is checked against the trusts configured now: a trust that was removed or
-    moved to another organization stops its credentials at once, and scopes removed from it
-    are removed from them.
+    The credential is checked against the trusts configured now: a trust that was removed,
+    moved to another organization or changed to accept other tokens (issuer, audience, claims)
+    stops its credentials at once, a shorter lifetime stops those issued for longer, and scopes
+    removed from it are removed from them.
     """
     if not credential.startswith(CREDENTIAL_PREFIX):
         return None
@@ -176,14 +191,24 @@ def read(credential: str, secret: str, trusts: list[WorkloadTrust]) -> WorkloadC
             credential[len(CREDENTIAL_PREFIX) :],
             secret,
             algorithms=["HS256"],
-            options={"require": ["exp", "sub", "org", "scopes", "type"]},
+            options={"require": ["exp", "iat", "sub", "org", "scopes", "type", "trust"]},
         )
     except jwt.PyJWTError:
         return None
     if payload.get("type") != TOKEN_TYPE:
         return None
     name, organization_id = str(payload["sub"]).removeprefix("workload:"), UUID(payload["org"])
-    trust = next((t for t in trusts if t.name == name and t.organization_id == organization_id), None)
+    trust = next(
+        (
+            t
+            for t in trusts
+            if t.name == name
+            and t.organization_id == organization_id
+            and trust_digest(t) == payload["trust"]
+            and payload["exp"] - payload["iat"] <= t.ttl_seconds
+        ),
+        None,
+    )
     scopes = frozenset(payload["scopes"]) & frozenset(trust.scopes) if trust else frozenset()
     if not scopes:
         return None
