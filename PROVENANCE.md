@@ -192,6 +192,11 @@ each needs the listed work before its option becomes an axis:
   (`app/db/tenancy.py`), so they would stay closed to the application login, and the polling
   and background handlers open sessions without a principal. Both need policies or declared
   system sessions. The webhook signature checks were made to fail closed on an empty secret.
+- LiteParse PDF parser (`use_liteparse`, `use_all_pdf_parsers`): the backend Dockerfile installs
+  Node.js with `curl ... | bash` from deb.nodesource.com. Install a pinned Node.js from the
+  distribution or a verified archive instead.
+- Billing: any member of an organization can change or cancel its subscription. Restrict the
+  billing routes to owners.
 
 ## Re-sync procedure
 
