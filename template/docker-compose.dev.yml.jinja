@@ -23,6 +23,11 @@ services:
 {%- endif %}
     env_file:
       - ./backend/.env
+{%- if enable_file_storage %}
+      # Keelson: documents in the Garage service below (settings in garage/).
+      - ./garage/storage.env
+      - ./garage/development.env
+{%- endif %}
     environment:
       - DEBUG=true
       - ENVIRONMENT=local
@@ -66,6 +71,10 @@ services:
 {%- if use_qdrant %}
       qdrant:
         condition: service_healthy
+{%- endif %}
+{%- if enable_file_storage %}
+      garage-init:
+        condition: service_completed_successfully
 {%- endif %}
     restart: unless-stopped
 {%- if enable_prometheus %}
@@ -222,9 +231,19 @@ services:
     command: celery -A app.worker.celery_app worker --loglevel=debug
     env_file:
       - ./backend/.env
+{%- if enable_file_storage %}
+      # Keelson: documents in the Garage service below (settings in garage/).
+      - ./garage/storage.env
+      - ./garage/development.env
+{%- endif %}
     environment:
       - DEBUG=true
       - POSTGRES_HOST=db
+{%- if use_qdrant %}
+      # Keelson: the worker ingests documents into Qdrant (it looked for it on localhost).
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+{%- endif %}
       - REDIS_HOST=redis
 {%- if use_milvus %}
       - MILVUS_HOST=milvus
@@ -309,9 +328,19 @@ services:
     command: taskiq worker app.worker.taskiq_worker:broker --workers 1 --reload
     env_file:
       - ./backend/.env
+{%- if enable_file_storage %}
+      # Keelson: documents in the Garage service below (settings in garage/).
+      - ./garage/storage.env
+      - ./garage/development.env
+{%- endif %}
     environment:
       - DEBUG=true
       - POSTGRES_HOST=db
+{%- if use_qdrant %}
+      # Keelson: the worker ingests documents into Qdrant (it looked for it on localhost).
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+{%- endif %}
 {%- if enable_redis %}
       - REDIS_HOST=redis
 {%- endif %}
@@ -421,12 +450,53 @@ services:
     restart: unless-stopped
 {%- endif %}
 
+{%- if enable_file_storage %}
+
+  # Keelson: S3-compatible object storage for documents (Garage by Deuxfleurs, AGPLv3, run as
+  # a separate service and never linked). Configuration in garage/garage.toml; development
+  # secrets in garage/development.env. garage-init prepares the node, the key and the bucket.
+  garage:
+    image: {{ garage_image }}
+    container_name: {{ project_slug }}_garage
+    env_file:
+      - ./garage/development.env
+    volumes:
+      - ./garage/garage.toml:/etc/garage.toml:ro
+      - garage_meta:/var/lib/garage/meta
+      - garage_data:/var/lib/garage/data
+    ports:
+      # The S3 API, for a backend run outside Docker (S3_ENDPOINT=http://localhost:3900).
+      - "127.0.0.1:3900:3900"
+    networks:
+      - backend
+    restart: unless-stopped
+
+  garage-init:
+    image: {{ project_slug }}_backend:dev
+    pull_policy: never
+    container_name: {{ project_slug }}_garage_init
+    command: {{ project_slug }} cmd garage-bootstrap
+    env_file:
+      - ./backend/.env
+      - ./garage/storage.env
+      - ./garage/development.env
+    networks:
+      - backend
+    depends_on:
+      - garage
+    restart: "no"
+{%- endif %}
+
 networks:
   backend:
     driver: bridge
 
 volumes:
   media_data:
+{%- if enable_file_storage %}
+  garage_meta:
+  garage_data:
+{%- endif %}
 {%- if use_chromadb %}
   chroma_data:
 {%- endif %}

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 
@@ -110,3 +111,20 @@ def test_default_project_compose_stacks_are_valid(render: Render) -> None:
     assert "acme_service_backend:dev" not in images, "production must not run the dev image"
     for path in project.glob("docker-compose*.yml"):
         assert "NEXT_PUBLIC" not in path.read_text(encoding="utf-8"), path.name
+    # Documents go to the Garage service: pinned image, bootstrap before the API, S3 settings
+    # and secrets from the environment, never from the committed configuration.
+    for name in ("dev", "prod", "prod-local"):
+        services = resolved[name]["services"]
+        assert re.fullmatch(r"dxflrs/garage:v\d+\.\d+\.\d+", services["garage"]["image"]), name
+        assert services["app"]["depends_on"]["garage-init"]["condition"] == (
+            "service_completed_successfully"
+        )
+        assert services["app"]["environment"]["S3_ENDPOINT"] == "http://garage:3900", name
+        assert services["app"]["environment"]["STORAGE_BACKEND"] == "s3", name
+    local_secrets = local["garage"]["environment"]
+    assert len(local_secrets["GARAGE_RPC_SECRET"]) == 64, "generated for the rehearsal"
+    assert re.fullmatch(r"GK[0-9a-f]{24}", local["app"]["environment"]["S3_ACCESS_KEY"])
+    secret = local["app"]["environment"]["S3_SECRET_KEY"]
+    assert local["garage-init"]["environment"]["S3_SECRET_KEY"] == secret
+    garage_toml = (project / "garage" / "garage.toml").read_text(encoding="utf-8")
+    assert "rpc_secret =" not in garage_toml and "admin_token =" not in garage_toml

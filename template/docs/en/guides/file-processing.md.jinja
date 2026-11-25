@@ -20,7 +20,7 @@ When a user uploads a file in the chat interface, the following pipeline runs:
                |
 4. Parse       Extract text content (images skip this step)
                |
-5. Store       Save file to media/{user_id}/ via FileStorageService
+5. Store       Stream the file into a stored object (local disk or S3)
                |
 6. Record      Create ChatFile row in database
                |
@@ -69,24 +69,16 @@ key and handles text extraction, table detection, and block-level parsing.
 ### Size Limits
 
 - Maximum file size: `MAX_UPLOAD_SIZE_MB` environment variable (default: **50 MB**)
-- The limit is enforced server-side after reading the file content.
+- The limit is enforced server-side: the declared size is checked before the content is
+  read, and the content is counted again while it is stored.
 
 ### Storage
 
-Files are saved by `FileStorageService` to the `media/` directory:
-
-```
-media/
-  {user_id}/
-    document.pdf
-    screenshot.png
-    ...
-```
-
-{%- if enable_file_storage %}
-If S3/MinIO storage is configured (`S3_ENDPOINT`), files are uploaded to the
-configured bucket instead of local disk.
-{%- endif %}
+The content of every uploaded file is a stored object (`app/services/stored_object.py`):
+a row of `stored_objects` with its owner, size, content type and SHA-256, and the bytes in
+the configured backend, the local disk (`MEDIA_DIR`) or any S3-compatible service. Chat files
+are personal objects of their uploader, under the key `user/<user_id>/<object_id>`. See
+`docs/en/concepts/document-storage.md`.
 
 ### ChatFile Model
 
@@ -99,7 +91,7 @@ The `ChatFile` database model tracks uploaded files:
 | `filename` | String | Original filename |
 | `mime_type` | String | MIME type (e.g. `application/pdf`) |
 | `size` | Integer | File size in bytes |
-| `storage_path` | String | Relative path in storage |
+| `stored_object_id` | UUID/FK | Stored object holding the content |
 | `file_type` | String | Classified type: `image`, `pdf`, `docx`, `text` |
 | `parsed_content` | Text | Extracted text content (NULL for images) |
 | `message_id` | UUID/FK | Linked message (set when message is sent) |
@@ -269,7 +261,7 @@ Ingested documents are tracked in the SQL database via the `RAGDocument` model:
 | `error_message` | Error details (if status is `error`) |
 | `vector_document_id` | ID in the vector store |
 | `chunk_count` | Number of chunks created |
-| `storage_path` | Path to original file (for re-ingestion/download) |
+| `stored_object_id` | Stored object of the original file (for re-ingestion and download) |
 | `created_at` | Ingestion start time |
 | `completed_at` | Ingestion completion time |
 

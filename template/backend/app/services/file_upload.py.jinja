@@ -10,6 +10,7 @@ import tempfile
 {%- endif %}
 
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.responses import Response
 
 from app.core.exceptions import BadRequestError, NotFoundError
 from app.db.models.chat_file import ChatFile
@@ -18,8 +19,9 @@ from app.services.file_storage import (
     ALLOWED_MIME_TYPES,
     MAX_UPLOAD_SIZE,
     classify_file,
-    get_file_storage,
+    iter_bytes,
 )
+from app.services.stored_object import ObjectOwner, StoredObjectService
 {%- if use_all_pdf_parsers or use_llamaparse %}
 from app.core.config import settings
 {%- endif %}
@@ -48,6 +50,16 @@ class FileUploadService:
         if size > MAX_UPLOAD_SIZE:
             return False, f"File too large. Maximum size is {MAX_UPLOAD_SIZE // (1024 * 1024)}MB."
         return True, None
+
+    def check_upload(self, content_type: str | None, size: int) -> None:
+        """Refuse an upload by its type and size.
+
+        Raises:
+            BadRequestError: If file type or size is invalid.
+        """
+        is_valid, error = self.validate_upload(content_type, size)
+        if not is_valid:
+            raise BadRequestError(message=error or "Invalid file")
 
     @staticmethod
     def classify_file(mime_type: str, filename: str) -> str:
@@ -244,30 +256,42 @@ class FileUploadService:
         Raises:
             BadRequestError: If file type or size is invalid.
         """
-        is_valid, error = self.validate_upload(content_type, len(file_data))
-        if not is_valid:
-            raise BadRequestError(message=error or "Invalid file")
+        self.check_upload(content_type, len(file_data))
 
         file_type = self.classify_file(content_type or "", filename)
         parsed_content = await self.parse_content(file_data, file_type, content_type or "")
 
-        storage = get_file_storage()
-        storage_path = await storage.save(str(user_id), filename, file_data)
+        # Keelson: the content is a personal stored object of the uploader (hashed while it
+        # is written); the chat file references it, not a path.
+        mime_type = content_type or "application/octet-stream"
+        stored = await StoredObjectService(self.db).store(
+            owner=ObjectOwner.user(user_id),
+            chunks=iter_bytes(file_data),
+            content_type=mime_type,
+            max_size=MAX_UPLOAD_SIZE,
+        )
 
         return await self.create_chat_file(
             user_id=user_id,
             filename=filename,
-            mime_type=content_type or "application/octet-stream",
-            size=len(file_data),
-            storage_path=storage_path,
+            mime_type=mime_type,
+            size=stored.size,
+            stored_object_id=stored.id,
             file_type=file_type,
             parsed_content=parsed_content,
         )
 
-    def get_file_path(self, storage_path: str) -> str | None:
-        """Resolve a storage path to an absolute filesystem path."""
-        full_path = get_file_storage().get_full_path(storage_path)
-        return str(full_path) if full_path is not None else None
+    async def download(
+        self, chat_file: ChatFile, *, disposition: str, headers: dict[str, str]
+    ) -> Response:
+        """The content of a chat file, for its owner (checked by ``get_user_file``)."""
+        return await StoredObjectService(self.db).download(
+            chat_file.stored_object_id,
+            filename=chat_file.filename,
+            disposition=disposition,
+            media_type=chat_file.mime_type,
+            headers=headers,
+        )
 
     async def get_user_file(self, file_id: Any, user_id: Any) -> ChatFile:
         """Get a file by ID, verifying ownership.
@@ -287,7 +311,7 @@ class FileUploadService:
         filename: str,
         mime_type: str,
         size: int,
-        storage_path: str,
+        stored_object_id: Any,
         file_type: str,
         parsed_content: str | None = None,
     ) -> ChatFile:
@@ -298,7 +322,7 @@ class FileUploadService:
             filename=filename,
             mime_type=mime_type,
             size=size,
-            storage_path=storage_path,
+            stored_object_id=stored_object_id,
             file_type=file_type,
             parsed_content=parsed_content,
         )

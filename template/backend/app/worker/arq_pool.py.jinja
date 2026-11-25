@@ -1,0 +1,30 @@
+{%- if use_arq %}
+"""Connection of the API and the command line to the ARQ queue (Keelson).
+
+Upstream imported ``get_arq_pool`` from ``app.worker.arq_app``, which does not define it, and
+which imports the task modules that import the services enqueuing jobs: every RAG upload or
+sync of an ARQ project failed. The pool lives here, apart from the worker and its tasks.
+"""
+
+from arq import ArqRedis, create_pool
+from arq.connections import RedisSettings
+
+from app.core.config import settings
+
+REDIS_SETTINGS = RedisSettings(
+    host=settings.ARQ_REDIS_HOST,
+    port=settings.ARQ_REDIS_PORT,
+    password=settings.ARQ_REDIS_PASSWORD or None,
+    database=settings.ARQ_REDIS_DB,
+)
+
+_pool: ArqRedis | None = None
+
+
+async def get_arq_pool() -> ArqRedis:
+    """The shared pool that enqueues jobs, created on first use."""
+    global _pool
+    if _pool is None:
+        _pool = await create_pool(REDIS_SETTINGS)
+    return _pool
+{%- endif %}

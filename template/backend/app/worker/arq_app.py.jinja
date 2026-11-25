@@ -5,11 +5,18 @@ import logging
 from typing import Any
 
 from arq import cron
-from arq.connections import RedisSettings
 
-from app.core.config import settings
+from app.worker.arq_pool import REDIS_SETTINGS
 {%- if enable_rag %}
-from app.worker.tasks.rag_tasks import check_scheduled_syncs, sync_single_source_task
+from app.worker.tasks.rag_tasks import (
+    check_scheduled_syncs,
+    ingest_document_task,
+    sync_collection_task,
+    sync_single_source_task,
+)
+{%- endif %}
+{%- if enable_teams and use_postgresql %}
+from app.worker.tasks.storage_tasks import cleanup_storage_task, migrate_object_task
 {%- endif %}
 {%- if enable_email and enable_billing %}
 from app.worker.tasks.email_tasks import send_trial_reminders_task
@@ -37,16 +44,19 @@ async def shutdown(ctx: dict[str, Any]) -> None:
 class WorkerSettings:
     """ARQ Worker configuration. Used by the ARQ CLI: arq app.worker.arq_app.WorkerSettings."""
 
-    redis_settings = RedisSettings(
-        host=settings.ARQ_REDIS_HOST,
-        port=settings.ARQ_REDIS_PORT,
-        password=settings.ARQ_REDIS_PASSWORD or None,
-        database=settings.ARQ_REDIS_DB,
-    )
+    redis_settings = REDIS_SETTINGS
 
     functions = [
 {%- if enable_rag %}
+        # Keelson: the jobs the API enqueues by name are registered (upstream registered only
+        # the sync of one source, so uploads and local syncs never ran).
+        ingest_document_task,
+        sync_collection_task,
         sync_single_source_task,
+{%- endif %}
+{%- if enable_teams and use_postgresql %}
+        migrate_object_task,
+        cleanup_storage_task,
 {%- endif %}
 {%- if enable_email and enable_billing %}
         send_trial_reminders_task,
@@ -62,6 +72,9 @@ class WorkerSettings:
     cron_jobs = [
 {%- if enable_rag %}
         cron(check_scheduled_syncs),
+{%- endif %}
+{%- if enable_teams and use_postgresql %}
+        cron(cleanup_storage_task, hour=4, minute=30),
 {%- endif %}
 {%- if enable_email and enable_billing %}
         cron(send_trial_reminders_task, hour=9, minute=0),

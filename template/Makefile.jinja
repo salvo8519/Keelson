@@ -129,7 +129,9 @@ docker-shell: ## Open a shell in the backend container
 	print(f'POSTGRES_PASSWORD={t(24)}'); print(f'POSTGRES_APP_PASSWORD={t(24)}'); \
 	print(f'REDIS_PASSWORD={t(24)}'); print(f'DATA_ENCRYPTION_KEYS={t(32)}'){% if use_telegram or use_slack %}; \
 	print(f'CHANNEL_ENCRYPTION_KEY={t(32)}'){% endif %}{% if use_celery %}; \
-	print(f'FLOWER_PASSWORD={t(16)}'){% endif %}" > $@
+	print(f'FLOWER_PASSWORD={t(16)}'){% endif %}{% if enable_file_storage %}; \
+	print(f'GARAGE_RPC_SECRET={t(32)}'); print(f'GARAGE_ADMIN_TOKEN={t(32)}'); \
+	print(f'S3_ACCESS_KEY=GK{t(12)}'); print(f'S3_SECRET_KEY={t(32)}'){% endif %}" > $@
 	@echo "Generated .env.prod-local with random secrets (ignored by git)."
 
 prod-local: backend/.env .env.prod-local ## Build and start the production stack on localhost (production settings, plain HTTP)

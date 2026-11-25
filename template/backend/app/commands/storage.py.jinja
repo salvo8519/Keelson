@@ -1,0 +1,245 @@
+{%- if enable_teams and use_postgresql %}
+"""Object storage commands (Keelson).
+
+    {{ project_slug }} cmd migrate-storage --from local --to s3     move objects, in batches
+    {{ project_slug }} cmd storage-cleanup                          remove what nothing needs
+    {{ project_slug }} cmd garage-bootstrap                         prepare a Garage server
+
+See docs/en/concepts/document-storage.md.
+"""
+
+import asyncio
+import re
+import time
+from typing import Any
+
+import click
+import httpx
+
+from app.commands import command, error, info, success, warning
+from app.core.config import settings
+from app.db.session import system_session
+from app.services.file_storage import STORAGE_BACKENDS
+from app.services.storage_migration import BATCH_SIZE, cleanup, migrate_object, objects_to_migrate
+
+
+def _sessions(reason: str) -> Any:
+    return lambda: system_session(f"command line: {reason}")
+
+
+@command("migrate-storage", help="Move stored objects from one storage backend to another")
+@click.option("--from", "source", type=click.Choice(STORAGE_BACKENDS), required=True)
+@click.option("--to", "target", type=click.Choice(STORAGE_BACKENDS), required=True)
+@click.option("--batch-size", default=BATCH_SIZE, show_default=True, type=click.IntRange(1, 1000))
+@click.option("--limit", type=click.IntRange(1), default=None, help="Stop after this many objects")
+@click.option(
+    "--inline",
+    is_flag=True,
+    help="Copy in this process instead of queueing one task per object on the workers",
+)
+def migrate_storage(source: str, target: str, batch_size: int, limit: int | None, inline: bool) -> None:
+    """Copy every object of SOURCE to TARGET, verify it, switch to it.
+
+    New uploads go to the backend of STORAGE_BACKEND: set it to TARGET before migrating.
+    Run storage-cleanup afterwards to remove the copies left on SOURCE.
+    """
+    if source == target:
+        raise click.BadParameter("--from and --to must differ")
+    if settings.storage_backend != target:
+        warning(f"STORAGE_BACKEND is {settings.storage_backend}: new uploads still go there.")
+    counts = asyncio.run(_migrate(source, target, batch_size, limit, inline))
+    summary = ", ".join(f"{name} {count}" for name, count in counts.items())
+    (success if not counts.get("failed") else error)(f"Done: {summary}.")
+
+
+async def _migrate(
+    source: str, target: str, batch_size: int, limit: int | None, inline: bool
+) -> dict[str, int]:
+    if inline:
+        return await _run_batches(source, target, batch_size, limit, inline=True)
+{%- if use_taskiq %}
+    from app.worker.taskiq_app import broker
+
+    # The command line enqueues like the API: as a producer of the broker.
+    await broker.startup()
+    try:
+        return await _run_batches(source, target, batch_size, limit, inline=False)
+    finally:
+        await broker.shutdown()
+{%- else %}
+    return await _run_batches(source, target, batch_size, limit, inline=False)
+{%- endif %}
+
+
+async def _run_batches(
+    source: str, target: str, batch_size: int, limit: int | None, *, inline: bool
+) -> dict[str, int]:
+    from app.worker.tasks.storage_tasks import enqueue_migration
+
+    sessions = _sessions("migrate-storage")
+    counts = dict.fromkeys(("migrated", "skipped", "deleted", "failed") if inline else ("queued",), 0)
+    after = None
+    processed = 0
+    while limit is None or processed < limit:
+        size = batch_size if limit is None else min(batch_size, limit - processed)
+        batch = await objects_to_migrate(source, limit=size, after=after, sessions=sessions)
+        if not batch:
+            break
+        for object_id in batch:
+            if not inline:
+                await enqueue_migration(object_id, source=source, target=target)
+                counts["queued"] += 1
+                continue
+            try:
+                outcome = await migrate_object(object_id, source=source, target=target, sessions=sessions)
+            except Exception as failure:
+                counts["failed"] += 1
+                warning(f"{object_id}: {type(failure).__name__}: {failure}")
+            else:
+                counts[outcome] += 1
+        processed += len(batch)
+        after = batch[-1]
+        info(f"{processed} object(s) processed")
+    return counts
+
+
+@command("storage-cleanup", help="Remove migrated copies, orphaned objects and unrecorded content")
+@click.option(
+    "--no-reconcile",
+    is_flag=True,
+    help="Do not scan the backends for content that no stored object records",
+)
+def storage_cleanup(no_reconcile: bool) -> None:
+    """Delete the copies left by migrations and the content that nothing references."""
+    report = asyncio.run(cleanup(reconcile=not no_reconcile, sessions=_sessions("storage-cleanup")))
+    success(
+        f"Removed {report.previous_copies} previous copies, {report.orphans} orphaned objects,"
+        f" {report.unrecorded} unrecorded files."
+    )
+    for failure in report.failures:
+        warning(f"not removed: {failure}")
+
+
+# --- Garage ---------------------------------------------------------------------------------
+
+# Garage imports keys in its own format: "GK" and 24 hexadecimal digits, a 64-digit secret.
+GARAGE_KEY_ID = re.compile(r"^GK[0-9a-f]{24}$")
+GARAGE_SECRET = re.compile(r"^[0-9a-f]{64}$")
+
+
+class GarageError(RuntimeError):
+    """The Garage administration API refused a step."""
+
+
+async def _call(client: httpx.AsyncClient, method: str, path: str, **kwargs: Any) -> httpx.Response:
+    response = await client.request(method, path, **kwargs)
+    if response.status_code >= 400 and response.status_code != 404:
+        raise GarageError(f"{method} {path}: HTTP {response.status_code} {response.text[:200]}")
+    return response
+
+
+async def bootstrap_garage(
+    client: httpx.AsyncClient,
+    *,
+    bucket: str,
+    access_key: str,
+    secret_key: str,
+    zone: str = "dc1",
+    capacity: int = 10 * 1000**3,
+) -> list[str]:
+    """Make a single Garage node ready for the application (idempotent); the steps taken.
+
+    Uses version 2 of the administration API: a layout with this node, the application key
+    (imported, so it comes from the settings), the bucket, and the key's access to it.
+    """
+    if not GARAGE_KEY_ID.match(access_key) or not GARAGE_SECRET.match(secret_key):
+        raise GarageError(
+            "S3_ACCESS_KEY must be GK followed by 24 hexadecimal digits and S3_SECRET_KEY"
+            " 64 hexadecimal digits (Garage key format)"
+        )
+    steps: list[str] = []
+    layout = (await _call(client, "GET", "/v2/GetClusterLayout")).json()
+    if not layout.get("roles"):
+        status = (await _call(client, "GET", "/v2/GetClusterStatus")).json()
+        node = status["nodes"][0]["id"]
+        await _call(
+            client,
+            "POST",
+            "/v2/UpdateClusterLayout",
+            json={"roles": [{"id": node, "zone": zone, "capacity": capacity, "tags": []}]},
+        )
+        await _call(client, "POST", "/v2/ApplyClusterLayout", json={"version": layout["version"] + 1})
+        steps.append("layout")
+
+    key = await _call(client, "GET", "/v2/GetKeyInfo", params={"id": access_key})
+    if key.status_code == 404:
+        await _call(
+            client,
+            "POST",
+            "/v2/ImportKey",
+            json={"accessKeyId": access_key, "secretAccessKey": secret_key, "name": f"{bucket}-app"},
+        )
+        steps.append("key")
+
+    found = await _call(client, "GET", "/v2/GetBucketInfo", params={"globalAlias": bucket})
+    if found.status_code == 404:
+        found = await _call(client, "POST", "/v2/CreateBucket", json={"globalAlias": bucket})
+        steps.append("bucket")
+    await _call(
+        client,
+        "POST",
+        "/v2/AllowBucketKey",
+        json={
+            "bucketId": found.json()["id"],
+            "accessKeyId": access_key,
+            "permissions": {"read": True, "write": True, "owner": False},
+        },
+    )
+    return steps
+
+
+async def _wait_for_garage(client: httpx.AsyncClient, timeout: float) -> None:
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            response = await client.get("/v2/GetClusterStatus")
+            if response.status_code == 200:
+                return
+            if response.status_code in (401, 403):
+                raise GarageError("the administration token is refused (GARAGE_ADMIN_TOKEN)")
+        except httpx.TransportError:
+            pass
+        if time.monotonic() > deadline:
+            raise GarageError("Garage did not answer in time")
+        await asyncio.sleep(1)
+
+
+@command("garage-bootstrap", help="Prepare a Garage server: layout, application key and bucket")
+@click.option("--admin-url", envvar="GARAGE_ADMIN_URL", default="http://garage:3903", show_default=True)
+@click.option("--admin-token", envvar="GARAGE_ADMIN_TOKEN", required=True, help="Or GARAGE_ADMIN_TOKEN")
+@click.option("--zone", default="dc1", show_default=True)
+@click.option("--capacity-gb", default=10, show_default=True, type=click.IntRange(1))
+@click.option("--timeout", default=60, show_default=True, type=click.IntRange(1))
+def garage_bootstrap(admin_url: str, admin_token: str, zone: str, capacity_gb: int, timeout: int) -> None:
+    """Idempotent: run it at every start (the Compose stacks do, in an init container)."""
+
+    async def _run() -> list[str]:
+        headers = {"Authorization": f"Bearer {admin_token}"}
+        async with httpx.AsyncClient(base_url=admin_url, headers=headers, timeout=10) as client:
+            await _wait_for_garage(client, timeout)
+            return await bootstrap_garage(
+                client,
+                bucket=settings.S3_BUCKET,
+                access_key=settings.S3_ACCESS_KEY,
+                secret_key=settings.S3_SECRET_KEY,
+                zone=zone,
+                capacity=capacity_gb * 1000**3,
+            )
+
+    try:
+        steps = asyncio.run(_run())
+    except GarageError as failure:
+        error(f"Garage bootstrap failed: {failure}")
+        raise SystemExit(1) from None
+    success(f"Garage ready (bucket {settings.S3_BUCKET}): {', '.join(steps) or 'nothing to change'}.")
+{%- endif %}

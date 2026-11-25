@@ -330,6 +330,10 @@ dev = [
     "httpx>=0.28.0",
     "ruff>=0.15.0",
     "ty>=0.0.29",
+{%- if enable_file_storage %}
+    # Keelson: an in-process S3 for the object storage tests (no server needed).
+    "moto[s3]>=5.1.0",
+{%- endif %}
 {%- if enable_precommit %}
     "pre-commit>=4.0.0",
 {%- endif %}
@@ -379,6 +383,8 @@ ignore = [
 "tests/**" = ["S"]
 # DDL built from constants of the module itself, never from input.
 "app/db/tenancy.py" = ["S608"]
+# Migration DDL and backfills built from constants of the migration itself, never from input.
+"alembic/versions/k0005_stored_objects.py" = ["S608"]
 # pgvector table names pass _validate_collection_name ([A-Za-z0-9_]); values are bound.
 "app/services/rag/vectorstore.py" = ["S608"]
 # Development data and the local development server.

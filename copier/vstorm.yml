@@ -233,7 +233,7 @@ enable_embed_mode:
 enable_file_storage:
   type: bool
   when: false
-  default: false
+  default: true
 enable_google_drive_ingestion:
   type: bool
   when: false

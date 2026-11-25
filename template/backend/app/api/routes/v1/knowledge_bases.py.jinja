@@ -11,11 +11,12 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, File, Query, UploadFile, status
-from fastapi.responses import FileResponse
 
 from app.api.deps import ActiveOrg, CurrentUser, KnowledgeBaseSvc
 from app.api.deps import RAGDocumentSvc, SyncSourceSvc, VectorStoreSvc
 from app.core.exceptions import NotFoundError
+from app.db.models.knowledge_base import KBScope
+from app.services.stored_object import ObjectOwner
 from app.schemas.knowledge_base import (
     KnowledgeBaseCreate,
     KnowledgeBaseList,
@@ -157,13 +158,20 @@ async def upload_kb_document(
     kb = await service.get(
         kb_id, user_id=current_user.id, organization_id=active_org.id
     )
-    data = await file.read()
+    # Keelson: the file is streamed into a stored object, never read whole into memory. A
+    # personal knowledge base keeps its files as the user's; the others as the organization's.
+    owner = (
+        ObjectOwner.user(current_user.id)
+        if kb.scope == KBScope.PERSONAL.value
+        else ObjectOwner.organization(active_org.id)
+    )
     return await rag_doc_service.dispatch_upload(
         collection_name=kb.collection_name,
-        file_data=data,
+        upload=file,
         filename=file.filename or "unknown",
         replace=replace,
         vector_store=vector_store,
+        owner=owner,
         organization_id=active_org.id,
         knowledge_base_id=kb.id,
     )
@@ -177,7 +185,7 @@ async def download_kb_document(
     rag_doc_svc: RAGDocumentSvc,
     current_user: CurrentUser,
     active_org: ActiveOrg,
-) -> FileResponse:
+) -> Any:
     """Download (or open inline) the original file for a KB document."""
     kb = await service.get(
         kb_id, user_id=current_user.id, organization_id=active_org.id
@@ -188,8 +196,7 @@ async def download_kb_document(
             message="Document not found in this knowledge base",
             details={"kb_id": str(kb_id), "doc_id": str(doc_id)},
         )
-    file_path, filename, mime_type = await rag_doc_svc.get_download_info(str(doc_id))
-    return FileResponse(path=file_path, filename=filename, media_type=mime_type)
+    return await rag_doc_svc.download(str(doc_id))
 
 
 @router.delete(

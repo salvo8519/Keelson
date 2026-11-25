@@ -374,7 +374,9 @@ class UserService:
         if len(file_data) > 2 * 1024 * 1024:
             raise ValueError("Avatar image too large. Maximum 2MB.")
 
-        storage = get_file_storage()
+        # Keelson: avatars stay on the local disk (MEDIA_DIR): the record holds their path,
+        # not a stored object. Documents and chat files are stored objects.
+        storage = get_file_storage("local")
 
         user = await self.get_by_id(user_id)
         if user.avatar_url:
@@ -385,7 +387,7 @@ class UserService:
         return await user_repo.update(self.db, db_user=user, update_data={"avatar_url": storage_path})
 
     def get_avatar_path(self, avatar_url: str) -> str | None:
-        full_path = get_file_storage().get_full_path(avatar_url)
+        full_path = get_file_storage("local").get_full_path(avatar_url)
         return str(full_path) if full_path is not None else None
 
     async def delete(self, user_id: UUID) -> User:

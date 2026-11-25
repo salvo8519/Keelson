@@ -1,0 +1,213 @@
+{%- if enable_teams and use_postgresql %}
+"""Stored objects: the contents of documents and chat files (Keelson).
+
+One access point over the storage backends of ``app/services/file_storage.py``:
+
+* ``store`` records the object (owner, content type) before its bytes are written, so the
+  database decides, through row level security, whether the principal may own it; the bytes
+  are streamed to the configured backend and hashed on the way.
+* ``download`` serves an object only after it has been read through the request's session:
+  an object another user or organization owns is not found. With
+  ``S3_PRESIGNED_DOWNLOADS`` an S3 object is answered with a short-lived presigned URL, issued
+  after the same check.
+* Keys are ``org/<organization_id>/<object_id>`` or ``user/<user_id>/<object_id>``: never
+  derived from the content (no deduplication across tenants, which would reveal that another
+  tenant holds a file), and an owner's objects can be erased by prefix.
+
+Moving objects between backends is ``app/services/storage_migration.py``.
+"""
+
+import asyncio
+import logging
+from collections.abc import AsyncIterable, AsyncIterator
+from dataclasses import dataclass
+from pathlib import Path
+from uuid import UUID, uuid4
+
+from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.responses import RedirectResponse, Response, StreamingResponse
+
+from app.core.config import settings
+from app.core.exceptions import NotFoundError
+from app.db.models.stored_object import ORGANIZATION_PREFIX, USER_PREFIX, StoredObject, StoredObjectStatus
+from app.repositories import stored_object_repo
+from app.services.file_storage import BaseFileStorage, get_file_storage
+
+logger = logging.getLogger(__name__)
+
+__all__ = ["ORGANIZATION_PREFIX", "USER_PREFIX", "ObjectOwner", "StoredObjectService"]
+# Statuses whose current copy can be read (a migrating object is read from where it is).
+READABLE = {StoredObjectStatus.AVAILABLE.value, StoredObjectStatus.MIGRATING.value}
+
+
+@dataclass(frozen=True)
+class ObjectOwner:
+    """Who owns an object: an organization, or a user (personal objects)."""
+
+    organization_id: UUID | None = None
+    user_id: UUID | None = None
+
+    def __post_init__(self) -> None:
+        if (self.organization_id is None) == (self.user_id is None):
+            raise ValueError("an object has exactly one owner: an organization or a user")
+
+    @classmethod
+    def organization(cls, organization_id: UUID) -> "ObjectOwner":
+        return cls(organization_id=organization_id)
+
+    @classmethod
+    def user(cls, user_id: UUID) -> "ObjectOwner":
+        return cls(user_id=user_id)
+
+    @property
+    def prefix(self) -> str:
+        """Every key of this owner starts with it (``org/<id>/`` or ``user/<id>/``)."""
+        if self.organization_id is not None:
+            return f"{ORGANIZATION_PREFIX}/{self.organization_id}/"
+        return f"{USER_PREFIX}/{self.user_id}/"
+
+    def key(self, object_id: UUID) -> str:
+        return f"{self.prefix}{object_id}"
+
+    @classmethod
+    def of(cls, stored: StoredObject) -> "ObjectOwner":
+        return cls(organization_id=stored.organization_id, user_id=stored.user_id)
+
+
+def content_disposition(disposition: str, filename: str) -> str:
+    mode = "attachment" if disposition == "attachment" else "inline"
+    return f'{mode}; filename="{filename.replace(chr(34), "")}"'
+
+
+class StoredObjectService:
+    """Store, read, serve and delete objects through a session (row level security applies)."""
+
+    def __init__(self, db: AsyncSession):
+        self.db = db
+
+    async def store(
+        self,
+        *,
+        owner: ObjectOwner,
+        chunks: AsyncIterable[bytes],
+        content_type: str,
+        max_size: int | None = None,
+    ) -> StoredObject:
+        """Record and write an object. ``ObjectTooLargeError`` beyond ``max_size``.
+
+        On any failure the transaction rolls back and the backend keeps nothing. Bytes written
+        by a transaction that rolls back later are removed by ``storage-cleanup --reconcile``.
+        """
+        # Keelson: UUIDv4. Python 3.13 has no uuid7 and the project has no helper for it.
+        object_id = uuid4()
+        storage = get_file_storage()
+        stored = await stored_object_repo.create(
+            self.db,
+            id=object_id,
+            organization_id=owner.organization_id,
+            user_id=owner.user_id,
+            content_type=content_type,
+            backend=storage.name,
+            storage_key=owner.key(object_id),
+            status=StoredObjectStatus.PENDING.value,
+        )
+        written = await storage.write(
+            stored.storage_key, chunks, content_type=content_type, max_size=max_size
+        )
+        return await stored_object_repo.update_fields(
+            self.db,
+            stored,
+            size=written.size,
+            sha256=written.sha256,
+            status=StoredObjectStatus.AVAILABLE.value,
+        )
+
+    async def get(self, object_id: UUID) -> StoredObject:
+        """The object, if the session's principal may see it and its content is readable."""
+        stored = await stored_object_repo.get_by_id(self.db, object_id)
+        if stored is None or stored.status not in READABLE:
+            raise NotFoundError(message="File not found", details={"object_id": str(object_id)})
+        return stored
+
+    @staticmethod
+    def storage_of(stored: StoredObject) -> BaseFileStorage:
+        return get_file_storage(stored.backend)
+
+    async def open(self, object_id: UUID) -> AsyncIterator[bytes]:
+        stored = await self.get(object_id)
+        return self.storage_of(stored).read(stored.storage_key)
+
+    async def copy_to_file(self, object_id: UUID, path: Path) -> None:
+        """Write the content to a local file, chunk by chunk (workers that need a path)."""
+        chunks = await self.open(object_id)
+        with path.open("wb") as handle:
+            async for chunk in chunks:
+                await asyncio.to_thread(handle.write, chunk)
+
+    async def read_bytes(self, object_id: UUID) -> bytes:
+        """The whole content: only for small objects (images passed to a model)."""
+        return b"".join([chunk async for chunk in await self.open(object_id)])
+
+    async def download(
+        self,
+        object_id: UUID,
+        *,
+        filename: str,
+        disposition: str = "attachment",
+        media_type: str | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> Response:
+        """Serve an object after the database check: a stream, or a presigned redirect."""
+        stored = await self.get(object_id)
+        storage = self.storage_of(stored)
+        media_type = media_type or stored.content_type
+        if settings.S3_PRESIGNED_DOWNLOADS:
+            url = await storage.presigned_url(
+                stored.storage_key,
+                filename=filename,
+                content_type=media_type,
+                disposition="attachment" if disposition == "attachment" else "inline",
+                ttl=settings.S3_PRESIGN_TTL_SECONDS,
+            )
+            if url:
+                return RedirectResponse(url, status_code=307, headers={"Cache-Control": "no-store"})
+        chunks = storage.read(stored.storage_key)
+        try:
+            first = await anext(chunks, b"")
+        except FileNotFoundError:
+            logger.error("stored object without content", extra={"object_id": str(stored.id)})
+            raise NotFoundError(message="File not found", details={"object_id": str(object_id)}) from None
+
+        async def body() -> AsyncIterator[bytes]:
+            yield first
+            async for chunk in chunks:
+                yield chunk
+
+        return StreamingResponse(
+            body(),
+            media_type=media_type,
+            headers={
+                "Content-Disposition": content_disposition(disposition, filename),
+                # The size is exact for every object hashed when written.
+                **({"Content-Length": str(stored.size)} if stored.sha256 else {}),
+                **(headers or {}),
+            },
+        )
+
+    async def delete(self, object_id: UUID) -> None:
+        """Delete the record, then the bytes (a failure there is left to the cleanup step)."""
+        stored = await stored_object_repo.get_by_id(self.db, object_id)
+        if stored is None:
+            return
+        backend, key = stored.backend, stored.storage_key
+        await stored_object_repo.delete(self.db, stored)
+        try:
+            await get_file_storage(backend).delete(key)
+        except Exception:
+            logger.warning(
+                "stored object content not deleted; storage-cleanup --reconcile removes it",
+                extra={"object_id": str(object_id)},
+                exc_info=True,
+            )
+
+{%- endif %}

@@ -22,23 +22,31 @@ async def ingest_document_in_background(
     *,
     rag_document_id: str,
     collection_name: str,
-    filepath: str,
+    stored_object_id: str,
     source_path: str,
     replace: bool,
 ) -> None:
     """Ingest a single document into the vector store and update its DB record."""
+    from uuid import UUID
+
     from app.services.rag_document import RAGDocumentService
+    from app.services.stored_object import StoredObjectService
 
     try:
         async with get_db_context() as db:
             tenant = await collection_tenant(db, collection_name)
-        result = await IngestionService.from_settings().ingest_file(
-            filepath=Path(filepath),
-            collection_name=collection_name,
-            tenant=tenant,
-            replace=replace,
-            source_path=source_path,
-        )
+        # Keelson: read from the stored original into a temporary directory.
+        with tempfile.TemporaryDirectory(prefix="ingest_") as tmp_dir:
+            filepath = Path(tmp_dir) / f"{rag_document_id}{Path(source_path).suffix.lower()}"
+            async with get_db_context() as db:
+                await StoredObjectService(db).copy_to_file(UUID(stored_object_id), filepath)
+            result = await IngestionService.from_settings().ingest_file(
+                filepath=filepath,
+                collection_name=collection_name,
+                tenant=tenant,
+                replace=replace,
+                source_path=source_path,
+            )
         async with get_db_context() as db:
             await RAGDocumentService(db).complete_ingestion(
                 rag_document_id, vector_document_id=result.document_id
@@ -47,8 +55,6 @@ async def ingest_document_in_background(
         logger.error("background_ingestion_failed: %s", exc)
         async with get_db_context() as db:
             await RAGDocumentService(db).fail_ingestion(rag_document_id, error_message=str(exc))
-    finally:
-        Path(filepath).unlink(missing_ok=True)
 
 
 async def sync_local_in_background(

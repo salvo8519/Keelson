@@ -69,6 +69,9 @@ FIXED_OPTIONS: dict[str, Any] = {
     "enable_billing": False,
     "use_telegram": False,
     "use_slack": False,
+    # Upstream's S3 settings and boto3; Keelson adds the object store behind them
+    # (app/services/file_storage.py, docs/en/concepts/document-storage.md).
+    "enable_file_storage": True,
 }
 
 # Context keys that come straight from Copier questions, not from this file.

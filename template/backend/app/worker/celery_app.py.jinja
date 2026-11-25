@@ -30,6 +30,12 @@ celery_app.conf.update(
 celery_app.autodiscover_tasks(["app.worker.tasks"])
 
 celery_app.conf.beat_schedule = {
+{%- if enable_teams and use_postgresql %}
+    "storage-cleanup": {
+        "task": "app.worker.tasks.storage_tasks.cleanup_storage_task",
+        "schedule": crontab(hour=4, minute=30),
+    },
+{%- endif %}
 {%- if enable_rag %}
     "rag-sync-check": {
         "task": "app.worker.tasks.rag_tasks.check_scheduled_syncs",

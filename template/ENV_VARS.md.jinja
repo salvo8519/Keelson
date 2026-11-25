@@ -168,15 +168,23 @@ group is for and which are required vs optional.
 
 {%- if enable_file_storage %}
 
-## File storage (S3/MinIO)
+## Object storage of documents
+
+Documents and chat files are stored objects (see `docs/en/concepts/document-storage.md`).
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `S3_ENDPOINT_URL` | optional | (AWS default) | Set for MinIO/Backblaze/etc. |
-| `S3_ACCESS_KEY` | **required** | — | Access key ID |
-| `S3_SECRET_KEY` | **required** | — | Secret key |
-| `S3_BUCKET` | **required** | — | Default bucket for uploads |
-| `S3_REGION` | optional | `us-east-1` | AWS region |
+| `STORAGE_BACKEND` | optional | `s3` when `S3_ENDPOINT` or `S3_ACCESS_KEY` is set, else `local` | Backend of new objects: `local` (`MEDIA_DIR`) or `s3` |
+| `S3_ENDPOINT` | optional | (AWS default) | Endpoint of an S3-compatible service (Garage, R2, Ceph, MinIO) |
+| `S3_ACCESS_KEY` | with `s3` | — | Access key ID (Garage format in the Compose stacks: `GK` and 24 hexadecimal digits) |
+| `S3_SECRET_KEY` | with `s3` | — | Secret key |
+| `S3_BUCKET` | optional | `{{ storage_bucket }}` | Bucket of the objects |
+| `S3_REGION` | optional | `us-east-1` | Region (`garage` for Garage) |
+| `S3_ADDRESSING_STYLE` | optional | `auto` | `path` for Garage, MinIO and Ceph |
+| `S3_PRESIGNED_DOWNLOADS` | optional | `false` | Redirect S3 downloads to a presigned URL after the database check |
+| `S3_PRESIGN_TTL_SECONDS` | optional | `300` | Lifetime of a presigned URL (30 to 3600 seconds) |
+| `GARAGE_RPC_SECRET` | Compose production | — | Secret of the Garage service (`openssl rand -hex 32`) |
+| `GARAGE_ADMIN_TOKEN` | Compose production | — | Administration token of Garage, used by `cmd garage-bootstrap` |
 {%- endif %}
 
 {%- if use_frontend %}

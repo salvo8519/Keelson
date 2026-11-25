@@ -63,3 +63,12 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## Services run beside the project
+
+The Docker Compose stacks start the services below from their published images. Their code is
+not included in this project, nor linked to it.
+
+- Garage (https://garagehq.deuxfleurs.fr), the S3-compatible object store of the documents:
+  GNU Affero General Public License version 3, run unmodified as a separate service. See
+  `docs/en/concepts/document-storage.md`.

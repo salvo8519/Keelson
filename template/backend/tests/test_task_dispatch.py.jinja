@@ -5,39 +5,81 @@ Upstream called Celery's ``delay`` on Taskiq tasks too, which have no such metho
 upload of a Taskiq project failed before reaching the worker.
 """
 
+import io
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
 
-from app.core.config import settings
+from app.core.exceptions import BadRequestError
 from app.services import rag_document as module
 from app.services.rag_document import RAGDocumentService
+from app.services.stored_object import ObjectOwner
 from app.worker.tasks import rag_tasks
 
 
-@pytest.mark.anyio
-async def test_upload_is_enqueued_on_the_task_backend(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+def _service_with_stored_object(monkeypatch: pytest.MonkeyPatch) -> RAGDocumentService:
+    stored = MagicMock(id=uuid4(), size=5)
+    monkeypatch.setattr(module.StoredObjectService, "store", AsyncMock(return_value=stored))
+    return RAGDocumentService(MagicMock())
+
+
+def _task(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     task = MagicMock(spec=["kiq", "delay"])
     task.kiq = AsyncMock()
     monkeypatch.setattr(rag_tasks, "ingest_document_task", task)
-    monkeypatch.setattr(settings, "MEDIA_DIR", tmp_path)
-    monkeypatch.setattr(module, "get_file_storage", lambda: MagicMock(save=AsyncMock(return_value="rag/kb/a.txt")))
-    service = RAGDocumentService(MagicMock())
+    return task
+
+
+def _assert_enqueued_once(task: MagicMock) -> None:
+{%- if use_taskiq %}
+    task.kiq.assert_awaited_once()
+    task.delay.assert_not_called()
+    kwargs = task.kiq.await_args.kwargs
+{%- else %}
+    task.delay.assert_called_once()
+    kwargs = task.delay.call_args.kwargs
+{%- endif %}
+    # Keelson: the worker receives the stored object, not a path on a disk it may not share.
+    assert "stored_object_id" in kwargs and "filepath" not in kwargs
+
+
+@pytest.mark.anyio
+async def test_upload_is_enqueued_on_the_task_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    task = _task(monkeypatch)
+    service = _service_with_stored_object(monkeypatch)
     monkeypatch.setattr(service, "create_document", AsyncMock(return_value=MagicMock(id=uuid4())))
 
     await service.dispatch_upload(
         collection_name="kb",
-        file_data=b"hello",
+        upload=io.BytesIO(b"hello"),
         filename="a.txt",
         replace=False,
         vector_store=AsyncMock(),
+        owner=ObjectOwner.organization(uuid4()),
         organization_id=uuid4(),
     )
-{%- if use_taskiq %}
-    task.kiq.assert_awaited_once()
-    task.delay.assert_not_called()
-{%- else %}
-    task.delay.assert_called_once()
-{%- endif %}
+    _assert_enqueued_once(task)
+
+
+@pytest.mark.anyio
+async def test_retry_queues_the_document_again(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Upstream reset the status and queued nothing: the document stayed "processing"."""
+    task = _task(monkeypatch)
+    service = RAGDocumentService(MagicMock())
+    failed = MagicMock(id=uuid4(), status="error", stored_object_id=uuid4(), collection_name="kb", filename="a.txt")
+    monkeypatch.setattr(service, "get_document", AsyncMock(return_value=failed))
+    monkeypatch.setattr(module.rag_document_repo, "update_status", AsyncMock(return_value=failed))
+
+    await service.retry_ingestion(str(failed.id))
+    _assert_enqueued_once(task)
+
+
+@pytest.mark.anyio
+async def test_retry_refuses_a_document_without_its_original(monkeypatch: pytest.MonkeyPatch) -> None:
+    service = RAGDocumentService(MagicMock())
+    synced = MagicMock(id=uuid4(), status="error", stored_object_id=None)
+    monkeypatch.setattr(service, "get_document", AsyncMock(return_value=synced))
+    with pytest.raises(BadRequestError):
+        await service.retry_ingestion(str(synced.id))
 {%- endif %}

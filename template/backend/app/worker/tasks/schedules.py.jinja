@@ -14,7 +14,19 @@ from app.worker.tasks.cleanup_tasks import cleanup_usage_events_task
 {%- if enable_rag %}
 from app.worker.tasks.rag_tasks import check_scheduled_syncs
 {%- endif %}
+{%- if enable_teams and use_postgresql %}
+from app.worker.tasks.storage_tasks import cleanup_storage_task
+{%- endif %}
 
+{%- if enable_teams and use_postgresql %}
+
+
+@broker.task(schedule=[{"cron": "30 4 * * *"}])
+async def scheduled_storage_cleanup() -> dict:
+    """Scheduled task: remove migrated copies and content no stored object records."""
+    result = await cleanup_storage_task.kiq()
+    return {"scheduled": True, "task_id": str(result.task_id)}
+{%- endif %}
 {%- if enable_rag %}
 
 

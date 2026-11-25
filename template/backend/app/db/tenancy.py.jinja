@@ -23,10 +23,12 @@ principal the settings are empty and the policies return nothing: the database f
 
 The rules (``POLICIES``) mirror the application's access model:
 
-* personal data (conversations, slash commands, ratings, files) belongs to its user; a member's
-  conversations are private to them and to whom they share them with, also from the
-  organization's owners and admins (they get aggregates only, through the system session);
-* organization data is visible to the organization's members, and to its API keys;
+* personal data (conversations, slash commands, ratings, files, personal stored objects)
+  belongs to its user; a member's conversations are private to them and to whom they share
+  them with, also from the organization's owners and admins (they get aggregates only,
+  through the system session);
+* organization data (organization stored objects included) is visible to the organization's
+  members, and to its API keys;
 * managing API keys, members and invitations needs the owner or admin role, in the database too;
 * child rows (messages, tool calls, sync logs) follow their parent;
 * the audit log is append-only: the application can write it, not read it.
@@ -49,6 +51,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session, SessionTransaction
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from app.db.models.stored_object import ORGANIZATION_PREFIX, USER_PREFIX
 from app.db.session import REQUEST_SESSION
 
 # Group role of the application login (no login of its own). Roles are cluster-wide in
@@ -99,6 +102,15 @@ _ORG_ADMIN = f"{S}.has_org_role(organization_id, ARRAY['owner', 'admin'])"
 _MEMBERSHIP_MANAGER = (
     f"{S}.has_org_role(organization_id, ARRAY['owner'])"
     f" OR ({S}.has_org_role(organization_id, ARRAY['admin']) AND role::text IN ('member', 'viewer'))"
+)
+_OBJECT_OWNER = (
+    f"(organization_id IS NULL AND user_id = {ME})"
+    f" OR (organization_id IS NOT NULL AND {S}.in_organization(organization_id))"
+)
+_OBJECT_KEY = (
+    f"storage_key = CASE WHEN organization_id IS NOT NULL"
+    f" THEN '{ORGANIZATION_PREFIX}/' || organization_id || '/' || id"
+    f" ELSE '{USER_PREFIX}/' || user_id || '/' || id END"
 )
 _KB_VISIBLE = (
     f"(scope = 'personal' AND owner_user_id = {ME})"
@@ -203,6 +215,18 @@ POLICIES: dict[str, list[Policy]] = {
         Policy("DELETE", using=f"user_id = {ME}"),
     ],
     "user_slash_commands": _all(f"user_id = {ME}"),
+    # Contents of documents and chat files: personal objects to their user, organization
+    # objects to its members and API keys. Documents and chat files reference them; they do
+    # not widen who may read them.
+    # A row names its own bytes: the key is derived from the owner and the id, and the columns
+    # that say where the bytes live are frozen (FROZEN_COLUMNS). Moving bytes between backends
+    # is system work (storage migration).
+    "stored_objects": [
+        Policy("SELECT", using=_OBJECT_OWNER),
+        Policy("INSERT", check=f"({_OBJECT_OWNER}) AND {_OBJECT_KEY} AND previous_key IS NULL"),
+        Policy("UPDATE", using=_OBJECT_OWNER, check=_OBJECT_OWNER),
+        Policy("DELETE", using=_OBJECT_OWNER),
+    ],
     "knowledge_bases": [
         Policy("SELECT", using=_KB_VISIBLE),
         Policy("INSERT", check=_KB_WRITABLE),
@@ -257,6 +281,9 @@ FROZEN_COLUMNS: dict[str, tuple[str, ...]] = {
     "conversations": ("user_id", "organization_id", "is_demo"),
     "conversation_shares": ("shared_by",),
     "organization_members": ("organization_id", "user_id"),
+    "stored_objects": (
+        "organization_id", "user_id", "backend", "storage_key", "previous_backend", "previous_key"
+    ),
 }
 
 

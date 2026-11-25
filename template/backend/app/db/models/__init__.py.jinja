@@ -53,6 +53,8 @@ from app.db.models.audit_log import AppAdminAuditLog
 {%- if enable_teams and use_postgresql %}
 {%- set _ = models.append("ApiKey") %}
 from app.db.models.api_key import ApiKey
+{%- set _ = models.append("StoredObject") %}
+from app.db.models.stored_object import StoredObject
 {%- endif %}
 {%- if enable_teams and enable_rag and use_jwt %}
 {%- set _ = models.append("KnowledgeBase") %}

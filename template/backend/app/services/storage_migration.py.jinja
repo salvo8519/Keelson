@@ -1,0 +1,236 @@
+{%- if enable_teams and use_postgresql %}
+"""Moving stored objects between backends, and the cleanup that follows (Keelson).
+
+``migrate_object`` copies one object in streaming (S3 multipart for large objects), verifies
+the SHA-256 of the copy by reading it back, then points the object at the copy in one
+transaction. The old copy stays until ``cleanup`` removes it, so a reader that resolved the
+old location keeps working. Readers are never blocked: a migrating object is read from its
+current copy.
+
+An interrupted copy is not resumed: the partial multipart upload is aborted, the object is
+released (or, after a crash, claimed again once ``STALE_MIGRATION`` has passed) and the next
+run copies it again from the beginning.
+
+These functions work across tenants and run with the owner login (workers, command line).
+"""
+
+import hashlib
+import logging
+import re
+import uuid
+from collections.abc import Callable
+from contextlib import AbstractAsyncContextManager
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
+from typing import Literal
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.session import get_worker_db_context
+from app.repositories import stored_object_repo
+from app.services.file_storage import STORAGE_BACKENDS, BaseFileStorage, get_file_storage
+from app.services.stored_object import ORGANIZATION_PREFIX, USER_PREFIX, ObjectOwner
+
+logger = logging.getLogger(__name__)
+
+SessionFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
+MigrationOutcome = Literal["migrated", "skipped", "deleted"]
+
+# A migration not finished after this long is considered crashed and may be claimed again.
+STALE_MIGRATION = timedelta(hours=1)
+# Content without a record is removed only after this long: an upload may still be committing.
+RECONCILE_GRACE = timedelta(hours=24)
+BATCH_SIZE = 100
+
+
+class IntegrityMismatchError(RuntimeError):
+    """The copy does not hash to the recorded SHA-256; the object was not moved."""
+
+
+async def _sha256(storage: BaseFileStorage, key: str) -> str:
+    digest = hashlib.sha256()
+    async for chunk in storage.read(key):
+        digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _check_backends(source: str, target: str) -> None:
+    for name in (source, target):
+        if name not in STORAGE_BACKENDS:
+            raise ValueError(f"Unknown storage backend: {name}")
+    if source == target:
+        raise ValueError("source and target backends are the same")
+
+
+async def migrate_object(
+    object_id: uuid.UUID,
+    *,
+    source: str,
+    target: str,
+    sessions: SessionFactory = get_worker_db_context,
+) -> MigrationOutcome:
+    """Copy one object from ``source`` to ``target``, verify it and switch to it."""
+    _check_backends(source, target)
+    stale_before = datetime.now(UTC) - STALE_MIGRATION
+    async with sessions() as db:
+        stored = await stored_object_repo.claim_for_migration(
+            db, object_id, backend=source, stale_before=stale_before
+        )
+        if stored is None:
+            return "skipped"  # not on this backend any more, or another worker holds it
+        source_key, recorded = stored.storage_key, stored.sha256
+        content_type, target_key = stored.content_type, ObjectOwner.of(stored).key(stored.id)
+
+    from_storage, to_storage = get_file_storage(source), get_file_storage(target)
+    try:
+        written = await to_storage.write(
+            target_key, from_storage.read(source_key), content_type=content_type
+        )
+        if recorded is not None and written.sha256 != recorded:
+            raise IntegrityMismatchError(f"source content of {object_id} does not match its hash")
+        if await _sha256(to_storage, target_key) != written.sha256:
+            raise IntegrityMismatchError(f"copy of {object_id} does not match its hash")
+    except BaseException:
+        await _abandon(object_id, to_storage, target_key, sessions)
+        raise
+
+    async with sessions() as db:
+        switched = await stored_object_repo.switch_backend(
+            db,
+            object_id,
+            source=source,
+            source_key=source_key,
+            target=target,
+            target_key=target_key,
+            sha256=written.sha256,
+        )
+    if not switched:  # deleted while it was being copied
+        await to_storage.delete(target_key)
+        return "deleted"
+    logger.info(
+        "stored object migrated",
+        extra={"object_id": str(object_id), "source": source, "target": target, "size": written.size},
+    )
+    return "migrated"
+
+
+async def _abandon(
+    object_id: uuid.UUID, storage: BaseFileStorage, key: str, sessions: SessionFactory
+) -> None:
+    try:
+        await storage.delete(key)
+    finally:
+        async with sessions() as db:
+            await stored_object_repo.release(db, object_id)
+
+
+async def objects_to_migrate(
+    source: str,
+    *,
+    limit: int = BATCH_SIZE,
+    after: uuid.UUID | None = None,
+    sessions: SessionFactory = get_worker_db_context,
+) -> list[uuid.UUID]:
+    """The next batch of objects still on ``source``, in id order after ``after``."""
+    async with sessions() as db:
+        return await stored_object_repo.ids_to_migrate(
+            db,
+            backend=source,
+            stale_before=datetime.now(UTC) - STALE_MIGRATION,
+            limit=limit,
+            after=after,
+        )
+
+
+@dataclass
+class CleanupReport:
+    previous_copies: int = 0
+    orphans: int = 0
+    unrecorded: int = 0
+    failures: list[str] = field(default_factory=list)
+
+
+async def cleanup(
+    *,
+    reconcile: bool = True,
+    now: datetime | None = None,
+    sessions: SessionFactory = get_worker_db_context,
+    backends: tuple[str, ...] | None = None,
+) -> CleanupReport:
+    """Remove what no object needs any more.
+
+    * the copies left behind by migrations;
+    * objects that no document or chat file references (their parent was deleted);
+    * with ``reconcile``, content under ``org/`` and ``user/`` that no object records: bytes
+      of an upload whose transaction rolled back, and of users or organizations deleted
+      (their objects go with them by cascade). This is how an owner's content is erased.
+    """
+    report = CleanupReport()
+    now = now or datetime.now(UTC)
+    while True:
+        async with sessions() as db:
+            batch = await stored_object_repo.with_previous_copy(db, limit=BATCH_SIZE)
+            for stored in batch:
+                try:
+                    await get_file_storage(stored.previous_backend).delete(stored.previous_key or "")
+                except Exception as error:
+                    report.failures.append(f"{stored.id}: {type(error).__name__}")
+                    continue
+                await stored_object_repo.clear_previous_copy(db, stored.id)
+                report.previous_copies += 1
+        if len(batch) < BATCH_SIZE or report.failures:
+            break
+
+    async with sessions() as db:
+        for stored in await stored_object_repo.orphans(
+            db, created_before=now - RECONCILE_GRACE, limit=10 * BATCH_SIZE
+        ):
+            try:
+                await get_file_storage(stored.backend).delete(stored.storage_key)
+            except Exception as error:
+                report.failures.append(f"{stored.id}: {type(error).__name__}")
+                continue
+            await stored_object_repo.delete(db, stored)
+            report.orphans += 1
+
+    if reconcile:
+        for backend in backends or configured_backends():
+            report.unrecorded += await _reconcile(backend, now - RECONCILE_GRACE, sessions)
+    return report
+
+
+def configured_backends() -> tuple[str, ...]:
+    """The backends this deployment can reach: local always, S3 when it is configured."""
+    from app.core.config import settings
+
+    s3 = settings.storage_backend == "s3" or bool(settings.S3_ENDPOINT or settings.S3_ACCESS_KEY)
+    return ("local", "s3") if s3 else ("local",)
+
+
+# Only keys this module could have written are reconciled: an object key, or the partial file
+# of an interrupted local write. Files recorded under older layouts are never touched.
+_UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+_OBJECT_KEY = re.compile(rf"(?:{ORGANIZATION_PREFIX}|{USER_PREFIX})/{_UUID}/(?P<id>{_UUID})")
+_PARTIAL_KEY = re.compile(rf"(?:{ORGANIZATION_PREFIX}|{USER_PREFIX})/{_UUID}/\.{_UUID}\.[0-9a-f]{{32}}\.part")
+
+
+async def _reconcile(backend: str, written_before: datetime, sessions: SessionFactory) -> int:
+    storage = get_file_storage(backend)
+    removed = 0
+    for prefix in (f"{ORGANIZATION_PREFIX}/", f"{USER_PREFIX}/"):
+        async for key, modified in storage.list_keys(prefix):
+            if modified >= written_before:
+                continue
+            if match := _OBJECT_KEY.fullmatch(key):
+                async with sessions() as db:
+                    recorded = await stored_object_repo.holds_copy(
+                        db, uuid.UUID(match["id"]), backend=backend, key=key
+                    )
+                if recorded:
+                    continue
+            elif not _PARTIAL_KEY.fullmatch(key):
+                continue
+            await storage.delete(key)
+            removed += 1
+    return removed
+{%- endif %}

@@ -18,6 +18,9 @@ services:
   app:
     env_file:
       - ./backend/.env
+{%- if enable_file_storage %}
+      - ./garage/storage.env
+{%- endif %}
       - ./.env.prod-local
     environment:
       - FRONTEND_URL=http://localhost:{{ frontend_port }}
@@ -32,8 +35,21 @@ services:
   {{ worker }}:
     env_file:
       - ./backend/.env
+{%- if enable_file_storage and worker in ("celery_worker", "taskiq_worker", "arq_worker") %}
+      - ./garage/storage.env
+{%- endif %}
       - ./.env.prod-local
 {%- endfor %}
+{%- if enable_file_storage %}
+
+  # Garage reads its secrets from .env.prod-local through the interpolation of
+  # docker-compose.prod.yml; the bootstrap reads the S3 key from the same file.
+  garage-init:
+    env_file:
+      - ./backend/.env
+      - ./garage/storage.env
+      - ./.env.prod-local
+{%- endif %}
 {%- if use_frontend %}
 
   frontend:

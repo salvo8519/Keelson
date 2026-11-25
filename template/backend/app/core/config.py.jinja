@@ -14,6 +14,8 @@ from pydantic import field_validator, model_validator{% if use_jwt or (enable_ad
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 {%- if enable_mcp_client %}
 from pydantic import BaseModel, Field
+{%- elif enable_file_storage %}
+from pydantic import Field
 {%- endif %}
 {%- if enable_oauth %}
 
@@ -370,11 +372,30 @@ class Settings(BaseSettings):
 
 {%- if enable_file_storage %}
 
+    # Keelson: object storage of documents and chat files (app/services/file_storage.py).
+    # "local" writes under MEDIA_DIR; "s3" writes to any S3-compatible service (Garage, AWS S3,
+    # Cloudflare R2, Ceph). Unset: "s3" when S3_ENDPOINT or S3_ACCESS_KEY is set, else "local".
+    STORAGE_BACKEND: Literal["local", "s3"] | None = None
     S3_ENDPOINT: str | None = None
     S3_ACCESS_KEY: str = ""
     S3_SECRET_KEY: str = ""
-    S3_BUCKET: str = "{{ project_slug }}"
+    S3_BUCKET: str = "{{ storage_bucket }}"
     S3_REGION: str = "us-east-1"
+    # "path" for Garage, MinIO and Ceph without wildcard DNS; "auto" lets boto3 choose.
+    S3_ADDRESSING_STYLE: Literal["auto", "path", "virtual"] = "auto"
+    # Downloads stream through the API. When true, an S3 download answers with a redirect to
+    # a presigned URL instead, issued only after the database check; S3_ENDPOINT must then be
+    # reachable from the browser.
+    S3_PRESIGNED_DOWNLOADS: bool = False
+    S3_PRESIGN_TTL_SECONDS: int = Field(default=300, ge=30, le=3600)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def storage_backend(self) -> Literal["local", "s3"]:
+        """The backend new objects are written to."""
+        if self.STORAGE_BACKEND:
+            return self.STORAGE_BACKEND
+        return "s3" if self.S3_ENDPOINT or self.S3_ACCESS_KEY else "local"
 {%- endif %}
 
 

@@ -14,7 +14,6 @@ from collections.abc import AsyncIterable
 from typing import Any
 
 from fastapi import APIRouter, File, Query, UploadFile, status
-from fastapi.responses import FileResponse
 {%- if enable_redis %}
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 {%- endif %}
@@ -24,6 +23,7 @@ from app.api.deps import IngestionSvc, RAGDocumentSvc, RAGSyncSvc, RetrievalSvc,
 from app.api.deps import CurrentAdmin, CurrentUser
 {%- endif %}
 {%- if enable_teams and use_jwt %}
+from app.services.stored_object import ObjectOwner
 from app.api.deps import ActiveOrg, KnowledgeBaseSvc
 {%- if use_postgresql %}
 from app.api.deps import AdminKnowledgeBaseSvc, AdminRAGDocumentSvc, AdminRAGSyncSvc, AdminSyncSourceSvc
@@ -287,14 +287,15 @@ async def ingest_file(
     replace: bool = Query(False),
 ) -> Any:
     """Upload and queue a file for ingestion into a collection."""
-    data = await file.read()
+    # Keelson: streamed into a stored object of the active organization.
     return await rag_doc_svc.dispatch_upload(
         collection_name=name,
-        file_data=data,
+        upload=file,
         filename=file.filename or "unknown",
         replace=replace,
         vector_store=vector_store,
 {%- if enable_teams and use_jwt %}
+        owner=ObjectOwner.organization(active_org.id),
         organization_id=active_org.id,
 {%- endif %}
     )
@@ -320,8 +321,7 @@ async def download_rag_document(
     _: CurrentAdmin,
 {%- endif %}
 ) -> Any:
-    file_path, filename, mime_type = await rag_doc_svc.get_download_info(doc_id)
-    return FileResponse(path=file_path, filename=filename, media_type=mime_type)
+    return await rag_doc_svc.download(doc_id)
 
 
 @router.delete(

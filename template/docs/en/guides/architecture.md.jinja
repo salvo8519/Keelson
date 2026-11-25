@@ -230,9 +230,9 @@ PDFs are parsed using PyMuPDF (fast, local, no API key needed).
 
 ### Storage
 
-Files are saved to `media/{user_id}/` via `FileStorageService`. The `ChatFile`
-model stores the `storage_path`, `filename`, `mime_type`, `size`, `file_type`,
-and `parsed_content` (extracted text). Only the file owner can access their files.
+The content is a stored object (local disk or S3, see `docs/en/concepts/document-storage.md`).
+The `ChatFile` model stores the `stored_object_id`, `filename`, `mime_type`, `size`,
+`file_type` and `parsed_content` (extracted text). Only the file owner can access their files.
 
 ### Size Limits
 

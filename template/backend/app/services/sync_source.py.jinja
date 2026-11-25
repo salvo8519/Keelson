@@ -27,7 +27,7 @@ from app.schemas.sync_source import (
     SyncSourceUpdate,
 )
 {%- if use_arq %}
-from app.worker.arq_app import get_arq_pool
+from app.worker.arq_pool import get_arq_pool
 {%- elif not use_celery and not use_taskiq and not use_prefect %}
 from app.worker.background import fire_and_forget
 from app.worker.background.rag import sync_source_in_background
@@ -271,7 +271,7 @@ class SyncSourceService:
         await sync_single_source_task.kiq(source_id, str(sync_log.id))
 {%- elif use_arq %}
         pool = await get_arq_pool()
-        await pool.enqueue_job("sync_single_source", source_id, str(sync_log.id))
+        await pool.enqueue_job("sync_single_source_task", source_id, str(sync_log.id))
 {%- elif use_prefect %}
         import asyncio
         from app.worker.tasks.rag_tasks import sync_single_source_flow

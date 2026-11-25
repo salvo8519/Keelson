@@ -169,6 +169,19 @@ logfire:
   help: Enable Pydantic Logfire (OpenTelemetry export is always available)
   default: false
 
+# --- Object storage --------------------------------------------------------------
+garage_image:
+  type: str
+  when: false
+  # Single source of the Garage image of the Compose stacks (dev and prod), pinned to a release.
+  default: dxflrs/garage:v2.1.0
+
+storage_bucket:
+  type: str
+  when: false
+  # Default bucket of the object storage: S3 bucket names allow no underscore.
+  default: "{{ project_slug | replace('_', '-') }}"
+
 # --- Provenance ----------------------------------------------------------------
 keelson_url:
   type: str

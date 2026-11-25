@@ -50,8 +50,15 @@ from app.worker.tasks.rag_tasks import (
 )
 {%- endif %}
 {%- endif %}
+{%- if enable_teams and use_postgresql and not use_prefect %}
+from app.worker.tasks.storage_tasks import cleanup_storage_task, migrate_object_task
+{%- endif %}
 
 __all__ = [
+{%- if enable_teams and use_postgresql and not use_prefect %}
+    "cleanup_storage_task",
+    "migrate_object_task",
+{%- endif %}
 {%- if enable_rag %}
 {%- if use_prefect %}
     "check_scheduled_syncs_flow",

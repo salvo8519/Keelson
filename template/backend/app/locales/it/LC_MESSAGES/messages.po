@@ -138,9 +138,6 @@ msgstr "Errore"
 msgid "File not found"
 msgstr "File non trovato"
 
-msgid "File not found on disk"
-msgstr "File non trovato sul disco"
-
 msgid "Forbidden"
 msgstr "Accesso negato"
 
@@ -279,6 +276,9 @@ msgstr "Solo un Owner può rimuovere un altro Owner"
 msgid "Only assistant messages can be rated"
 msgstr "Si possono valutare solo i messaggi dell'assistente"
 
+msgid "Only failed documents can be retried"
+msgstr "Si possono riprovare solo i documenti in errore"
+
 msgid "Only pending invitations can be revoked"
 msgstr "Si possono revocare solo gli inviti in sospeso"
 
@@ -381,6 +381,9 @@ msgstr "Fonte di sincronizzazione non trovata in questa knowledge base"
 
 msgid "Target user is not a member of this organization"
 msgstr "L'utente indicato non è membro di questa organizzazione"
+
+msgid "This document keeps no original file: sync its source again"
+msgstr "Questo documento non conserva il file originale: sincronizza di nuovo la sua sorgente"
 
 msgid "This invitation was sent to a different email address."
 msgstr "Questo invito è stato inviato a un altro indirizzo email."

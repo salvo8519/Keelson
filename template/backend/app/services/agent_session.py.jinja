@@ -49,7 +49,7 @@ from app.db.models.user import User
 {%- endif %}
 from app.api.deps import get_conversation_service
 from app.db.session import get_db_context
-from app.services.file_storage import get_file_storage
+from app.services.stored_object import StoredObjectService
 {%- if enable_mcp_client %}
 from app.services.mcp_connection import build_toolsets_for_user
 {%- endif %}
@@ -638,7 +638,6 @@ class AgentSession:
         if not file_ids:
             return user_message
 
-        storage = get_file_storage()
         image_parts: list[BinaryContent] = []
         file_context_parts: list[str] = []
         async with get_db_context() as file_db:
@@ -646,7 +645,9 @@ class AgentSession:
             for chat_file in attached_files:
                 try:
                     if chat_file.file_type == "image":
-                        file_data = await storage.load(chat_file.storage_path)
+                        file_data = await StoredObjectService(file_db).read_bytes(
+                            chat_file.stored_object_id
+                        )
                         image_parts.append(
                             BinaryContent(data=file_data, media_type=chat_file.mime_type)
                         )
@@ -2507,7 +2508,7 @@ from app.db.models.user import User
 {%- endif %}
 from app.api.deps import get_conversation_service
 from app.db.session import get_db_context
-from app.services.file_storage import get_file_storage
+from app.services.stored_object import StoredObjectService
 
 logger = logging.getLogger(__name__)
 
@@ -2772,7 +2773,6 @@ class AgentSession:
         if not file_ids:
             return user_message
 
-        storage = get_file_storage()
         file_refs: list[str] = []
         image_parts: list[Any] = []
 
@@ -2782,7 +2782,9 @@ class AgentSession:
             for chat_file in attached_files:
                 try:
                     if chat_file.file_type == "image":
-                        file_data = await storage.load(chat_file.storage_path)
+                        file_data = await StoredObjectService(file_db).read_bytes(
+                            chat_file.stored_object_id
+                        )
                         image_parts.append(
                             BinaryContent(data=file_data, media_type=chat_file.mime_type)
                         )
@@ -2806,7 +2808,9 @@ class AgentSession:
                                 f"- {chat_file.filename}:\n```\n{chat_file.parsed_content}\n```"
                             )
                     else:
-                        file_data = await storage.load(chat_file.storage_path)
+                        file_data = await StoredObjectService(file_db).read_bytes(
+                            chat_file.stored_object_id
+                        )
                         if has_sandbox:
                             rel_path = await assistant.upload_file(chat_file.filename, file_data)
                             file_refs.append(f"- {rel_path}")

@@ -3,7 +3,6 @@
 """RAG document service."""
 
 import logging
-import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -17,15 +16,29 @@ from app.db.models.rag_document import RAGDocument
 from app.services.rag.config import get_supported_formats
 from app.repositories import rag_document_repo
 from app.schemas.rag import RAGIngestResponse, RAGTrackedDocumentItem, RAGTrackedDocumentList
-from app.services.file_storage import get_file_storage
+from app.services.file_storage import AsyncReadable, ObjectTooLargeError, iter_readable
+from app.services.stored_object import ObjectOwner, StoredObjectService
+from starlette.responses import Response
 {%- if use_arq %}
-from app.worker.arq_app import get_arq_pool
+from app.worker.arq_pool import get_arq_pool
 {%- elif not (use_celery or use_taskiq or use_prefect) %}
 from app.worker.background import fire_and_forget
 from app.worker.background.rag import ingest_document_in_background
 {%- endif %}
 
 logger = logging.getLogger(__name__)
+
+# Content types of the stored originals, by extension.
+_CONTENT_TYPES = {
+    "pdf": "application/pdf",
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "txt": "text/plain",
+    "md": "text/markdown",
+}
+
+
+def content_type_of(filetype: str) -> str:
+    return _CONTENT_TYPES.get(filetype.lower(), "application/octet-stream")
 
 
 class RAGDocumentService:
@@ -46,7 +59,7 @@ class RAGDocumentService:
                     id=str(d.id), collection_name=d.collection_name, filename=d.filename,
                     filesize=d.filesize, filetype=d.filetype, status=d.status,
                     error_message=d.error_message, vector_document_id=d.vector_document_id,
-                    chunk_count=d.chunk_count, has_file=bool(d.storage_path),
+                    chunk_count=d.chunk_count, has_file=d.stored_object_id is not None,
                     created_at=d.created_at.isoformat() if d.created_at else None,
                     completed_at=d.completed_at.isoformat() if d.completed_at else None,
                 )
@@ -69,7 +82,7 @@ class RAGDocumentService:
                     id=str(d.id), collection_name=d.collection_name, filename=d.filename,
                     filesize=d.filesize, filetype=d.filetype, status=d.status,
                     error_message=d.error_message, vector_document_id=d.vector_document_id,
-                    chunk_count=d.chunk_count, has_file=bool(d.storage_path),
+                    chunk_count=d.chunk_count, has_file=d.stored_object_id is not None,
                     created_at=d.created_at.isoformat() if d.created_at else None,
                     completed_at=d.completed_at.isoformat() if d.completed_at else None,
                 )
@@ -100,7 +113,7 @@ class RAGDocumentService:
         filename: str,
         filesize: int,
         filetype: str,
-        storage_path: str | None = None,
+        stored_object_id: UUID | None = None,
 {%- if enable_teams %}
         organization_id: UUID | None = None,
 {%- endif %}
@@ -115,7 +128,7 @@ class RAGDocumentService:
             filename=filename,
             filesize=filesize,
             filetype=filetype,
-            storage_path=storage_path or "",
+            stored_object_id=stored_object_id,
 {%- if enable_teams %}
             organization_id=organization_id,
 {%- endif %}
@@ -128,10 +141,11 @@ class RAGDocumentService:
         self,
         *,
         collection_name: str,
-        file_data: bytes,
+        upload: AsyncReadable,
         filename: str,
         replace: bool,
         vector_store: Any,
+        owner: ObjectOwner,
 {%- if enable_teams %}
         organization_id: UUID | None = None,
 {%- endif %}
@@ -142,12 +156,13 @@ class RAGDocumentService:
         """Validate, persist, and queue an uploaded file for ingestion.
 
         Performs:
-          1. file-extension and size validation (against ``settings``);
-          2. permanent storage via ``FileStorage``;
+          1. file-extension validation (against ``settings``);
+          2. storage as a stored object of ``owner``, streamed and size-checked on the way;
           3. RAGDocument tracking-record creation;
           4. lazy creation of the target vector collection;
-          5. tmp-copy under ``MEDIA_DIR/_rag_tmp`` (shared with worker container);
-          6. dispatch of the ingestion task on the configured task backend.
+          5. dispatch of the ingestion task, which reads the stored object (Keelson: upstream
+             passed a copy under ``MEDIA_DIR/_rag_tmp``, which only a worker sharing that disk
+             could read, and which was never removed).
         """
         allowed = get_supported_formats(getattr(settings, "PDF_PARSER", "pymupdf"))
         max_size = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
@@ -158,20 +173,24 @@ class RAGDocumentService:
                 message=f"File type '{ext}' not supported",
                 details={"ext": ext, "allowed": sorted(allowed)},
             )
-        if len(file_data) > max_size:
+        try:
+            stored = await StoredObjectService(self.db).store(
+                owner=owner,
+                chunks=iter_readable(upload),
+                content_type=content_type_of(ext.lstrip(".")),
+                max_size=max_size,
+            )
+        except ObjectTooLargeError:
             raise BadRequestError(
                 message=f"File too large. Maximum {settings.MAX_UPLOAD_SIZE_MB}MB.",
-                details={"size": len(file_data), "max_mb": settings.MAX_UPLOAD_SIZE_MB},
-            )
-
-        storage = get_file_storage()
-        storage_path = await storage.save(f"rag/{collection_name}", filename, file_data)
+                details={"max_mb": settings.MAX_UPLOAD_SIZE_MB},
+            ) from None
         rag_doc = await self.create_document(
             collection_name=collection_name,
             filename=filename,
-            filesize=len(file_data),
+            filesize=stored.size,
             filetype=ext.lstrip("."),
-            storage_path=storage_path,
+            stored_object_id=stored.id,
 {%- if enable_teams %}
             organization_id=organization_id,
 {%- endif %}
@@ -182,65 +201,13 @@ class RAGDocumentService:
         doc_id = rag_doc.id
 
         await vector_store.create_collection(collection_name)
-
-        tmp_dir = os.path.join(str(settings.MEDIA_DIR), "_rag_tmp")
-        os.makedirs(tmp_dir, exist_ok=True)
-        tmp_path = os.path.join(tmp_dir, f"{doc_id!s}{ext}")
-        with open(tmp_path, "wb") as f:
-            f.write(file_data)
-
-{%- if use_celery %}
-        from app.worker.tasks.rag_tasks import ingest_document_task
-        ingest_document_task.delay(
-            rag_document_id=str(doc_id),
+        await self._enqueue_ingestion(
+            doc_id=str(doc_id),
             collection_name=collection_name,
-            filepath=tmp_path,
-            source_path=filename,
+            stored_object_id=str(stored.id),
+            filename=filename,
             replace=replace,
         )
-{%- elif use_taskiq %}
-        # Keelson: Taskiq enqueues with kiq (upstream called Celery's delay, which Taskiq tasks
-        # do not have: every upload failed with AttributeError).
-        from app.worker.tasks.rag_tasks import ingest_document_task
-        await ingest_document_task.kiq(
-            rag_document_id=str(doc_id),
-            collection_name=collection_name,
-            filepath=tmp_path,
-            source_path=filename,
-            replace=replace,
-        )
-{%- elif use_arq %}
-        pool = await get_arq_pool()
-        await pool.enqueue_job(
-            "ingest_document",
-            str(doc_id),
-            collection_name,
-            tmp_path,
-            filename,
-            replace,
-        )
-{%- elif use_prefect %}
-        import asyncio
-        from app.worker.tasks.rag_tasks import ingest_document_flow
-        asyncio.create_task(ingest_document_flow(
-            rag_document_id=str(doc_id),
-            collection_name=collection_name,
-            filepath=tmp_path,
-            source_path=filename,
-            replace=replace,
-        ))
-{%- else %}
-        fire_and_forget(
-            ingest_document_in_background(
-                rag_document_id=str(doc_id),
-                collection_name=collection_name,
-                filepath=tmp_path,
-                source_path=filename,
-                replace=replace,
-            ),
-            label="rag.ingest_document",
-        )
-{%- endif %}
 
         return RAGIngestResponse(
             id=str(doc_id),
@@ -249,6 +216,69 @@ class RAGDocumentService:
             collection=collection_name,
             message="File accepted. Processing in background.",
         )
+
+    async def _enqueue_ingestion(
+        self,
+        *,
+        doc_id: str,
+        collection_name: str,
+        stored_object_id: str,
+        filename: str,
+        replace: bool,
+    ) -> None:
+        """Queue the ingestion of a stored document on the configured task backend."""
+{%- if use_celery %}
+        from app.worker.tasks.rag_tasks import ingest_document_task
+        ingest_document_task.delay(
+            rag_document_id=doc_id,
+            collection_name=collection_name,
+            stored_object_id=stored_object_id,
+            source_path=filename,
+            replace=replace,
+        )
+{%- elif use_taskiq %}
+        # Keelson: Taskiq enqueues with kiq (upstream called Celery's delay, which Taskiq tasks
+        # do not have: every upload failed with AttributeError).
+        from app.worker.tasks.rag_tasks import ingest_document_task
+        await ingest_document_task.kiq(
+            rag_document_id=doc_id,
+            collection_name=collection_name,
+            stored_object_id=stored_object_id,
+            source_path=filename,
+            replace=replace,
+        )
+{%- elif use_arq %}
+        pool = await get_arq_pool()
+        await pool.enqueue_job(
+            "ingest_document_task",
+            doc_id,
+            collection_name,
+            stored_object_id,
+            filename,
+            replace,
+        )
+{%- elif use_prefect %}
+        import asyncio
+        from app.worker.tasks.rag_tasks import ingest_document_flow
+        asyncio.create_task(ingest_document_flow(
+            rag_document_id=doc_id,
+            collection_name=collection_name,
+            stored_object_id=stored_object_id,
+            source_path=filename,
+            replace=replace,
+        ))
+{%- else %}
+        fire_and_forget(
+            ingest_document_in_background(
+                rag_document_id=doc_id,
+                collection_name=collection_name,
+                stored_object_id=stored_object_id,
+                source_path=filename,
+                replace=replace,
+            ),
+            label="rag.ingest_document",
+        )
+{%- endif %}
 
     async def complete_ingestion(
         self,
@@ -279,15 +309,24 @@ class RAGDocumentService:
         )
 
     async def retry_ingestion(self, doc_id: str) -> RAGDocument:
-        """Reset a failed document for re-ingestion.
+        """Queue a failed document for ingestion again, from its stored original.
+
+        Keelson: upstream only reset the status, so the document stayed "processing" for ever.
 
         Raises:
             NotFoundError: If document does not exist.
-            ValueError: If document status is not 'error'.
+            BadRequestError: If the document has not failed, or keeps no original to read.
         """
         doc = await self.get_document(doc_id)
         if doc.status != "error":
-            raise ValueError("Only failed documents can be retried")
+            raise BadRequestError(
+                message="Only failed documents can be retried", details={"doc_id": doc_id}
+            )
+        if doc.stored_object_id is None:
+            raise BadRequestError(
+                message="This document keeps no original file: sync its source again",
+                details={"doc_id": doc_id},
+            )
         updated = await rag_document_repo.update_status(
             self.db,
             doc.id,
@@ -297,6 +336,13 @@ class RAGDocumentService:
         )
         if updated is None:
             raise NotFoundError(message="Document not found", details={"doc_id": doc_id})
+        await self._enqueue_ingestion(
+            doc_id=str(doc.id),
+            collection_name=doc.collection_name,
+            stored_object_id=str(doc.stored_object_id),
+            filename=doc.filename,
+            replace=True,
+        )
         return updated
 
     async def delete_document(
@@ -320,14 +366,10 @@ class RAGDocumentService:
             except Exception as e:
                 logger.warning("Failed to delete from vector store: %s", e)
 
-        if doc.storage_path:
-            try:
-                storage = get_file_storage()
-                await storage.delete(doc.storage_path)
-            except Exception as e:
-                logger.warning("Failed to delete file: %s", e)
-
+        stored_object_id = doc.stored_object_id
         await rag_document_repo.delete(self.db, doc.id)
+        if stored_object_id is not None:
+            await StoredObjectService(self.db).delete(stored_object_id)
 
     async def delete_by_collection(self, collection_name: str) -> int:
         """Delete all RAG document records for a collection.
@@ -337,32 +379,21 @@ class RAGDocumentService:
         """
         return await rag_document_repo.delete_by_collection(self.db, collection_name)
 
-    async def get_download_info(self, doc_id: str) -> tuple[str, str, str]:
-        """Get file download information for a document.
-
-        Returns:
-            Tuple of (file_path, filename, mime_type).
+    async def download(self, doc_id: str) -> Response:
+        """The original file of a document, streamed or as a short-lived presigned URL.
 
         Raises:
-            NotFoundError: If document or its file does not exist.
+            NotFoundError: If the document or its file does not exist, or is not visible.
         """
         doc = await self.get_document(doc_id)
-        if not doc.storage_path:
+        if doc.stored_object_id is None:
             raise NotFoundError(message="No file stored for this document")
-
-        storage = get_file_storage()
-        file_path = storage.get_full_path(doc.storage_path)
-        if not file_path:
-            raise NotFoundError(message="File not found on disk")
-
-        mime_map = {
-            "pdf": "application/pdf",
-            "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "txt": "text/plain",
-            "md": "text/markdown",
-        }
-        mime_type = mime_map.get(doc.filetype, "application/octet-stream")
-        return str(file_path), doc.filename, mime_type
+        return await StoredObjectService(self.db).download(
+            doc.stored_object_id,
+            filename=doc.filename,
+            disposition="attachment",
+            media_type=content_type_of(doc.filetype),
+        )
 
 
 {%- else %}

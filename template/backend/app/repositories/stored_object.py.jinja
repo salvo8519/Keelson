@@ -1,0 +1,202 @@
+{%- if enable_teams and use_postgresql %}
+"""StoredObject repository (Keelson)."""
+
+from collections.abc import Sequence
+from datetime import datetime
+from typing import Any, cast
+from uuid import UUID
+
+from sqlalchemy import and_, exists, func, not_, or_, select, update
+from sqlalchemy.engine import CursorResult
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.base import Base
+from app.db.models.stored_object import StoredObject, StoredObjectStatus
+
+AVAILABLE = StoredObjectStatus.AVAILABLE.value
+MIGRATING = StoredObjectStatus.MIGRATING.value
+
+
+async def create(db: AsyncSession, **fields: Any) -> StoredObject:
+    stored = StoredObject(**fields, status_changed_at=func.now())
+    db.add(stored)
+    await db.flush()
+    await db.refresh(stored)
+    return stored
+
+
+async def get_by_id(db: AsyncSession, object_id: UUID) -> StoredObject | None:
+    return await db.get(StoredObject, object_id)
+
+
+async def update_fields(db: AsyncSession, stored: StoredObject, **fields: Any) -> StoredObject:
+    for name, value in fields.items():
+        setattr(stored, name, value)
+    if "status" in fields:
+        stored.status_changed_at = func.now()
+    await db.flush()
+    await db.refresh(stored)
+    return stored
+
+
+async def delete(db: AsyncSession, stored: StoredObject) -> None:
+    await db.delete(stored)
+    await db.flush()
+
+
+# --- Migration between backends (system session) ------------------------------------------
+
+
+async def ids_to_migrate(
+    db: AsyncSession,
+    *,
+    backend: str,
+    stale_before: datetime,
+    limit: int,
+    after: UUID | None = None,
+) -> list[UUID]:
+    """Objects on ``backend`` still to move: available, or left migrating by a crashed worker."""
+    result = await db.execute(
+        select(StoredObject.id)
+        .where(
+            StoredObject.backend == backend,
+            or_(
+                StoredObject.status == AVAILABLE,
+                and_(
+                    StoredObject.status == MIGRATING,
+                    StoredObject.status_changed_at < stale_before,
+                ),
+            ),
+            *([StoredObject.id > after] if after is not None else []),
+        )
+        .order_by(StoredObject.id)
+        .limit(limit)
+    )
+    return list(result.scalars())
+
+
+async def claim_for_migration(
+    db: AsyncSession, object_id: UUID, *, backend: str, stale_before: datetime
+) -> StoredObject | None:
+    """Mark the object as migrating, unless someone else holds it; the row, or None."""
+    result = await db.execute(
+        update(StoredObject)
+        .where(
+            StoredObject.id == object_id,
+            StoredObject.backend == backend,
+            or_(
+                StoredObject.status == AVAILABLE,
+                and_(
+                    StoredObject.status == MIGRATING,
+                    StoredObject.status_changed_at < stale_before,
+                ),
+            ),
+        )
+        .values(status=MIGRATING, status_changed_at=func.now())
+        .returning(StoredObject)
+        .execution_options(synchronize_session=False)
+    )
+    return result.scalar_one_or_none()
+
+
+async def switch_backend(
+    db: AsyncSession,
+    object_id: UUID,
+    *,
+    source: str,
+    source_key: str,
+    target: str,
+    target_key: str,
+    sha256: str,
+) -> bool:
+    """Point the object at its new copy, keeping the old one for the cleanup step."""
+    result = await db.execute(
+        update(StoredObject)
+        .where(
+            StoredObject.id == object_id,
+            StoredObject.backend == source,
+            StoredObject.storage_key == source_key,
+            StoredObject.status == MIGRATING,
+        )
+        .values(
+            backend=target,
+            storage_key=target_key,
+            sha256=sha256,
+            previous_backend=source,
+            previous_key=source_key,
+            status=AVAILABLE,
+            status_changed_at=func.now(),
+        )
+        .execution_options(synchronize_session=False)
+    )
+    return bool(cast(CursorResult[Any], result).rowcount)
+
+
+async def release(db: AsyncSession, object_id: UUID) -> None:
+    """A failed migration: the object stays where it was."""
+    await db.execute(
+        update(StoredObject)
+        .where(StoredObject.id == object_id, StoredObject.status == MIGRATING)
+        .values(status=AVAILABLE, status_changed_at=func.now())
+        .execution_options(synchronize_session=False)
+    )
+
+
+# --- Cleanup (system session) -------------------------------------------------------------
+
+
+async def with_previous_copy(db: AsyncSession, *, limit: int) -> Sequence[StoredObject]:
+    result = await db.execute(
+        select(StoredObject)
+        .where(StoredObject.previous_key.is_not(None), StoredObject.status == AVAILABLE)
+        .order_by(StoredObject.id)
+        .limit(limit)
+    )
+    return result.scalars().all()
+
+
+async def clear_previous_copy(db: AsyncSession, object_id: UUID) -> None:
+    await db.execute(
+        update(StoredObject)
+        .where(StoredObject.id == object_id)
+        .values(previous_backend=None, previous_key=None)
+        .execution_options(synchronize_session=False)
+    )
+
+
+def _references() -> list[Any]:
+    """Every column of the project that references a stored object (from the metadata)."""
+    table = Base.metadata.tables[StoredObject.__tablename__]
+    return [
+        foreign_key.parent
+        for other in Base.metadata.tables.values()
+        for foreign_key in other.foreign_keys
+        if foreign_key.column.table is table
+    ]
+
+
+async def orphans(db: AsyncSession, *, created_before: datetime, limit: int) -> Sequence[StoredObject]:
+    """Objects no document or chat file references any more (deleted with their parent)."""
+    unreferenced = [not_(exists().where(column == StoredObject.id)) for column in _references()]
+    result = await db.execute(
+        select(StoredObject)
+        .where(StoredObject.created_at < created_before, *unreferenced)
+        .order_by(StoredObject.id)
+        .limit(limit)
+    )
+    return result.scalars().all()
+
+
+async def holds_copy(db: AsyncSession, object_id: UUID, *, backend: str, key: str) -> bool:
+    """Whether a row points at ``key`` on ``backend``, as its current or its previous copy."""
+    result = await db.execute(
+        select(StoredObject.id).where(
+            StoredObject.id == object_id,
+            or_(
+                and_(StoredObject.backend == backend, StoredObject.storage_key == key),
+                and_(StoredObject.previous_backend == backend, StoredObject.previous_key == key),
+            ),
+        )
+    )
+    return result.first() is not None
+{%- endif %}

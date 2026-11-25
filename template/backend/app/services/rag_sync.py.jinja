@@ -14,7 +14,7 @@ from app.schemas.rag import RAGSyncLogItem, RAGSyncLogList
 {%- if use_celery or use_taskiq %}
 from app.worker.tasks.rag_tasks import sync_collection_task
 {%- elif use_arq %}
-from app.worker.arq_app import get_arq_pool
+from app.worker.arq_pool import get_arq_pool
 {%- elif use_prefect %}
 from app.worker.tasks.rag_tasks import sync_collection_flow
 {%- else %}
@@ -108,7 +108,7 @@ class RAGSyncService:
 {%- elif use_arq %}
         pool = await get_arq_pool()
         await pool.enqueue_job(
-            "sync_collection",
+            "sync_collection_task",
             str(sync_log.id),
             "local",
             collection_name,

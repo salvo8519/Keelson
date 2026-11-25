@@ -167,7 +167,9 @@ class OrganizationService:
         if membership.role not in (OrgRole.OWNER.value, OrgRole.ADMIN.value):
             raise AuthorizationError(message="Only Owner or Admin can update the org")
 
-        storage = get_file_storage()
+        # Keelson: avatars stay on the local disk (MEDIA_DIR): the record holds their path,
+        # not a stored object. Documents and chat files are stored objects.
+        storage = get_file_storage("local")
         if org.avatar_url:
             with contextlib.suppress(Exception):
                 await storage.delete(org.avatar_url)
@@ -175,7 +177,7 @@ class OrganizationService:
         return await organization_repo.update(self.db, org, avatar_url=storage_path)
 
     def get_avatar_path(self, avatar_url: str) -> str | None:
-        full_path = get_file_storage().get_full_path(avatar_url)
+        full_path = get_file_storage("local").get_full_path(avatar_url)
         return str(full_path) if full_path is not None else None
 
 

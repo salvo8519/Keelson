@@ -1,0 +1,155 @@
+{%- if enable_teams and use_postgresql %}
+"""stored objects for documents and chat files (Keelson)
+
+Revision ID: k0005_stored_objects
+Revises: k0004_database_segregation
+Create Date: 2026-11-25T00:00:00+00:00
+
+Creates stored_objects (app/db/models/stored_object.py) and applies its row level security
+with the policies of app/db/tenancy.py. Chat files{% if enable_rag %} and RAG documents{% endif %} reference a stored
+object instead of a path: each existing file becomes a stored object on the local backend,
+under its old path, with no hash yet (computed when it is migrated to another backend).
+{%- if enable_rag %} A RAG
+document whose owner cannot be determined (no organization, no personal knowledge base) keeps
+no reference to its file.
+{%- endif %}
+"""
+
+import sqlalchemy as sa
+from alembic import op
+from sqlalchemy.dialects import postgresql
+
+from app.db.tenancy import segregation_statements
+
+revision = "k0005_stored_objects"
+down_revision = "k0004_database_segregation"
+branch_labels = None
+depends_on = None
+
+TABLE = "stored_objects"
+LEGACY = "'local', 'available', 'application/octet-stream'"
+
+
+def _reference(table: str, *, nullable: bool, ondelete: str) -> None:
+    op.create_foreign_key(
+        f"{table}_stored_object_id_fkey", table, TABLE, ["stored_object_id"], ["id"], ondelete=ondelete
+    )
+    op.create_index(f"{table}_stored_object_id_idx", table, ["stored_object_id"])
+    if not nullable:
+        op.alter_column(table, "stored_object_id", nullable=False)
+    op.drop_column(table, "storage_path")
+
+
+def upgrade() -> None:
+    op.create_table(
+        TABLE,
+        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column(
+            "organization_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("organizations.id", ondelete="CASCADE", name="stored_objects_organization_id_fkey"),
+            nullable=True,
+        ),
+        sa.Column(
+            "user_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("users.id", ondelete="CASCADE", name="stored_objects_user_id_fkey"),
+            nullable=True,
+        ),
+        sa.Column("size", sa.BigInteger(), nullable=False),
+        sa.Column("content_type", sa.String(255), nullable=False),
+        sa.Column("sha256", sa.String(64), nullable=True),
+        sa.Column("backend", sa.String(16), nullable=False),
+        sa.Column("storage_key", sa.String(500), nullable=False),
+        sa.Column("status", sa.String(16), nullable=False),
+        sa.Column("previous_backend", sa.String(16), nullable=True),
+        sa.Column("previous_key", sa.String(500), nullable=True),
+        sa.Column("status_changed_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
+        sa.CheckConstraint(
+            "(organization_id IS NULL) <> (user_id IS NULL)", name="stored_objects_one_owner_check"
+        ),
+        sa.CheckConstraint(
+            "status IN ('pending', 'available', 'migrating')", name="stored_objects_status_check"
+        ),
+    )
+    op.create_index("stored_objects_organization_id_idx", TABLE, ["organization_id"])
+    op.create_index("stored_objects_user_id_idx", TABLE, ["user_id"])
+    op.create_index("stored_objects_backend_status_idx", TABLE, ["backend", "status"])
+
+    # Existing chat files: personal objects of their uploader, where upstream stored them.
+    op.add_column("chat_files", sa.Column("stored_object_id", postgresql.UUID(as_uuid=True), nullable=True))
+    op.execute("UPDATE chat_files SET stored_object_id = gen_random_uuid()")
+    op.execute(
+        f"""
+        INSERT INTO {TABLE} (id, user_id, size, storage_key, backend, status, content_type,
+                             created_at, status_changed_at)
+        SELECT stored_object_id, user_id, size, storage_path, {LEGACY}, created_at, now()
+        FROM chat_files
+        """
+    )
+    _reference("chat_files", nullable=False, ondelete="CASCADE")
+{%- if enable_rag %}
+
+    # Existing RAG documents with a file: the user's for a personal knowledge base, otherwise
+    # the organization's.
+    op.add_column("rag_documents", sa.Column("stored_object_id", postgresql.UUID(as_uuid=True), nullable=True))
+    personal_owner = (
+        "SELECT k.owner_user_id FROM knowledge_bases k WHERE k.id = d.knowledge_base_id"
+        " AND k.scope = 'personal' AND k.owner_user_id IS NOT NULL"
+    )
+    op.execute(
+        f"""
+        UPDATE rag_documents d SET stored_object_id = gen_random_uuid()
+        WHERE COALESCE(d.storage_path, '') <> ''
+          AND (d.organization_id IS NOT NULL OR EXISTS ({personal_owner}))
+        """
+    )
+    op.execute(
+        f"""
+        INSERT INTO {TABLE} (id, organization_id, user_id, size, storage_key, backend, status,
+                             content_type, created_at, status_changed_at)
+        SELECT d.stored_object_id,
+               CASE WHEN ({personal_owner}) IS NULL THEN d.organization_id END,
+               ({personal_owner}),
+               d.filesize, d.storage_path, {LEGACY}, d.created_at, now()
+        FROM rag_documents d
+        WHERE d.stored_object_id IS NOT NULL
+        """
+    )
+    _reference("rag_documents", nullable=True, ondelete="SET NULL")
+{%- endif %}
+
+    # Function bodies name tables that a project may not have (sharing, knowledge bases).
+    op.execute("SET LOCAL check_function_bodies = off")
+    for statement in segregation_statements({TABLE}):
+        op.execute(statement)
+
+
+def _restore_path(table: str, *, nullable: bool) -> None:
+    op.add_column(table, sa.Column("storage_path", sa.String(500), nullable=True))
+    op.execute(
+        f"UPDATE {table} t SET storage_path = o.storage_key FROM {TABLE} o WHERE o.id = t.stored_object_id"
+    )
+    if not nullable:
+        op.alter_column(table, "storage_path", nullable=False)
+    op.drop_index(f"{table}_stored_object_id_idx", table_name=table)
+    op.drop_constraint(f"{table}_stored_object_id_fkey", table, type_="foreignkey")
+    op.drop_column(table, "stored_object_id")
+
+
+def downgrade() -> None:
+    # Paths can only point at the local disk: objects elsewhere must be brought back first.
+    remote = op.get_bind().execute(sa.text(f"SELECT count(*) FROM {TABLE} WHERE backend <> 'local'")).scalar()
+    if remote:
+        raise RuntimeError(
+            f"{remote} stored object(s) are not on the local disk: run"
+            " `cmd migrate-storage --from s3 --to local` before downgrading"
+        )
+    _restore_path("chat_files", nullable=False)
+{%- if enable_rag %}
+    _restore_path("rag_documents", nullable=True)
+{%- endif %}
+    op.drop_table(TABLE)
+{%- endif %}

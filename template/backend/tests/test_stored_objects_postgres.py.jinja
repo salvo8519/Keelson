@@ -1,0 +1,212 @@
+{%- if enable_teams and use_postgresql %}
+"""Stored objects against a real PostgreSQL, under row level security (Keelson).
+
+Objects are written through the role of the application login, as a request writes them;
+migration and cleanup run with the owner login, as workers and the command line do. S3 is
+moto, in process.
+"""
+
+import hashlib
+import os
+import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+
+import boto3
+import pytest
+from moto import mock_aws
+from sqlalchemy import text
+from starlette.responses import RedirectResponse, StreamingResponse
+
+from app.core.config import settings
+from app.core.exceptions import NotFoundError
+from app.db.base import Base
+from app.db.models.stored_object import StoredObject
+from app.db.tenancy import Principal
+from app.services import file_storage
+from app.services.file_storage import iter_bytes
+from app.services.storage_migration import IntegrityMismatchError, cleanup, migrate_object
+from app.services.stored_object import ObjectOwner, StoredObjectService
+from tests.postgres import SegregatedDatabase, acting_as, require_postgres, segregated_database
+
+pytestmark = pytest.mark.anyio
+
+BUCKET = "acme-objects"
+
+
+@dataclass
+class Setup:
+    db: SegregatedDatabase
+    alice: uuid.UUID  # member of org_a
+    bob: uuid.UUID  # member of org_b
+    org_a: uuid.UUID
+    org_b: uuid.UUID
+
+    @asynccontextmanager
+    async def system(self) -> AsyncIterator:
+        async with self.db.system() as session:
+            yield session
+            await session.commit()
+
+    @asynccontextmanager
+    async def as_user(self, user: uuid.UUID, org: uuid.UUID) -> AsyncIterator:
+        with acting_as(Principal(user_id=user, organization_id=org)):
+            async with self.db.app() as session:
+                yield session
+                await session.commit()
+
+
+@pytest.fixture
+async def setup(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    await require_postgres("stored objects")
+    for name in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"):
+        monkeypatch.setenv(name, "testing")
+    monkeypatch.setattr(settings, "MEDIA_DIR", tmp_path / "media")
+    monkeypatch.setattr(settings, "STORAGE_BACKEND", "local")
+    monkeypatch.setattr(settings, "S3_ENDPOINT", None)
+    monkeypatch.setattr(settings, "S3_BUCKET", BUCKET)
+    monkeypatch.setattr(settings, "S3_REGION", "us-east-1")
+    monkeypatch.setattr(settings, "S3_PRESIGNED_DOWNLOADS", False)
+    file_storage._s3_storage.cache_clear()
+    with mock_aws():
+        boto3.client("s3", region_name="us-east-1").create_bucket(Bucket=BUCKET)
+        async with segregated_database() as db:
+            async with db.system() as s:
+                ids = {name: uuid.uuid4() for name in ("alice", "bob", "org_a", "org_b")}
+                tables = Base.metadata.tables
+                for name in ("alice", "bob"):
+                    await s.execute(
+                        tables["users"].insert().values(id=ids[name], email=f"{name}@example.com", hashed_password="x")
+                    )
+                for org, user in (("org_a", "alice"), ("org_b", "bob")):
+                    slug = org.replace("_", "-")
+                    await s.execute(
+                        tables["organizations"].insert().values(id=ids[org], name=slug, slug=slug, created_by_user_id=ids[user])
+                    )
+                    await s.execute(
+                        tables["organization_members"].insert().values(
+                            id=uuid.uuid4(), organization_id=ids[org], user_id=ids[user], role="owner"
+                        )
+                    )
+                await s.commit()
+            yield Setup(db, ids["alice"], ids["bob"], ids["org_a"], ids["org_b"])
+    file_storage._s3_storage.cache_clear()
+
+
+async def _store(setup: Setup, owner: ObjectOwner, data: bytes, user: uuid.UUID, org: uuid.UUID) -> StoredObject:
+    async with setup.as_user(user, org) as session:
+        return await StoredObjectService(session).store(
+            owner=owner, chunks=iter_bytes(data), content_type="application/pdf"
+        )
+
+
+async def _body(response: StreamingResponse) -> bytes:
+    return b"".join([chunk async for chunk in response.body_iterator])  # type: ignore[misc]
+
+
+async def test_an_object_is_recorded_with_its_owner_key_and_hash(setup: Setup) -> None:
+    data = os.urandom(70_000)
+    stored = await _store(setup, ObjectOwner.organization(setup.org_a), data, setup.alice, setup.org_a)
+    assert stored.status == "available" and stored.backend == "local"
+    assert stored.storage_key == f"org/{setup.org_a}/{stored.id}"
+    assert stored.size == len(data) and stored.sha256 == hashlib.sha256(data).hexdigest()
+    personal = await _store(setup, ObjectOwner.user(setup.alice), b"note", setup.alice, setup.org_a)
+    assert personal.storage_key == f"user/{setup.alice}/{personal.id}"
+
+
+async def test_another_organization_cannot_read_or_list_an_object(setup: Setup) -> None:
+    stored = await _store(setup, ObjectOwner.organization(setup.org_a), b"secret", setup.alice, setup.org_a)
+    async with setup.as_user(setup.bob, setup.org_b) as session:
+        with pytest.raises(NotFoundError):
+            await StoredObjectService(session).download(stored.id, filename="a.pdf")
+        listed = (await session.execute(text("SELECT id FROM stored_objects"))).scalars().all()
+        assert listed == []
+    async with setup.as_user(setup.alice, setup.org_a) as session:
+        response = await StoredObjectService(session).download(stored.id, filename="a.pdf")
+        assert isinstance(response, StreamingResponse)
+        assert await _body(response) == b"secret"
+        assert response.headers["content-disposition"] == 'attachment; filename="a.pdf"'
+
+
+async def test_nobody_stores_an_object_in_the_name_of_another_owner(setup: Setup) -> None:
+    for owner in (ObjectOwner.organization(setup.org_b), ObjectOwner.user(setup.bob)):
+        with pytest.raises(Exception, match="row-level security"):
+            await _store(setup, owner, b"forged", setup.alice, setup.org_a)
+    assert [key async for key, _ in file_storage.get_file_storage("local").list_keys("org/")] == []
+
+
+async def test_presigned_downloads_are_issued_after_the_database_check(
+    setup: Setup, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "STORAGE_BACKEND", "s3")
+    stored = await _store(setup, ObjectOwner.organization(setup.org_a), b"pdf", setup.alice, setup.org_a)
+    assert stored.backend == "s3"
+    monkeypatch.setattr(settings, "S3_PRESIGNED_DOWNLOADS", True)
+    async with setup.as_user(setup.alice, setup.org_a) as session:
+        response = await StoredObjectService(session).download(stored.id, filename="a.pdf")
+    assert isinstance(response, RedirectResponse) and response.status_code == 307
+    assert f"X-Amz-Expires={settings.S3_PRESIGN_TTL_SECONDS}" in response.headers["location"]
+    async with setup.as_user(setup.bob, setup.org_b) as session:
+        with pytest.raises(NotFoundError):
+            await StoredObjectService(session).download(stored.id, filename="a.pdf")
+
+
+async def test_migration_copies_verifies_and_switches_then_cleanup_removes_the_old_copy(
+    setup: Setup,
+) -> None:
+    data = os.urandom(9 * 1024 * 1024)  # more than one S3 part
+    stored = await _store(setup, ObjectOwner.organization(setup.org_a), data, setup.alice, setup.org_a)
+
+    outcome = await migrate_object(stored.id, source="local", target="s3", sessions=setup.system)
+    assert outcome == "migrated"
+    async with setup.system() as session:
+        moved = await session.get(StoredObject, stored.id)
+    assert (moved.backend, moved.status, moved.sha256) == ("s3", "available", stored.sha256)
+    assert (moved.previous_backend, moved.previous_key) == ("local", stored.storage_key)
+    async with setup.as_user(setup.alice, setup.org_a) as session:
+        assert await StoredObjectService(session).read_bytes(stored.id) == data
+
+    assert await migrate_object(stored.id, source="local", target="s3", sessions=setup.system) == "skipped"
+    report = await cleanup(reconcile=False, sessions=setup.system)
+    assert report.previous_copies == 1
+    assert not await file_storage.get_file_storage("local").exists(stored.storage_key)
+
+
+async def test_a_copy_that_does_not_match_the_hash_is_not_used(setup: Setup) -> None:
+    stored = await _store(setup, ObjectOwner.user(setup.alice), b"original", setup.alice, setup.org_a)
+    # The source changed behind the record's back (corruption).
+    (settings.MEDIA_DIR / stored.storage_key).write_bytes(b"tampered")
+    with pytest.raises(IntegrityMismatchError):
+        await migrate_object(stored.id, source="local", target="s3", sessions=setup.system)
+    async with setup.system() as session:
+        kept = await session.get(StoredObject, stored.id)
+    assert (kept.backend, kept.status) == ("local", "available"), "released where it was"
+    assert not await file_storage.get_file_storage("s3").exists(stored.storage_key)
+
+
+async def test_cleanup_removes_orphans_and_content_no_object_records(setup: Setup) -> None:
+    orphan = await _store(setup, ObjectOwner.user(setup.alice), b"orphan", setup.alice, setup.org_a)
+    unrecorded = f"org/{setup.org_b}/{uuid.uuid4()}"
+    local = file_storage.get_file_storage("local")
+    # A file of the layout before stored objects, in a collection that happens to be "org".
+    legacy = "org/a1b2c3_report.pdf"
+    old = (datetime.now(UTC) - timedelta(days=2)).timestamp()
+    for key in (unrecorded, legacy):
+        await local.write(key, iter_bytes(b"left by a rolled back upload"))
+        os.utime(settings.MEDIA_DIR / key, (old, old))
+
+    report = await cleanup(sessions=setup.system, backends=("local",))
+    assert report.orphans == 0, "a recent object is in its grace period"
+    assert report.unrecorded == 1
+    assert not await local.exists(unrecorded)
+    assert await local.exists(legacy), "only keys of stored objects are reconciled"
+    assert await local.exists(orphan.storage_key), "recorded content stays"
+
+    later = datetime.now(UTC) + timedelta(days=2)
+    report = await cleanup(sessions=setup.system, backends=("local",), now=later)
+    assert report.orphans == 1, "no document or chat file references it"
+    assert not await local.exists(orphan.storage_key)
+{%- endif %}

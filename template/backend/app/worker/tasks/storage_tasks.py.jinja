@@ -1,0 +1,96 @@
+{%- if enable_teams and use_postgresql and (use_celery or use_taskiq or use_arq) %}
+"""Storage tasks: move stored objects between backends, and clean up after them (Keelson).
+
+``migrate-storage`` (``app/commands/storage.py``) enqueues one migration per object; the
+cleanup runs every day and on demand (``storage-cleanup``). The work itself is in
+``app/services/storage_migration.py``.
+"""
+
+{%- if use_celery %}
+import asyncio
+{%- endif %}
+import logging
+from dataclasses import asdict
+from typing import Any
+from uuid import UUID
+
+{%- if use_celery %}
+from celery import shared_task
+{%- elif use_taskiq %}
+from app.worker.taskiq_app import broker
+{%- endif %}
+
+from app.services.storage_migration import cleanup, migrate_object
+
+logger = logging.getLogger(__name__)
+
+
+async def _migrate(object_id: str, source: str, target: str) -> dict[str, str]:
+    outcome = await migrate_object(UUID(object_id), source=source, target=target)
+    return {"object_id": object_id, "outcome": outcome}
+
+
+async def _cleanup() -> dict[str, Any]:
+    report = asdict(await cleanup())
+    logger.info("storage cleanup done", extra={"report": report})
+    return report
+
+{%- if use_celery %}
+
+
+@shared_task(bind=True, max_retries=3, acks_late=True)
+def migrate_object_task(self: Any, object_id: str, source: str, target: str) -> dict[str, str]:
+    """Copy one stored object to another backend, verify it and switch to it."""
+    try:
+        return asyncio.run(_migrate(object_id, source, target))
+    except Exception as exc:
+        logger.exception("storage migration failed", extra={"object_id": object_id})
+        raise self.retry(exc=exc, countdown=60) from exc
+
+
+@shared_task(ignore_result=True)
+def cleanup_storage_task() -> dict[str, Any]:
+    """Remove previous copies, orphaned objects and content no object records."""
+    return asyncio.run(_cleanup())
+
+{%- elif use_taskiq %}
+
+
+@broker.task
+async def migrate_object_task(object_id: str, source: str, target: str) -> dict[str, str]:
+    """Copy one stored object to another backend, verify it and switch to it."""
+    return await _migrate(object_id, source, target)
+
+
+@broker.task
+async def cleanup_storage_task() -> dict[str, Any]:
+    """Remove previous copies, orphaned objects and content no object records."""
+    return await _cleanup()
+
+{%- elif use_arq %}
+
+
+async def migrate_object_task(ctx: dict[str, Any], object_id: str, source: str, target: str) -> dict[str, str]:
+    """Copy one stored object to another backend, verify it and switch to it."""
+    return await _migrate(object_id, source, target)
+
+
+async def cleanup_storage_task(ctx: dict[str, Any]) -> dict[str, Any]:
+    """Remove previous copies, orphaned objects and content no object records."""
+    return await _cleanup()
+{%- endif %}
+
+
+async def enqueue_migration(object_id: UUID, *, source: str, target: str) -> None:
+    """Queue the migration of one object on the configured task backend."""
+{%- if use_celery %}
+    migrate_object_task.delay(str(object_id), source, target)
+{%- elif use_taskiq %}
+    await migrate_object_task.kiq(str(object_id), source, target)
+{%- elif use_arq %}
+    from app.worker.arq_pool import get_arq_pool
+
+    pool = await get_arq_pool()
+    await pool.enqueue_job("migrate_object_task", str(object_id), source, target)
+{%- endif %}
+{%- endif %}

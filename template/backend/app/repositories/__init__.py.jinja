@@ -54,6 +54,7 @@ from app.repositories import organization as organization_repo
 {%- if enable_teams and use_postgresql %}
 
 from app.repositories import api_key as api_key_repo
+from app.repositories import stored_object as stored_object_repo
 {%- endif %}
 {%- if use_auth and use_ai %}
 
@@ -107,6 +108,7 @@ __all__ = [
 {%- endif %}
 {%- if enable_teams and use_postgresql %}
     "api_key_repo",
+    "stored_object_repo",
 {%- endif %}
 {%- if use_auth and use_ai %}
     "user_slash_command_repo",
