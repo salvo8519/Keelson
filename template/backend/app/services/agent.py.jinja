@@ -57,6 +57,13 @@ logger = logging.getLogger(__name__)
 
 
 THINKING_EFFORTS = frozenset({"low", "medium", "high"})
+# Frames that are not turns: they control the one running (app/services/agent_session.py).
+CONTROL_FRAME_TYPES = frozenset({"stop", "ask_user_response", "resume"})
+
+
+def starts_turn(data: dict[str, Any]) -> bool:
+    """Keelson: whether a frame starts an agent turn, as the sessions decide it: a text or files."""
+    return data.get("type") not in CONTROL_FRAME_TYPES and bool(data.get("message") or data.get("file_ids"))
 
 
 def turn_options_problem(data: dict[str, Any]) -> str | None:

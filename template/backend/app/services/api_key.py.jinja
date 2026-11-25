@@ -13,6 +13,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import api_keys
 from app.core.audit import record_audit, record_refusal
+{%- if enable_rate_limiting %}
+from app.services.rate_limit.service import first_in_window
+{%- endif %}
 from app.core.config import settings
 from app.core.exceptions import AuthenticationError, BadRequestError, NotFoundError
 from app.db.models.api_key import ApiKey
@@ -22,6 +25,8 @@ from app.schemas.api_key import ApiKeyCreate
 logger = logging.getLogger(__name__)
 
 AUDIT_TARGET = "api_key"
+# Refusals of one key are audited at most once in this many seconds.
+REFUSAL_AUDIT_SECONDS = 60
 
 
 def _now() -> datetime:
@@ -48,8 +53,15 @@ class ApiKeyService:
             "details": {"prefix": key.prefix, **details},
         }
         if action == "denied":
-            # The refusal raises next and the request's transaction is rolled back.
+            # The refusal raises next and the request's transaction is rolled back, so it is
+            # written in a session of its own: at most once a minute per key, so that refused
+            # requests cannot flood the log or the system connections.
+{%- if enable_rate_limiting %}
+            if await first_in_window(f"audit:api_key_denied:{key.prefix}", REFUSAL_AUDIT_SECONDS):
+                await record_refusal(f"audit: api key {key.prefix} denied", **entry)
+{%- else %}
             await record_refusal(f"audit: api key {key.prefix} denied", **entry)
+{%- endif %}
         else:
             await record_audit(self.db, **entry)
 

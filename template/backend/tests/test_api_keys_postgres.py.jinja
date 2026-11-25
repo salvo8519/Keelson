@@ -67,6 +67,26 @@ async def test_create_authenticate_and_audit(sessions) -> None:
         assert "api_key.created" in actions
 
 
+async def test_refusals_of_one_key_are_audited_once_a_minute(sessions) -> None:
+    """Refused requests cannot flood the audit log or the system connections (second review)."""
+    async with sessions() as session:
+        org, user = await _org_and_user(session)
+        key, token = await _create(session, org, user)
+        await session.commit()
+    wrong = token[:-1] + ("A" if token[-1] != "A" else "B")
+    for _ in range(5):
+        async with sessions() as session:
+            with pytest.raises(AuthenticationError):
+                await ApiKeyService(session).authenticate(wrong)
+    async with sessions() as session:
+        denied = await session.scalar(
+            select(func.count()).where(
+                AppAdminAuditLog.action == "api_key.denied", AppAdminAuditLog.target_id == str(key.id)
+            )
+        )
+    assert denied == 1
+
+
 async def test_wrong_secret_is_refused_and_audited(sessions) -> None:
     """The refusal survives the rollback of the request that raised it."""
     async with sessions() as session:

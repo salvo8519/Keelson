@@ -38,6 +38,11 @@ async def _check_one(
     return await storage.increment_and_check(key, limit, period)
 
 
+async def first_in_window(key: str, period_seconds: int) -> bool:
+    """Keelson: True for the first call with ``key`` in ``period_seconds`` (sampling, not limits)."""
+    return (await _get_storage().increment_and_check(f"once:{key}", 1, period_seconds)).allowed
+
+
 def client_ip(request: Request) -> str:
     """Caller IP for the per-IP scope, or ``"unknown"`` when unavailable."""
     return request.client.host if request.client else "unknown"

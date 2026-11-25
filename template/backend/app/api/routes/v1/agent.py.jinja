@@ -14,7 +14,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect{%- if websocket_au
 
 from app.core.config import settings
 from app.schemas.base import AgentModelsResponse
-from app.services.agent import AgentConnectionManager, send_event, turn_options_problem
+from app.services.agent import AgentConnectionManager, send_event, starts_turn, turn_options_problem
 {%- if enable_rate_limiting and websocket_auth_jwt %}
 from app.core.exceptions import RateLimitError
 from app.db.models.user import UserRole
@@ -104,7 +104,11 @@ async def agent_websocket(
                 data = await websocket.receive_json()
             except WebSocketDisconnect:
                 break
-            if data.get("message"):
+            # Keelson: the model and effort of any frame are those the deployment offers; a frame
+            # that starts a turn (text or files, app/services/agent.py) also needs a current
+            # session and a turn of the quota.
+            problem = turn_options_problem(data)
+            if problem is None and starts_turn(data):
 {%- if websocket_auth_jwt and not use_delegated_auth %}
                 # Keelson: a session ended since the handshake (password change, deactivation,
                 # sign out everywhere) ends the connection before the next turn.
@@ -112,23 +116,20 @@ async def agent_websocket(
                     await websocket.close(code=4001, reason="Session ended")
                     break
 {%- endif %}
-                # Keelson: a turn is checked before it starts: its options, then the quota.
-                problem = turn_options_problem(data)
 {%- if enable_rate_limiting and websocket_auth_jwt %}
-                if problem is None:
-                    try:
-                        await check_rate_limit(
-                            category=RateLimitCategory.AGENT_INVOCATION,
-                            client_ip=websocket.client.host if websocket.client else "unknown",
-                            user_id=str(user.id),
-                            is_admin=user.has_role(UserRole.ADMIN),
-                        )
-                    except RateLimitError as error:
-                        problem = error.message
+                try:
+                    await check_rate_limit(
+                        category=RateLimitCategory.AGENT_INVOCATION,
+                        client_ip=websocket.client.host if websocket.client else "unknown",
+                        user_id=str(user.id),
+                        is_admin=user.has_role(UserRole.ADMIN),
+                    )
+                except RateLimitError as error:
+                    problem = error.message
 {%- endif %}
-                if problem is not None:
-                    await send_event(websocket, "error", {"message": problem})
-                    continue
+            if problem is not None:
+                await send_event(websocket, "error", {"message": problem})
+                continue
             await session.handle_frame(data)
     finally:
         await session.shutdown()

@@ -88,6 +88,41 @@ def test_a_session_ended_since_the_handshake_closes_the_connection(
             websocket.receive_json()
     assert closed.value.code == 4001
     assert frames == []
+
+
+@pytest.mark.parametrize(
+    "frame",
+    [
+        {"message": "", "file_ids": [str(uuid.uuid4())], "model": "someone/most-expensive"},
+        {"type": "message", "message": "hi", "thinking_effort": "maximum"},
+        {"type": "resume", "model": "someone/most-expensive"},
+    ],
+)
+def test_no_frame_carries_a_model_past_the_check(frames: list[dict[str, Any]], frame: dict[str, Any]) -> None:
+    """Files without text and typed frames go through the same check (second review)."""
+    with TestClient(app).websocket_connect(f"{settings.API_V1_STR}/ws/agent") as websocket:
+        websocket.send_json(frame)
+        assert websocket.receive_json()["type"] == "error"
+        websocket.send_json({"type": "stop"})
+        assert websocket.receive_json()["type"] == "reached_agent"
+    assert frames == [{"type": "stop"}]
+
+
+@pytest.mark.parametrize(
+    ("frame", "turn"),
+    [
+        ({"message": "hi"}, True),
+        ({"type": "message", "message": "", "file_ids": ["f"]}, True),
+        ({"message": ""}, False),
+        ({"type": "stop"}, False),
+        ({"type": "ask_user_response", "answers": []}, False),
+        ({"type": "resume", "message": "go on"}, False),
+    ],
+)
+def test_turns_are_recognised_as_the_sessions_recognise_them(frame: dict[str, Any], turn: bool) -> None:
+    from app.services.agent import starts_turn
+
+    assert starts_turn(frame) is turn
 {%- if enable_rate_limiting %}
 
 
@@ -102,6 +137,8 @@ def test_turns_over_the_quota_never_reach_the_agent(
     monkeypatch.setattr(agent_route, "check_rate_limit", exhausted)
     with TestClient(app).websocket_connect(f"{settings.API_V1_STR}/ws/agent") as websocket:
         websocket.send_json({"message": "hi"})
+        assert websocket.receive_json() == {"type": "error", "data": {"message": "Rate limit exceeded"}}
+        websocket.send_json({"message": "", "file_ids": [str(uuid.uuid4())]})
         assert websocket.receive_json() == {"type": "error", "data": {"message": "Rate limit exceeded"}}
         websocket.send_json({"type": "stop"})
         assert websocket.receive_json()["type"] == "reached_agent"

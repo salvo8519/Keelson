@@ -851,7 +851,16 @@ async def get_api_key_principal(
     else:
         # Keelson: the key is found by its prefix before anyone is known: a system lookup.
         async with system_session("API key authentication") as system_db:
+{%- if enable_rate_limiting %}
+            try:
+                key = await ApiKeyService(system_db).authenticate(api_key)
+            except AuthenticationError:
+                # Keelson: a caller that keeps sending refused keys gets 429 instead of 401.
+                await check_rate_limit(category=RateLimitCategory.API_KEY_REFUSAL, client_ip=client_ip(request))
+                raise
+{%- else %}
             key = await ApiKeyService(system_db).authenticate(api_key)
+{%- endif %}
         principal = ApiKeyPrincipal(
             key=key,
             label=f"api_key:{key.id}",

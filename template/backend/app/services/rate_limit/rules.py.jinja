@@ -41,6 +41,7 @@ class RateLimitCategory:
     READ_API = "read_api"
     WEBHOOK = "webhook"
     API_KEY = "api_key"  # Keelson: requests authenticated by an organization API key
+    API_KEY_REFUSAL = "api_key_refusal"  # Keelson: refused API keys, per caller IP
     # Keelson: session refreshes, per user. They shared AUTH (per IP) with sign-in, so users
     # behind one address lost their sessions after a few failed sign-ins of anyone there.
     REFRESH = "refresh"
@@ -56,6 +57,7 @@ DEFAULT_RATE_LIMITS: dict[str, RateLimitRule] = {
     RateLimitCategory.READ_API: RateLimitRule(per_user=300, period_seconds=60),
     # Keelson: per key (the "user" bucket holds the key id) and per organization.
     RateLimitCategory.API_KEY: RateLimitRule(per_user=600, period_seconds=60, per_org=3000),
+    RateLimitCategory.API_KEY_REFUSAL: RateLimitRule(per_ip=20, ip_period_seconds=300),
     RateLimitCategory.REFRESH: RateLimitRule(per_user=20, period_seconds=900),
 }
 

@@ -146,3 +146,39 @@ async def test_introspect_requires_a_key() -> None:
         response = await client.get(f"{settings.API_V1_STR}/api-keys/introspect")
     assert response.status_code == 401
 {%- endif %}
+{%- if enable_rate_limiting %}
+
+
+@pytest.mark.anyio
+async def test_a_caller_that_keeps_sending_refused_keys_is_slowed_down(monkeypatch) -> None:
+    """After the refusals the rule allows, the answer is 429, not 401 (second review)."""
+    from contextlib import asynccontextmanager
+
+    from app.core.exceptions import AuthenticationError
+    from app.services.rate_limit.rules import DEFAULT_RATE_LIMITS, RateLimitCategory
+
+    @asynccontextmanager
+    async def system(reason: str):
+        yield MagicMock()
+
+    async def refused(self, token: str):
+        raise AuthenticationError(message="Invalid API key")
+
+    monkeypatch.setattr(deps, "system_session", system)
+    monkeypatch.setattr(deps.ApiKeyService, "authenticate", refused)
+    app.dependency_overrides[deps.get_db_session] = lambda: MagicMock()
+    allowed = DEFAULT_RATE_LIMITS[RateLimitCategory.API_KEY_REFUSAL].per_ip
+    headers = {settings.API_KEY_HEADER: f"key_{uuid4().hex[:12]}.wrong"}
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app, client=(f"198.51.100.{uuid4().int % 250}", 1)), base_url="http://test"
+        ) as client:
+            codes = [
+                (await client.get(f"{settings.API_V1_STR}/api-keys/introspect", headers=headers)).status_code
+                for _ in range(allowed + 1)
+            ]
+    finally:
+        app.dependency_overrides.clear()
+    assert codes[:allowed] == [401] * allowed
+    assert codes[-1] == 429
+{%- endif %}
