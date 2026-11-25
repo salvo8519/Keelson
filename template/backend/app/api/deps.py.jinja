@@ -754,7 +754,7 @@ async def get_api_key_principal(
     if api_key is None:
         raise AuthenticationError(message="API key header missing")
     if api_key.startswith(workload_identity.CREDENTIAL_PREFIX):
-        workload = workload_identity.read(api_key, settings.SECRET_KEY)
+        workload = workload_identity.read(api_key, settings.SECRET_KEY, settings.WORKLOAD_IDENTITIES)
         if workload is None:
             raise AuthenticationError(message="Invalid or expired workload credential")
         principal = ApiKeyPrincipal(

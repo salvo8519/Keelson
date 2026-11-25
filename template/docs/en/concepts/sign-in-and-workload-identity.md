@@ -96,7 +96,7 @@ No secret is stored in the CI.
 | `name` | Identifier of the trust, in logs |
 | `issuer` | `https://token.actions.githubusercontent.com` or `https://gitlab.com` (or your GitLab) |
 | `audience` | The audience the job requests; use the URL of this API |
-| `claims` | Claims that must match exactly; at least one, such as the repository |
+| `claims` | Claims that must match exactly; at least one, such as the repository. Prefer immutable ids (`repository_id`, `project_id`): a repository name can be taken by another account after a rename, a transfer or a deletion |
 | `organization_id` | The organization the job acts for |
 | `scopes` | API key scopes of the credential |
 | `ttl_seconds` | Lifetime of the credential, 60 to 3600 (default 900) |
@@ -105,7 +105,7 @@ No secret is stored in the CI.
 WORKLOAD_IDENTITIES='[
   {"name": "deploy-main", "issuer": "https://token.actions.githubusercontent.com",
    "audience": "https://api.example.com",
-   "claims": {"repository": "acme/service", "ref": "refs/heads/main"},
+   "claims": {"repository_id": "123456789", "ref": "refs/heads/main"},
    "organization_id": "<uuid>", "scopes": ["agent:run"]}
 ]'
 ```
@@ -137,8 +137,9 @@ call-api:
         -H "Content-Type: application/json" -d "{\"token\": \"$API_TOKEN\"}" | jq -r .credential)
 ```
 
-For GitLab, useful claims are `project_path`, `ref`, `ref_protected` and `environment`.
+For GitLab, useful claims are `project_id`, `ref`, `ref_protected` and `environment`.
 
 A refused token gets the same answer whatever the reason; the reason is in the server log.
-Removing a trust stops new credentials at once; credentials already issued expire with their
-lifetime.
+Every request checks its credential against the trusts configured at that moment: removing a
+trust, moving it to another organization or removing scopes applies at once to credentials
+already issued.

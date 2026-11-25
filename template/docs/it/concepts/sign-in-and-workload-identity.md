@@ -1,4 +1,4 @@
-<!-- i18n source: concepts/sign-in-and-workload-identity.md source_hash: 333cc419aafa -->
+<!-- i18n source: concepts/sign-in-and-workload-identity.md source_hash: b6018599880d -->
 # Accesso e identità dei workload
 
 Le persone accedono con una password o tramite il provider di identità della propria azienda.
@@ -103,7 +103,7 @@ invia come una API key. Nessun segreto è salvato nella CI.
 | `name` | Identificativo del trust, nei log |
 | `issuer` | `https://token.actions.githubusercontent.com` o `https://gitlab.com` (o il vostro GitLab) |
 | `audience` | L'audience richiesta dal job; usare l'URL di queste API |
-| `claims` | Claim che devono corrispondere esattamente; almeno uno, come il repository |
+| `claims` | Claim che devono corrispondere esattamente; almeno uno, come il repository. Preferire identificativi immutabili (`repository_id`, `project_id`): il nome di un repository può essere preso da un altro account dopo una rinomina, un trasferimento o una cancellazione |
 | `organization_id` | L'organizzazione per cui il job agisce |
 | `scopes` | Scope di API key della credenziale |
 | `ttl_seconds` | Durata della credenziale, da 60 a 3600 (predefinito 900) |
@@ -112,7 +112,7 @@ invia come una API key. Nessun segreto è salvato nella CI.
 WORKLOAD_IDENTITIES='[
   {"name": "deploy-main", "issuer": "https://token.actions.githubusercontent.com",
    "audience": "https://api.example.com",
-   "claims": {"repository": "acme/service", "ref": "refs/heads/main"},
+   "claims": {"repository_id": "123456789", "ref": "refs/heads/main"},
    "organization_id": "<uuid>", "scopes": ["agent:run"]}
 ]'
 ```
@@ -144,8 +144,9 @@ call-api:
         -H "Content-Type: application/json" -d "{\"token\": \"$API_TOKEN\"}" | jq -r .credential)
 ```
 
-Per GitLab, i claim utili sono `project_path`, `ref`, `ref_protected` e `environment`.
+Per GitLab, i claim utili sono `project_id`, `ref`, `ref_protected` e `environment`.
 
 Un token rifiutato riceve la stessa risposta qualunque sia il motivo; il motivo è nel log del
-server. Rimuovere un trust blocca subito le nuove credenziali; quelle già emesse scadono alla
-fine della loro durata.
+server. Ogni richiesta verifica la sua credenziale rispetto ai trust configurati in quel
+momento: rimuovere un trust, spostarlo su un'altra organizzazione o togliergli degli scope vale
+subito anche per le credenziali già emesse.

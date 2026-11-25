@@ -1,6 +1,7 @@
 """Workload identity: CI jobs authenticate with their own OpenID Connect token (Keelson)."""
 
 import time
+import uuid
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -148,7 +149,7 @@ def test_a_trust_must_constrain_the_token() -> None:
 
 def test_the_credential_carries_the_organization_and_scopes_until_it_expires() -> None:
     credential, expires_at = wi.issue(TRUST, settings.SECRET_KEY)
-    read = wi.read(credential, settings.SECRET_KEY)
+    read = wi.read(credential, settings.SECRET_KEY, [TRUST])
     assert read is not None
     assert (read.trust, read.organization_id, read.scopes, read.expires_at) == (
         "deploy-main",
@@ -157,8 +158,8 @@ def test_the_credential_carries_the_organization_and_scopes_until_it_expires() -
         expires_at,
     )
     expired, _ = wi.issue(TRUST, settings.SECRET_KEY, now=time.time() - 7200)
-    assert wi.read(expired, settings.SECRET_KEY) is None
-    assert wi.read(credential, "another-secret-key-of-at-least-32-chars") is None
+    assert wi.read(expired, settings.SECRET_KEY, [TRUST]) is None
+    assert wi.read(credential, "another-secret-key-of-at-least-32-chars", [TRUST]) is None
 
 
 def test_the_credential_records_when_it_was_issued() -> None:
@@ -181,7 +182,19 @@ def test_a_credential_without_a_required_claim_is_refused(claim: str) -> None:
     }
     del payload[claim]
     credential = wi.CREDENTIAL_PREFIX + jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
-    assert wi.read(credential, settings.SECRET_KEY) is None
+    assert wi.read(credential, settings.SECRET_KEY, [TRUST]) is None
+
+
+def test_a_credential_follows_its_trust_as_configured_now() -> None:
+    """Removing a trust, moving it or narrowing its scopes applies to credentials already issued."""
+    credential, _ = wi.issue(TRUST.model_copy(update={"scopes": ["agent:run", "knowledge:read"]}), settings.SECRET_KEY)
+    assert wi.read(credential, settings.SECRET_KEY, []) is None, "trust removed"
+    moved = TRUST.model_copy(update={"organization_id": uuid.uuid4()})
+    assert wi.read(credential, settings.SECRET_KEY, [moved]) is None, "trust moved to another organization"
+    narrowed = wi.read(credential, settings.SECRET_KEY, [TRUST])
+    assert narrowed is not None and narrowed.scopes == frozenset({"agent:run"})
+    renamed = TRUST.model_copy(update={"name": "deploy-other"})
+    assert wi.read(credential, settings.SECRET_KEY, [renamed]) is None
 
 
 # --- Discovery of the issuer's keys ---------------------------------------------------------
@@ -241,16 +254,21 @@ async def test_metadata_may_write_the_issuer_with_a_trailing_slash(discovery: di
 def test_a_user_access_token_is_not_a_workload_credential() -> None:
     from app.core.security import create_access_token
 
-    assert wi.read(wi.CREDENTIAL_PREFIX + create_access_token("user-id"), settings.SECRET_KEY) is None
+    assert wi.read(wi.CREDENTIAL_PREFIX + create_access_token("user-id"), settings.SECRET_KEY, [TRUST]) is None
 
 
 @pytest.mark.anyio
-async def test_a_workload_credential_acts_like_an_api_key(client: AsyncClient) -> None:
+async def test_a_workload_credential_acts_like_an_api_key(client: AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "WORKLOAD_IDENTITIES", [TRUST])
     credential, _ = wi.issue(TRUST, settings.SECRET_KEY)
     response = await client.get("/api/v1/api-keys/introspect", headers={"X-API-Key": credential})
     assert response.status_code == 200
     body = response.json()
     assert (body["organization_id"], body["scopes"]) == (str(ORG), ["agent:run"])
+    # The trust is removed from the settings: the credential already issued stops at once.
+    monkeypatch.setattr(settings, "WORKLOAD_IDENTITIES", [])
+    response = await client.get("/api/v1/api-keys/introspect", headers={"X-API-Key": credential})
+    assert response.status_code == 401
 
 
 @pytest.mark.anyio

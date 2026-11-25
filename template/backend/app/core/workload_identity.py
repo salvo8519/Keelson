@@ -7,13 +7,16 @@ those tokens may act for which organization, with which API key scopes:
     WORKLOAD_IDENTITIES=[
       {"name": "deploy-main", "issuer": "https://token.actions.githubusercontent.com",
        "audience": "https://api.example.com",
-       "claims": {"repository": "acme/service", "ref": "refs/heads/main"},
+       "claims": {"repository_id": "123456789", "ref": "refs/heads/main"},
        "organization_id": "<uuid>", "scopes": ["agent:run"], "ttl_seconds": 900}
     ]
 
 The job exchanges its token at ``POST /api/v1/auth/workload-token`` for a credential of this
 API, valid for ``ttl_seconds`` and sent like an API key (``X-API-Key: wl.<token>``). No secret
 is stored in the CI: nothing to leak, rotate or revoke there.
+
+Prefer immutable claims: ``repository_id`` (GitHub) or ``project_id`` (GitLab) rather than the
+repository name, which another account can take after a rename, a transfer or a deletion.
 """
 
 from __future__ import annotations
@@ -159,8 +162,13 @@ def issue(trust: WorkloadTrust, secret: str, now: float | None = None) -> tuple[
     return token, datetime.fromtimestamp(expires, UTC)
 
 
-def read(credential: str, secret: str) -> WorkloadCredential | None:
-    """The workload credential sent as an API key, or None if it is not a valid one."""
+def read(credential: str, secret: str, trusts: list[WorkloadTrust]) -> WorkloadCredential | None:
+    """The workload credential sent as an API key, or None if it is not a valid one.
+
+    The credential is checked against the trusts configured now: a trust that was removed or
+    moved to another organization stops its credentials at once, and scopes removed from it
+    are removed from them.
+    """
     if not credential.startswith(CREDENTIAL_PREFIX):
         return None
     try:
@@ -174,9 +182,14 @@ def read(credential: str, secret: str) -> WorkloadCredential | None:
         return None
     if payload.get("type") != TOKEN_TYPE:
         return None
+    name, organization_id = str(payload["sub"]).removeprefix("workload:"), UUID(payload["org"])
+    trust = next((t for t in trusts if t.name == name and t.organization_id == organization_id), None)
+    scopes = frozenset(payload["scopes"]) & frozenset(trust.scopes) if trust else frozenset()
+    if not scopes:
+        return None
     return WorkloadCredential(
-        trust=str(payload["sub"]).removeprefix("workload:"),
-        organization_id=UUID(payload["org"]),
-        scopes=frozenset(payload["scopes"]),
+        trust=name,
+        organization_id=organization_id,
+        scopes=scopes,
         expires_at=datetime.fromtimestamp(payload["exp"], UTC),
     )
