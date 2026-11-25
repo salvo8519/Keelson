@@ -159,6 +159,19 @@ organization model (M1).
   downgrade, ruff, the message catalog check, and Biome, the translation check, `tsc` and the
   Vite build of the frontend.
 
+## Before enabling an upstream option that Keelson keeps off
+
+The security review of the template read these paths although no Keelson project renders them;
+each needs the listed work before its option becomes an axis:
+
+- Webhooks, MCP client and the fetch-URL tool: `validate_webhook_url` checks the address when
+  the URL is validated, and the HTTP client resolves the name again when it connects (DNS
+  rebinding). Connect to the validated address, or route the calls through an egress proxy.
+- Telegram and Slack channels: their tables have no row level security policies
+  (`app/db/tenancy.py`), so they would stay closed to the application login, and the polling
+  and background handlers open sessions without a principal. Both need policies or declared
+  system sessions. The webhook signature checks were made to fail closed on an empty secret.
+
 ## Re-sync procedure
 
 1. Clone the upstream sources at the new commits.

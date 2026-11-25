@@ -192,7 +192,11 @@ def validate_webhook_url(
     - Uses an allowed scheme (http/https only by default)
     - Does not contain userinfo (credentials in the URL)
     - Does not point to private, reserved, loopback, or link-local IP addresses
-    - Resolves via DNS to a public IP (prevents DNS rebinding attacks)
+    - Resolves via DNS to a public IP at validation time. This does not stop DNS rebinding:
+      the HTTP client resolves the name again when it connects, and a name with a short TTL
+      can then point at a private address. Callers that fetch user-supplied URLs must also
+      connect to the validated address (or go through an egress proxy). Keelson keeps those
+      callers disabled (webhooks, MCP client, fetch-URL tool); see PROVENANCE.md.
 
     Args:
         url: The webhook URL to validate.
