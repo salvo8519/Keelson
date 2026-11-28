@@ -1,0 +1,6 @@
+# Findings of the Keelstone history that are not secrets, one fingerprint each
+# (commit:file:rule:line), so that any other finding still fails the scan.
+#
+# A comment in the log redaction module lists the field NAMES treated as secrets
+# ("apiKeyHash", "encryption_key_v1", ...); the generic rule reads a name as a value.
+677f975d8c3ec129c7901387bf8c37468165865d:template/backend/app/core/logging.py:generic-api-key:211
