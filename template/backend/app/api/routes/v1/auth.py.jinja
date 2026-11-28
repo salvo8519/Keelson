@@ -32,17 +32,17 @@ from app.api.deps import AuthUserSvc, CurrentUser, Redis, UserSvc
 {%- else %}
 from app.api.deps import CurrentUser
 {%- endif %}
-{%- if enable_email and not use_delegated_auth %}
-from app.core.config import settings
-{%- endif %}
 {%- if not use_delegated_auth %}
-from app.core.exceptions import AuthenticationError, NotFoundError
-from app.core.revoked_tokens import is_revoked, revoke
+from app.core.exceptions import AuthenticationError, NotFoundError, StoreUnavailableError
+{%- if not enable_session_management %}
+from app.api.exception_handlers import app_exception_handler
+{%- endif %}
+from app.core.revoked_tokens import is_revoked, revoke, rotate
 from app.core.security import REFRESH, SessionClaims, issue_session_tokens, read_session_token
 {%- endif %}
 {%- if enable_email and not use_delegated_auth %}
-from app.services.email.service import get_email_service
 from app.schemas.password_reset import (
+    EmailChangeConfirm,
     MagicLinkRequest,
     MagicLinkVerifyRequest,
     PasswordResetConfirm,
@@ -151,12 +151,13 @@ async def register(
 async def _refreshing_user(
     request: Request, token: str | None, user_service: UserService, redis: Redis
 ) -> tuple[User, SessionClaims]:
-    """Keelstone: the user of a refresh token (body or cookie) that is still in force.
+    """Keelstone: the user of a refresh token (body or cookie) that is still in force, rotated.
 
     A refresh token is refused when it is invalid, of an earlier session version (password
-    change, sign-out from every device), signed out (app/core/revoked_tokens.py), or when
-    its user is gone or disabled. Refreshes are limited per user; invalid tokens count
-    against the per-IP limit of the sign-in routes.
+    change, sign-out from every device), signed out or already exchanged
+    (app/core/revoked_tokens.py), or when its user is gone or disabled. The caller issues the
+    new tokens in the session of the claims. Refreshes are limited per user; invalid tokens
+    count against the per-IP limit of the sign-in routes.
     """
     claims = read_session_token(token, REFRESH)
 {%- if enable_rate_limiting %}
@@ -179,6 +180,9 @@ async def _refreshing_user(
         raise AuthenticationError(message="User account is disabled")
     if not claims.is_current_for(user) or await is_revoked(redis, claims):
         raise AuthenticationError(message=INVALID_REFRESH)
+    if not await rotate(redis, claims):
+        logger.warning("refresh_token_reused", extra={"user_id": str(user.id)})
+        raise AuthenticationError(message=INVALID_REFRESH)
     return user, claims
 
 
@@ -193,13 +197,15 @@ async def refresh_token(
 {%- endif %}
 ) -> Any:
     """Exchange a refresh token for a new access token."""
+    # Keelstone: the token is checked and rotated first, so a rotated token presented again ends
+    # its session (reuse detection) even when its tracked session is already closed.
+    user, claims = await _refreshing_user(request, body.refresh_token, user_service, redis)
 {%- if enable_session_management %}
     session = await session_service.validate_refresh_token(body.refresh_token)
     if not session:
         raise AuthenticationError(message=INVALID_REFRESH)
 {%- endif %}
-    user, _ = await _refreshing_user(request, body.refresh_token, user_service, redis)
-    access_token, new_refresh_token = issue_session_tokens(user)
+    access_token, new_refresh_token = issue_session_tokens(user, claims.session_id, claims.signed_in_at)
 {%- if enable_session_management %}
 
     await session_service.logout_by_refresh_token(body.refresh_token)
@@ -214,10 +220,19 @@ async def refresh_token(
 
 
 async def _end_refresh(token: str | None, redis: Redis) -> None:
-    """Sign out the session of a refresh token, if it is one (no answer tells either way)."""
+    """Sign out the session of a refresh token, if it is one (no answer tells either way).
+
+    Keelstone: when the session store does not answer, the 503 says that the sign-out was not
+    recorded (``revocation_recorded`` false): the refresh token stays valid until it expires.
+    """
     claims = read_session_token(token, REFRESH)
-    if claims is not None:
+    if claims is None:
+        return
+    try:
         await revoke(redis, claims)
+    except StoreUnavailableError as unavailable:
+        unavailable.details = {**(unavailable.details or {}), "revocation_recorded": False}
+        raise
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
@@ -228,7 +243,11 @@ async def logout(
     session_service: SessionSvc,
 {%- endif %}
 ) -> None:
-    """Sign out: the refresh token can no longer be exchanged.
+    """Sign out: the refresh token, and every one its session rotated through, can no longer
+    be exchanged.
+
+    When the session cannot be ended (its store does not answer), the answer is 503 with
+    ``revocation_recorded`` false: the refresh token stays valid until it expires.
 
     \f
     Keelstone: upstream did nothing without session tracking, so the token kept working for
@@ -262,16 +281,32 @@ async def refresh_session(
     the page cannot obtain them.
     """
     require_trusted_origin(request)
-    user, _ = await _refreshing_user(request, request.cookies.get(REFRESH_COOKIE), user_service, redis)
-    set_session_cookies(response, *issue_session_tokens(user))
+    user, claims = await _refreshing_user(
+        request, request.cookies.get(REFRESH_COOKIE), user_service, redis
+    )
+    set_session_cookies(response, *issue_session_tokens(user, claims.session_id, claims.signed_in_at))
 
 
 @router.post("/session/logout", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
-async def end_session(request: Request, response: Response, redis: Redis) -> None:
-    """Browsers: sign out. The refresh cookie's session ends and the cookies are removed."""
+async def end_session(request: Request, response: Response, redis: Redis) -> Response | None:
+    """Browsers: sign out. The refresh cookie's session ends and the cookies are removed.
+
+    When the session cannot be ended (its store does not answer), the cookies are removed all
+    the same and the answer is 503 with ``revocation_recorded`` false: this browser is signed
+    out, but the refresh token stays valid until it expires.
+    """
     refuse_foreign_origin(request)
-    await _end_refresh(request.cookies.get(REFRESH_COOKIE), redis)
+    try:
+        await _end_refresh(request.cookies.get(REFRESH_COOKIE), redis)
+    except StoreUnavailableError as unavailable:
+        # Keelstone: raising would lose the removal of the cookies set on ``response``.
+        failed = await app_exception_handler(request, unavailable)
+        if failed is None:  # never for an HTTP request
+            raise
+        clear_session_cookies(failed)
+        return failed
     clear_session_cookies(response)
+    return None
 {%- endif %}
 {%- endif %}
 
@@ -301,19 +336,7 @@ async def request_password_reset(
     Always returns 200 with the same body — we don't disclose whether the
     email is in our system. The caller (email service) is best-effort.
     """
-    issued = await user_service.issue_password_reset_token(body.email)
-    if issued is not None:
-        reset_user, token = issued
-        try:
-            reset_url = f"{settings.FRONTEND_URL.rstrip('/')}/reset-password?token={token}"
-            await get_email_service().send_password_reset(
-                to=body.email,
-                name=reset_user.full_name or body.email,
-                reset_url=reset_url,
-                language=reset_user.locale,
-            )
-        except Exception:
-            logger.exception("password_reset_email_failed", extra={"email": body.email})
+    await user_service.request_password_reset(body.email)
     return PasswordResetResponse()
 
 
@@ -325,6 +348,23 @@ async def confirm_password_reset(
     """Set a new password using a token from the reset email."""
     await user_service.confirm_password_reset(body.token, body.new_password)
     return PasswordResetConfirmResponse()
+
+
+@router.post(
+    "/email/confirm",
+    response_model=UserRead,
+{%- if enable_rate_limiting %}
+    dependencies=[AuthRateLimit],
+{%- endif %}
+)
+async def confirm_email_change(body: EmailChangeConfirm, user_service: AuthUserSvc) -> Any:
+    """Confirm a new e-mail address with the token of the link sent to it.
+
+    \f
+    Keelstone: the address of an account changes only here (``POST /users/me/email`` sends the
+    link), so an account cannot be moved onto an address its user does not control.
+    """
+    return await user_service.confirm_email_change(body.token)
 
 
 
@@ -343,19 +383,7 @@ async def request_magic_link(
 
     Symmetric response to request_password_reset to avoid email enumeration.
     """
-    issued = await user_service.issue_magic_link_token(body.email)
-    if issued is not None:
-        link_user, token = issued
-        try:
-            login_url = f"{settings.FRONTEND_URL.rstrip('/')}/auth/magic-link?token={token}"
-            await get_email_service().send_magic_link(
-                to=body.email,
-                name=link_user.full_name or body.email,
-                magic_url=login_url,
-                language=link_user.locale,
-            )
-        except Exception:
-            logger.exception("magic_link_email_failed", extra={"email": body.email})
+    await user_service.request_magic_link(body.email)
     return PasswordResetResponse(message="Check your email for a sign-in link.")
 
 

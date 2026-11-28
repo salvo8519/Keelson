@@ -1,0 +1,34 @@
+{%- if enable_teams and use_postgresql %}
+"""the session version never decreases (Keelstone)
+
+Revision ID: k0009_session_version_grows
+Revises: k0008_content_visibility
+Create Date: 2026-11-25T00:00:00+00:00
+
+The application login may raise users.token_epoch (a user's own password change), so a policy
+cannot stop it from lowering the value again, which would bring back the sessions that were
+ended. A trigger refuses every decrease (app/db/tenancy.py, NON_DECREASING_COLUMNS), as for
+users.magic_link_epoch, which voids sign-in and address change links. Row level security is
+applied again to users, which creates the triggers.
+"""
+
+from alembic import op
+
+from app.db.tenancy import NON_DECREASING_COLUMNS, POLICY_PREFIX, segregation_statements
+
+revision = "k0009_session_version_grows"
+down_revision = "k0008_content_visibility"
+branch_labels = None
+depends_on = None
+
+
+def upgrade() -> None:
+    op.execute("SET LOCAL check_function_bodies = off")
+    for statement in segregation_statements({"users"}):
+        op.execute(statement)
+
+
+def downgrade() -> None:
+    for column in NON_DECREASING_COLUMNS["users"]:
+        op.execute(f'DROP TRIGGER IF EXISTS {POLICY_PREFIX}{column}_never_decreases ON "users"')
+{%- endif %}

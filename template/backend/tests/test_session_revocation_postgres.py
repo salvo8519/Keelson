@@ -23,6 +23,7 @@ from app.db.models.user import User
 from app.main import app
 from app.repositories import user_repo
 from app.services.organization import OrganizationService
+from tests.fakes import MemoryRedis
 from tests.postgres import SegregatedDatabase, require_postgres, segregated_database, serving
 
 pytestmark = pytest.mark.anyio
@@ -34,22 +35,6 @@ NEW_PASSWORD = "new-password-2"
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
 
 
-class FakeRedis:
-    """The few Redis operations the sign-in routes use, in memory."""
-
-    def __init__(self) -> None:
-        self.values: dict[str, str] = {}
-
-    async def set(self, key: str, value: str, ttl: int | None = None) -> None:
-        self.values[key] = value
-
-    async def exists(self, key: str) -> bool:
-        return key in self.values
-
-    async def get(self, key: str) -> str | None:
-        return self.values.get(key)
-
-
 @pytest.fixture
 async def database() -> AsyncIterator[SegregatedDatabase]:
     await require_postgres("session revocation")
@@ -58,8 +43,12 @@ async def database() -> AsyncIterator[SegregatedDatabase]:
 
 
 @pytest.fixture
-async def client(database: SegregatedDatabase) -> AsyncIterator[AsyncClient]:
-    redis = FakeRedis()
+def redis() -> MemoryRedis:
+    return MemoryRedis()
+
+
+@pytest.fixture
+async def client(database: SegregatedDatabase, redis: MemoryRedis) -> AsyncIterator[AsyncClient]:
     app.dependency_overrides[get_redis] = lambda: redis
     with serving(app, database):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -152,7 +141,9 @@ async def test_a_browser_keeps_its_own_session_after_changing_the_password(
 async def test_a_password_reset_ends_the_sessions(client, database) -> None:
     user = await _user(database, "ada@example.com")
     before = await _sign_in(client, "ada@example.com")
-    token = create_password_reset_token(str(user.id), current_password_hash=await _password_hash(database, user))
+    token = create_password_reset_token(
+        str(user.id), current_password_hash=await _password_hash(database, user), address=user.email
+    )
 
     reset = await client.post(
         f"{API}/auth/password-reset/confirm", json={"token": token, "new_password": NEW_PASSWORD}
@@ -240,6 +231,203 @@ async def test_signing_out_ends_the_refresh_token_of_that_session(client, databa
         f"{API}/auth/refresh", json={"refresh_token": program["refresh_token"]}
     )
     assert refused.status_code == 401
+
+
+async def _refresh(client: AsyncClient, refresh_token: str) -> Any:
+    return await client.post(f"{API}/auth/refresh", json={"refresh_token": refresh_token})
+
+
+async def test_signing_out_ends_the_refresh_tokens_rotated_before(client, database) -> None:
+    """A refresh token stolen before a rotation dies with the session it belongs to."""
+    await _user(database, "ada@example.com")
+    first = await _sign_in(client, "ada@example.com")
+    rotated = await _refresh(client, first["refresh_token"])
+    assert rotated.status_code == 200, rotated.text
+    latest = rotated.json()
+
+    logged_out = await client.post(f"{API}/auth/logout", json={"refresh_token": latest["refresh_token"]})
+
+    assert logged_out.status_code == 204
+    for token in (first["refresh_token"], latest["refresh_token"]):
+        assert (await _refresh(client, token)).status_code == 401
+
+
+async def test_a_browser_sign_out_ends_the_refresh_cookies_rotated_before(client, database) -> None:
+    await _user(database, "ada@example.com")
+    first = await _sign_in(client, "ada@example.com")
+    old = {"Cookie": f"{REFRESH_COOKIE}={first['refresh_token']}", "Origin": TRUSTED}
+    renewed = await client.post(f"{API}/auth/session/refresh", headers=old)
+    assert renewed.status_code == 204, renewed.text
+    latest = renewed.cookies[REFRESH_COOKIE]
+    client.cookies.clear()
+
+    signed_out = await client.post(
+        f"{API}/auth/session/logout",
+        headers={"Cookie": f"{REFRESH_COOKIE}={latest}", "Origin": TRUSTED},
+    )
+
+    assert signed_out.status_code == 204
+    assert (await client.post(f"{API}/auth/session/refresh", headers=old)).status_code == 401
+
+
+async def test_a_refresh_token_presented_again_after_rotation_ends_its_session(client, database, redis) -> None:
+    """Reuse detection: one of the two holders of the token is not the user."""
+    from app.core import revoked_tokens
+
+    await _user(database, "ada@example.com")
+    first = await _sign_in(client, "ada@example.com")
+    other = await _sign_in(client, "ada@example.com")
+    second = (await _refresh(client, first["refresh_token"])).json()
+    redis.now += revoked_tokens.REUSE_GRACE.total_seconds() + 1
+
+    replayed = await _refresh(client, first["refresh_token"])
+
+    assert replayed.status_code == 401
+    assert (await _refresh(client, second["refresh_token"])).status_code == 401
+    assert (await _refresh(client, other["refresh_token"])).status_code == 200
+
+
+async def test_tabs_renewing_the_same_session_at_once_both_keep_it(client, database) -> None:
+    """Within the grace window a rotated token is renewed again (tabs share the cookie)."""
+    await _user(database, "ada@example.com")
+    first = await _sign_in(client, "ada@example.com")
+
+    tab_a = await _refresh(client, first["refresh_token"])
+    tab_b = await _refresh(client, first["refresh_token"])
+
+    assert (tab_a.status_code, tab_b.status_code) == (200, 200)
+    for tab in (tab_a, tab_b):
+        assert (await _refresh(client, tab.json()["refresh_token"])).status_code == 200
+
+
+async def test_a_refresh_token_without_a_session_id_is_refused(client, database) -> None:
+    """Refresh tokens issued before sessions had an id cannot be ended with their session."""
+    import jwt
+
+    user = await _user(database, "ada@example.com")
+    tokens = await _sign_in(client, "ada@example.com")
+    claims = jwt.decode(tokens["refresh_token"], settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+    del claims["sid"]
+    legacy = jwt.encode(claims, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    assert claims["sub"] == str(user.id)
+
+    assert (await _refresh(client, legacy)).status_code == 401
+
+
+async def test_a_reused_refresh_token_ends_the_browser_session_too(client, database, redis) -> None:
+    """Reuse detection through the refresh cookie (the path a stolen cookie takes)."""
+    from app.core import revoked_tokens
+
+    await _user(database, "ada@example.com")
+    first = await _sign_in(client, "ada@example.com")
+    stolen = {"Cookie": f"{REFRESH_COOKIE}={first['refresh_token']}", "Origin": TRUSTED}
+    renewed = await client.post(f"{API}/auth/session/refresh", headers=stolen)
+    assert renewed.status_code == 204, renewed.text
+    latest = renewed.cookies[REFRESH_COOKIE]
+    client.cookies.clear()
+    redis.now += revoked_tokens.REUSE_GRACE.total_seconds() + 1
+
+    assert (await client.post(f"{API}/auth/session/refresh", headers=stolen)).status_code == 401
+    current = {"Cookie": f"{REFRESH_COOKIE}={latest}", "Origin": TRUSTED}
+    assert (await client.post(f"{API}/auth/session/refresh", headers=current)).status_code == 401
+
+
+# --- Impersonation ends with the administrator's rights or sessions -----------------------
+
+
+IMPERSONATED = "ada@example.com"
+
+
+async def _open_chat_still_current(database: SegregatedDatabase, token: dict[str, str]) -> bool:
+    """What the WebSocket route asks before every turn of a chat opened with ``token``."""
+    from app.api.deps import session_still_current
+    from app.core.security import ACCESS, read_session_token
+
+    claims = read_session_token(token["access_token"], ACCESS)
+    assert claims is not None and claims.version is not None
+    async with database.system() as db:
+        target = await user_repo.get_by_email(db, IMPERSONATED)
+    assert target is not None
+    return await session_still_current(target, claims.version, claims)
+
+
+async def _impersonation(client: AsyncClient, database: SegregatedDatabase) -> tuple[User, dict[str, str]]:
+    target = await _user(database, IMPERSONATED)
+    root = await _user(database, "root@example.com", role="admin", is_app_admin=True)
+    admin = await _sign_in(client, "root@example.com")
+    issued = await client.post(f"{API}/admin/users/{target.id}/impersonate", headers=_bearer(admin))
+    assert issued.status_code == 200, issued.text
+    token = {"access_token": issued.json()["access_token"]}
+    assert (await client.get(f"{API}/auth/me", headers=_bearer(token))).status_code == 200
+    assert await _open_chat_still_current(database, token)
+    return root, token
+
+
+async def _impersonation_refused(client: AsyncClient, database: SegregatedDatabase, token: dict[str, str]) -> None:
+    """Refused by the API, by a new WebSocket handshake and before the next turn of an open chat."""
+    from contextlib import asynccontextmanager
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    from fastapi import WebSocketException
+
+    from app.api import deps
+
+    assert (await client.get(f"{API}/auth/me", headers=_bearer(token))).status_code == 401
+    socket = SimpleNamespace(
+        headers={"sec-websocket-protocol": f"access_token.{token['access_token']}"},
+        state=SimpleNamespace(),
+    )
+    system = deps.system_session
+
+    @asynccontextmanager
+    async def db_context() -> AsyncIterator[Any]:
+        async with system("test: websocket") as session:
+            yield session
+
+    with patch.object(deps, "get_db_context", db_context), pytest.raises(WebSocketException) as refused:
+        await deps.get_current_user_ws(socket, None)  # type: ignore[arg-type]
+    assert refused.value.code == 4001
+    assert not await _open_chat_still_current(database, token)
+
+
+@pytest.mark.parametrize(
+    "demotion", [{"role": "user", "is_app_admin": False}, {"is_app_admin": False}, {"is_active": False}]
+)
+async def test_an_impersonation_ends_when_the_administrator_loses_the_role(
+    client, database, demotion: dict[str, Any]
+) -> None:
+    root, token = await _impersonation(client, database)
+
+    async with database.system() as db:
+        await user_repo.update(db, db_user=await user_repo.get_by_id(db, root.id), update_data=demotion)
+        await db.commit()
+
+    await _impersonation_refused(client, database, token)
+
+
+async def test_an_impersonation_ends_when_the_administrator_signs_out_everywhere(client, database) -> None:
+    _, token = await _impersonation(client, database)
+    admin = await _sign_in(client, "root@example.com")
+
+    assert (await client.post(f"{API}/auth/logout-all", headers=_bearer(admin))).status_code == 204
+
+    await _impersonation_refused(client, database, token)
+
+
+async def test_an_impersonation_token_issued_before_the_upgrade_is_refused(client, database) -> None:
+    """A token whose ``act`` claim does not carry the administrator's session version cannot be
+    checked against it: refused, while the same token with the version passes."""
+    import jwt
+
+    _, token = await _impersonation(client, database)
+    claims = jwt.decode(token["access_token"], settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+    assert isinstance(claims["act"].get("ver"), int)
+    del claims["act"]["ver"]
+    legacy = {"access_token": jwt.encode(claims, settings.SECRET_KEY, algorithm=settings.ALGORITHM)}
+
+    await _impersonation_refused(client, database, legacy)
+    assert (await client.get(f"{API}/auth/me", headers=_bearer(token))).status_code == 200
 
 
 # --- Avatars: visible to the members of a shared organization -----------------------------

@@ -114,6 +114,9 @@ msgstr "La collezione appartiene già a una knowledge base"
 msgid "Collection not found"
 msgstr "Collezione non trovata"
 
+msgid "Confirmation link is invalid or has expired"
+msgstr "Il link di conferma non è valido o è scaduto"
+
 msgid "Conflict"
 msgstr "Conflitto"
 
@@ -149,6 +152,9 @@ msgstr "Periodo di grazia troppo lungo"
 
 msgid "Incorrect password"
 msgstr "Password errata"
+
+msgid "Sign in again to make this change"
+msgstr "Accedi di nuovo per effettuare questa modifica"
 
 msgid "Insufficient organization role"
 msgstr "Ruolo nell'organizzazione insufficiente"
@@ -370,11 +376,23 @@ msgstr ""
 msgid "Service Unavailable"
 msgstr "Servizio non disponibile"
 
+msgid "Sessions cannot be renewed or ended right now. Try again in a few minutes."
+msgstr ""
+"Al momento le sessioni non possono essere rinnovate né chiuse. Riprova tra "
+"qualche minuto."
+
 msgid "Share link not found or expired"
 msgstr "Link di condivisione non trovato o scaduto"
 
 msgid "Share not found"
 msgstr "Condivisione non trovata"
+
+msgid ""
+"Signing in and account changes are temporarily unavailable. Try again in a "
+"few minutes."
+msgstr ""
+"L'accesso e le modifiche all'account non sono temporaneamente disponibili. "
+"Riprova tra qualche minuto."
 
 msgid "Slash command not found"
 msgstr "Comando slash non trovato"
@@ -414,6 +432,9 @@ msgstr "Questo documento non conserva il file originale: sincronizza di nuovo la
 
 msgid "This invitation was sent to a different email address."
 msgstr "Questo invito è stato inviato a un altro indirizzo email."
+
+msgid "This is already the address of the account"
+msgstr "Questo è già l'indirizzo dell'account"
 
 msgid "This key has already been rotated"
 msgstr "Questa chiave è già stata ruotata"

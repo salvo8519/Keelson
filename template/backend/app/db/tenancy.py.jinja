@@ -47,7 +47,13 @@ attacks every table against a real database.
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
+import os
 import re
+import stringprep
+import unicodedata
 from contextvars import ContextVar
 from dataclasses import dataclass, replace
 from uuid import UUID
@@ -360,9 +366,13 @@ HIDDEN_COLUMNS: dict[str, tuple[str, ...]] = {
 # row is created or by the platform administration, which uses the system session.
 FROZEN_COLUMNS: dict[str, tuple[str, ...]] = {
     # token_epoch (the session version) is not frozen: a user's own password change raises it
-    # with the application login. The policy limits a user to their own row, and no code writes
-    # it other than as an increment (UserService).
-    "users": ("role", "is_app_admin", "is_active", "oauth_provider", "oauth_id", "external_user_id"),
+    # with the application login. The policy limits a user to their own row, and the database
+    # refuses to lower it (NON_DECREASING_COLUMNS). The address changes only through its
+    # confirmation link, which runs in a system session (UserService.confirm_email_change).
+    "users": (
+        "role", "is_app_admin", "is_active", "oauth_provider", "oauth_id", "external_user_id",
+        "email", "email_verified",
+    ),
     "conversations": ("user_id", "organization_id", "is_demo"),
     "conversation_shares": ("shared_by",),
     "organization_members": ("organization_id", "user_id"),
@@ -373,6 +383,13 @@ FROZEN_COLUMNS: dict[str, tuple[str, ...]] = {
     "knowledge_bases": ("scope", "organization_id", "owner_user_id", "collection_name", "is_default"),
     "rag_documents": ("organization_id", "knowledge_base_id", "collection_name"),
     "sync_sources": ("organization_id",),
+}
+
+# Columns that only grow (a trigger, for every login): lowering the session version would bring
+# back sessions that were ended, lowering the magic-link epoch the sign-in and address change
+# links it voided (the application login may write both on the user's own row).
+NON_DECREASING_COLUMNS: dict[str, tuple[str, ...]] = {
+    "users": ("token_epoch", "magic_link_epoch"),
 }
 
 
@@ -430,6 +447,15 @@ def _functions(schema: str) -> list[str]:
                       ORDER BY (s.permission::text = 'edit') DESC LIMIT 1)
                END
                FROM conversations c WHERE c.id = conv $$""",
+        # Trigger of NON_DECREASING_COLUMNS; the column is the trigger's argument.
+        f"""CREATE OR REPLACE FUNCTION {S}.refuse_decrease() RETURNS trigger LANGUAGE plpgsql AS
+            $$ BEGIN
+                IF (to_jsonb(NEW) ->> TG_ARGV[0])::bigint < (to_jsonb(OLD) ->> TG_ARGV[0])::bigint THEN
+                    RAISE EXCEPTION '%.% cannot decrease', TG_TABLE_NAME, TG_ARGV[0]
+                        USING ERRCODE = 'check_violation';
+                END IF;
+                RETURN NEW;
+            END $$""",
     ]
     return [_resolve(statement, schema) for statement in statements]
 
@@ -471,8 +497,6 @@ def login_statements(user: str, password: str) -> list[str]:
     """The application login: member of TENANT_ROLE, no ownership, no bypass of the policies."""
     if not _ROLE_NAME.fullmatch(user):
         raise ValueError(f"POSTGRES_APP_USER must match {_ROLE_NAME.pattern}: {user!r}")
-    # The password stays out of the dollar-quoted block: a "$$" in it would end the block.
-    secret = password.replace("'", "''")
     return [
         f"""
         DO $$ BEGIN
@@ -483,9 +507,79 @@ def login_statements(user: str, password: str) -> list[str]:
             END IF;
         END $$
         """,
-        f"ALTER ROLE \"{user}\" PASSWORD '{secret}'",
+        password_statement(user, password),
         f'GRANT "{TENANT_ROLE}" TO "{user}"',
     ]
+
+
+def password_statement(user: str, password: str) -> str:
+    """The statement that sets a login's password (migrations and cmd rotate-database-passwords).
+
+    It carries the SCRAM-SHA-256 verifier computed here, never the password: the statement text
+    reaches the server's log (log_statement) and pg_stat_statements. PostgreSQL stores a
+    verifier it receives as it is, and checks the password against it at sign-in.
+    """
+    if not _ROLE_NAME.fullmatch(user):
+        raise ValueError(f"role names must match {_ROLE_NAME.pattern}: {user!r}")
+    return f"ALTER ROLE \"{user}\" PASSWORD '{scram_sha256_verifier(password)}'"
+
+
+# PostgreSQL's own defaults for the verifiers it computes (scram_iterations, a 16-byte salt).
+SCRAM_ITERATIONS = 4096
+SCRAM_SALT_BYTES = 16
+
+
+def _saslprep(password: str) -> bytes:
+    """The password as PostgreSQL hashes it: SASLprep (RFC 4013) as pg_saslprep applies it.
+
+    An ASCII password is kept as it is. Any other is mapped (non-ASCII spaces to a space,
+    characters "mapped to nothing" removed) and normalised (NFKC); pg_saslprep checks the
+    prohibited characters, the unassigned code points and the bidirectional rules on the
+    mapped string, before normalisation, and uses the raw bytes when a check fails. The
+    settings and cmd rotate-database-passwords accept printable ASCII only, because asyncpg's
+    own SASLprep differs from PostgreSQL's; this keeps the migration path right for any value.
+    """
+    raw = password.encode()
+    if password.isascii():
+        return raw
+    mapped = "".join(
+        " " if stringprep.in_table_c12(char) else "" if stringprep.in_table_b1(char) else char
+        for char in password
+    )
+    prohibited = (
+        stringprep.in_table_a1,
+        stringprep.in_table_c12,
+        stringprep.in_table_c21_c22,
+        stringprep.in_table_c3,
+        stringprep.in_table_c4,
+        stringprep.in_table_c5,
+        stringprep.in_table_c6,
+        stringprep.in_table_c7,
+        stringprep.in_table_c8,
+        stringprep.in_table_c9,
+    )
+    if not mapped or any(check(char) for char in mapped for check in prohibited):
+        return raw
+    if any(stringprep.in_table_d1(char) for char in mapped) and (
+        any(stringprep.in_table_d2(char) for char in mapped)
+        or not (stringprep.in_table_d1(mapped[0]) and stringprep.in_table_d1(mapped[-1]))
+    ):
+        return raw
+    prepared = unicodedata.normalize("NFKC", mapped)
+    return prepared.encode() if prepared else raw
+
+
+def scram_sha256_verifier(password: str, *, salt: bytes | None = None) -> str:
+    """The SCRAM-SHA-256 verifier of a password (RFC 5802, RFC 7677), in PostgreSQL's format."""
+    salt = salt if salt is not None else os.urandom(SCRAM_SALT_BYTES)
+    salted = hashlib.pbkdf2_hmac("sha256", _saslprep(password), salt, SCRAM_ITERATIONS)
+    stored_key = hashlib.sha256(hmac.digest(salted, b"Client Key", "sha256")).digest()
+    server_key = hmac.digest(salted, b"Server Key", "sha256")
+
+    def b64(data: bytes) -> str:
+        return base64.b64encode(data).decode()
+
+    return f"SCRAM-SHA-256${SCRAM_ITERATIONS}:{b64(salt)}${b64(stored_key)}:{b64(server_key)}"
 
 
 def _drop_policies(table: str, schema: str) -> str:
@@ -518,7 +612,28 @@ def table_statements(table: str, schema: str = "public") -> list[str]:
         statements += _column_statements(table, frozen, schema)
     if hidden := HIDDEN_COLUMNS.get(table):
         statements += _column_statements(table, hidden, schema, privilege="SELECT")
+    for column in NON_DECREASING_COLUMNS.get(table, ()):
+        statements.append(_non_decreasing_statement(table, column, schema))
     return statements
+
+
+def _non_decreasing_statement(table: str, column: str, schema: str) -> str:
+    """The trigger that refuses to lower ``column``, once the column exists (earlier
+    migrations apply the policies before it is added)."""
+    trigger = f"{POLICY_PREFIX}{column}_never_decreases"
+    return _resolve(
+        f"""
+        DO $$ BEGIN
+            DROP TRIGGER IF EXISTS {trigger} ON "{table}";
+            IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = '{schema}'
+                       AND table_name = '{table}' AND column_name = '{column}') THEN
+                CREATE TRIGGER {trigger} BEFORE UPDATE OF "{column}" ON "{table}"
+                    FOR EACH ROW EXECUTE FUNCTION {S}.refuse_decrease('{column}');
+            END IF;
+        END $$
+        """,
+        schema,
+    )
 
 
 def _column_statements(

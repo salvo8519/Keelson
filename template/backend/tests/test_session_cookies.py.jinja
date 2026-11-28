@@ -128,4 +128,37 @@ def test_trusted_origins_are_the_cors_origins() -> None:
     assert not trusted_origin("https://attacker.example")
     assert not trusted_origin(None, None)
     assert not trusted_origin("null")
+
+
+@pytest.mark.parametrize("origin", ["null", "", "https://attacker.example"])
+def test_an_origin_header_decides_alone_when_present(origin: str) -> None:
+    """The Referer is a fallback for a missing Origin, never a second chance."""
+    assert not trusted_origin(origin, TRUSTED + "/settings")
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("origin", ["null", ""])
+async def test_an_opaque_origin_is_refused_whatever_the_referer(
+    client: AsyncClient, users, user, origin: str
+) -> None:
+    """A sandboxed frame sends "Origin: null" with a Referer of the trusted site (Review 2, F12):
+    sign-in, renewal and cookie writes are refused."""
+    referer = {"Origin": origin, "Referer": TRUSTED + "/settings"}
+    users.update_me = AsyncMock(return_value=user)
+    token = create_access_token(user.id, version=user.token_epoch)
+    refresh = create_refresh_token(user.id, version=user.token_epoch)
+
+    login = await client.post(
+        f"{API}/auth/login", data={"username": "ada@example.com", "password": "pw-123456"}, headers=referer
+    )
+    renewal = await client.post(
+        f"{API}/auth/session/refresh", headers={**referer, "Cookie": f"{REFRESH_COOKIE}={refresh}"}
+    )
+    write = await client.patch(
+        f"{API}/users/me", json={"full_name": "Ada L."}, headers={**referer, "Cookie": f"{ACCESS_COOKIE}={token}"}
+    )
+
+    assert (login.status_code, renewal.status_code, write.status_code) == (403, 403, 403)
+    users.authenticate.assert_not_awaited()
+    users.update_me.assert_not_awaited()
 {%- endif %}

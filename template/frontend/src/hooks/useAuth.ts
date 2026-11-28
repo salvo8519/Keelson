@@ -4,7 +4,7 @@ import { useNavigate } from "@tanstack/react-router"
 import {
   type Body_auth_login as AccessToken,
   AuthService,
-  type UserRead,
+  type UserMe,
   type UserRegister,
   UsersService,
 } from "@/client"
@@ -35,7 +35,7 @@ const useAuth = () => {
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
 
-  const { data: user } = useQuery<UserRead | null, Error>({
+  const { data: user } = useQuery<UserMe | null, Error>({
     queryKey: ["currentUser"],
     queryFn: async () => (await UsersService.readCurrentUser()).data,
     enabled: isLoggedIn(),

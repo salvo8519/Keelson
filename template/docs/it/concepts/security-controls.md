@@ -1,4 +1,4 @@
-<!-- i18n source: concepts/security-controls.md source_hash: a3f8d0b5ddfe -->
+<!-- i18n source: concepts/security-controls.md source_hash: ca6a0b3c8dbc -->
 # Controlli di sicurezza e conformità
 
 Questa pagina collega i controlli della ISO/IEC 27001:2022 (Annex A) e i Trust Services
@@ -22,7 +22,7 @@ Ogni riga indica la sua evidenza. I test girano nella pipeline del progetto, qui
 | Autenticazione | A.8.5 | CC6.1, CC6.2 | Single sign-on con OpenID Connect (flusso authorization code con PKCE, ID token verificato, account abbinati solo tramite indirizzi verificati); nessun token negli URL | `app/core/oidc.py`, `tests/test_sso.py` |
 | Informazioni di autenticazione | A.5.17 | CC6.1 | Password salvate come hash Argon2id, hash precedenti aggiornati all'accesso; il tempo di accesso non rivela gli indirizzi registrati; segreti delle API key salvati come hash con chiave | `app/core/security.py`, `app/core/api_keys.py`, `tests/test_security.py`, `tests/test_services.py` |
 | Protezione della sessione | A.8.5, A.8.26 | CC6.1, CC6.7 | Token del browser in cookie HttpOnly e SameSite, fuori dalla portata degli script della pagina; scritture e WebSocket autenticate da cookie accettate solo da origini affidabili (CSRF) | `app/core/session_cookies.py`, `tests/test_session_cookies.py` |
-| Identità delle macchine | A.5.16, A.8.5 | CC6.2 | I job di CI si autenticano con il token OpenID Connect della loro piattaforma rispetto a un trust configurato (issuer, audience, repository, branch); le credenziali scadono entro un'ora | `app/core/workload_identity.py`, `tests/test_workload_identity.py` |
+| Identità delle macchine | A.5.16, A.8.5 | CC6.2 | I job di CI si autenticano con il token OpenID Connect della loro piattaforma rispetto a un trust configurato (issuer, audience, repository, branch); le credenziali scadono entro un'ora e si fermano quando il loro trust viene rimosso, spostato o modificato | `app/core/workload_identity.py`, `tests/test_workload_identity.py` |
 | Ciclo di vita delle API key | A.5.18 | CC6.2 | Per organizzazione, con scope, scadenza, rotazione con periodo di tolleranza, revoca e limiti di frequenza | `app/services/api_key.py`, `tests/test_api_keys.py` |
 
 ## Crittografia e protezione dei dati
@@ -30,7 +30,7 @@ Ogni riga indica la sua evidenza. I test girano nella pipeline del progetto, qui
 | Controllo | ISO 27001 | SOC 2 | Cosa fa il progetto | Evidenza |
 | --- | --- | --- | --- | --- |
 | Segreti a riposo | A.8.24 | CC6.1, C1.1 | Credenziali dei connettori e token cifrati con chiavi dedicate e ruotabili (`DATA_ENCRYPTION_KEYS`), separate dalla chiave che firma i token | `app/core/crypto.py`, `tests/test_data_encryption.py` |
-| Fuga di dati nei log | A.8.12 | CC6.7 | Messaggi, campi extra e testo delle eccezioni oscurati; campi con nomi da segreto scartati; parametri SQL nascosti fuori dalla modalità debug | `app/core/logging.py`, `tests/test_log_trap.py` |
+| Fuga di dati nei log | A.8.12 | CC6.7 | Messaggi, campi extra e testo delle eccezioni oscurati; campi con nomi da segreto scartati, in qualunque grafia e forma plurale, unita o con versione (`newPassword`, `X-API-Key`, `S3_SECRET_KEY`, `refresh_tokens`, `apiKeyHash`, `api_key_v2`), anche dentro modelli, dataclass, mapping, coppie di intestazioni e voci nome/valore; password negli URL (anche con utente vuoto) e credenziali HTTP Basic oscurate nel testo e nei valori di qualunque tipo (eccezioni, bytes, oggetti URL); i pattern hanno tempo lineare anche su testo ostile; le rappresentazioni dei modelli non mostrano mai colonne segrete; parametri SQL nascosti fuori dalla modalità debug | `app/core/logging.py`, `tests/test_log_trap.py`, `tests/test_model_repr.py` |
 | Fuga di dati nelle API | A.8.12 | CC6.7 | Note dei manutentori escluse dal riferimento API pubblicato | `tests/test_openapi_contract.py` |
 | Trasporto | A.8.24 | CC6.7 | TLS terminato da Traefik con Let's Encrypt nello stack di produzione, con HSTS; Content Security Policy e gli altri header di sicurezza su API e frontend | `docker-compose.prod.yml`, `app/core/middleware.py`, `frontend/security-headers.conf` (con un frontend) |
 
@@ -46,7 +46,7 @@ Ogni riga indica la sua evidenza. I test girano nella pipeline del progetto, qui
 
 | Controllo | ISO 27001 | SOC 2 | Cosa fa il progetto | Evidenza |
 | --- | --- | --- | --- | --- |
-| Configurazione sicura | A.8.9 | CC7.1 | Un avvio in staging o in produzione rifiuta i valori di sviluppo e i segnaposto dei segreti (compresi quelli di `.env.example` e del secret Kubernetes), la modalità debug, le metriche senza token e algoritmi di firma dei token diversi da HMAC; lo stack Compose di produzione si ferma se manca un valore obbligatorio, tiene la password di Valkey fuori dalla riga di comando e accetta gli indirizzi client inoltrati solo dalla rete del proxy | `app/core/config.py`, `tests/test_production_settings.py`, `docker-compose.prod.yml` |
+| Configurazione sicura | A.8.9 | CC7.1 | Un avvio in staging o in produzione rifiuta i valori di sviluppo e i segnaposto dei segreti (compresi quelli di `.env.example`, del secret Kubernetes e di `garage/development.env`), i segreti con meno di 32 caratteri (16 per l'identificativo di una chiave di accesso) o meno di 8 diversi, o fatti per lo più di parole note (anche con le sostituzioni di lettere con cifre o simboli simili), del nome del progetto, di sequenze di caratteri vicini, di un unico pezzo ripetuto o di caratteri raddoppiati (`is_weak_secret`; i segreti di Garage verificati da `cmd garage-bootstrap`; ogni impostazione con nome da segreto è verificata o esentata con un motivo), la modalità debug, le metriche senza token e algoritmi di firma dei token diversi da HMAC; lo stack Compose di produzione si ferma se manca un valore obbligatorio, tiene la password di Valkey fuori dalla riga di comando e accetta gli indirizzi client inoltrati solo dalla rete del proxy | `app/core/config.py`, `tests/test_production_settings.py`, `docker-compose.prod.yml` |
 | Gestione delle modifiche | A.8.32 | CC8.1 | Il contratto API è versionato; disallineamenti e modifiche incompatibili fanno fallire la pipeline; migrazioni testate in avanti e indietro | `scripts/openapi.py`, `tests/test_migrations.py`, workflow di CI |
 | Codice sicuro | A.8.28 | CC8.1 | Regole di lint di sicurezza (Ruff `S`, da Bandit) con eccezioni motivate | `backend/pyproject.toml` |
 | Test di sicurezza | A.8.29 | CC7.1 | Test di attacco su un PostgreSQL reale, test-trappola sui log, test di autenticazione | i test citati sopra |
@@ -69,5 +69,6 @@ Il software non copre, e un auditor chiederà di:
   a CC7.5);
 - penetration test e valutazione dei fornitori di modelli e di hosting;
 - immagini di base vincolate al digest (`image:tag@sha256:...`): il generatore non può
-  ottenere i digest, quindi le immagini sono vincolate al tag; vincolatele una volta e
-  Dependabot o Renovate le terranno aggiornate.
+  ottenere i digest, quindi le immagini sono vincolate al tag. Renovate aggiunge i digest alla
+  prima esecuzione; con Dependabot vincolatele una volta da una macchina che raggiunge i
+  registri (`CONTRIBUTING.md`, Container images) e Dependabot terrà aggiornati tag e digest.

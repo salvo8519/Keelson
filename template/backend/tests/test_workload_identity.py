@@ -170,16 +170,29 @@ def test_the_credential_records_when_it_was_issued() -> None:
     assert expires_at.timestamp() == int(now) + 900
 
 
-@pytest.mark.parametrize("claim", ["exp", "sub", "org", "scopes", "type"])
-def test_a_credential_without_a_required_claim_is_refused(claim: str) -> None:
-    """In particular, a credential that never expires is never accepted."""
-    payload = {
+def _payload() -> dict:
+    """The claims of a credential of TRUST, as issue writes them."""
+    return {
         "type": wi.TOKEN_TYPE,
         "sub": "workload:deploy-main",
         "org": str(ORG),
         "scopes": ["agent:run"],
+        "trust": wi.trust_digest(TRUST),
+        "iat": int(time.time()),
         "exp": int(time.time()) + 300,
     }
+
+
+def test_a_credential_built_like_issue_is_read() -> None:
+    """The baseline of the test below: the payload alone is a valid credential."""
+    credential = wi.CREDENTIAL_PREFIX + jwt.encode(_payload(), settings.SECRET_KEY, algorithm="HS256")
+    assert wi.read(credential, settings.SECRET_KEY, [TRUST]) is not None
+
+
+@pytest.mark.parametrize("claim", ["exp", "iat", "sub", "org", "scopes", "type", "trust"])
+def test_a_credential_without_a_required_claim_is_refused(claim: str) -> None:
+    """In particular, a credential that never expires is never accepted."""
+    payload = _payload()
     del payload[claim]
     credential = wi.CREDENTIAL_PREFIX + jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
     assert wi.read(credential, settings.SECRET_KEY, [TRUST]) is None
@@ -195,6 +208,37 @@ def test_a_credential_follows_its_trust_as_configured_now() -> None:
     assert narrowed is not None and narrowed.scopes == frozenset({"agent:run"})
     renamed = TRUST.model_copy(update={"name": "deploy-other"})
     assert wi.read(credential, settings.SECRET_KEY, [renamed]) is None
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"issuer": "https://gitlab.com"},
+        {"audience": "https://other.example.com"},
+        {"claims": {"repository": "acme/service", "ref": "refs/heads/feature"}},
+        {"claims": {"repository": "acme/service"}},
+        {"claims": {"repository": "acme/service", "ref": "refs/heads/main", "environment": "prod"}},
+    ],
+)
+def test_a_credential_stops_when_its_trust_accepts_other_tokens(change: dict) -> None:
+    """A trust whose issuer, audience or claims changed no longer vouches for its credentials."""
+    credential, _ = wi.issue(TRUST, settings.SECRET_KEY)
+    assert wi.read(credential, settings.SECRET_KEY, [TRUST.model_copy(update=change)]) is None
+    assert wi.read(credential, settings.SECRET_KEY, [TRUST]) is not None, "unchanged trust"
+
+
+def test_a_credential_stops_when_its_trust_gets_a_shorter_lifetime() -> None:
+    """Credentials issued for longer than the trust allows now stop; shorter ones go on."""
+    credential, _ = wi.issue(TRUST.model_copy(update={"ttl_seconds": 3600}), settings.SECRET_KEY)
+    assert wi.read(credential, settings.SECRET_KEY, [TRUST.model_copy(update={"ttl_seconds": 3600})]) is not None
+    assert wi.read(credential, settings.SECRET_KEY, [TRUST.model_copy(update={"ttl_seconds": 900})]) is None
+    short, _ = wi.issue(TRUST.model_copy(update={"ttl_seconds": 300}), settings.SECRET_KEY)
+    assert wi.read(short, settings.SECRET_KEY, [TRUST.model_copy(update={"ttl_seconds": 900})]) is not None
+
+
+def test_the_trust_digest_does_not_depend_on_the_order_of_the_claims() -> None:
+    reordered = TRUST.model_copy(update={"claims": dict(reversed(list(TRUST.claims.items())))})
+    assert wi.trust_digest(reordered) == wi.trust_digest(TRUST)
 
 
 # --- Discovery of the issuer's keys ---------------------------------------------------------

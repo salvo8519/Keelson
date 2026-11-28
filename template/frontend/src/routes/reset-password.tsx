@@ -2,6 +2,7 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { useMutation } from "@tanstack/react-query"
 import {
   createFileRoute,
+  Navigate,
   Link as RouterLink,
   redirect,
   useNavigate,
@@ -23,12 +24,9 @@ import { LoadingButton } from "@/components/ui/loading-button"
 import { PasswordInput } from "@/components/ui/password-input"
 import { isLoggedIn } from "@/hooks/useAuth"
 import useCustomToast from "@/hooks/useCustomToast"
+import { useLinkToken } from "@/hooks/useLinkToken"
 import { t } from "@/i18n"
 import { handleError } from "@/utils"
-
-const searchSchema = z.object({
-  token: z.string().catch(""),
-})
 
 const formSchema = z
   .object({
@@ -49,13 +47,9 @@ type FormData = z.infer<typeof formSchema>
 
 export const Route = createFileRoute("/reset-password")({
   component: ResetPassword,
-  validateSearch: searchSchema,
-  beforeLoad: async ({ search }) => {
+  beforeLoad: async () => {
     if (isLoggedIn()) {
       throw redirect({ to: "/" })
-    }
-    if (!search.token) {
-      throw redirect({ to: "/login" })
     }
   },
   head: () => ({
@@ -68,7 +62,8 @@ export const Route = createFileRoute("/reset-password")({
 })
 
 function ResetPassword() {
-  const { token } = Route.useSearch()
+  // Keelstone: read from the link, then removed from the address bar (useLinkToken).
+  const token = useLinkToken()
   const { showSuccessToast, showErrorToast } = useCustomToast()
   const navigate = useNavigate()
 
@@ -96,6 +91,8 @@ function ResetPassword() {
   const onSubmit = (data: FormData) => {
     mutation.mutate({ new_password: data.new_password, token })
   }
+
+  if (!token) return <Navigate to="/login" />
 
   return (
     <AuthLayout>
@@ -155,7 +152,7 @@ function ResetPassword() {
           </div>
 
           <div className="text-center text-sm">
-            Remember your password?{" "}
+            {t("Remember your password?")}{" "}
             <RouterLink to="/login" className="underline underline-offset-4">
               {t("Log in")}
             </RouterLink>

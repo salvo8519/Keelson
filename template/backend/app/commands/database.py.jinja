@@ -1,0 +1,91 @@
+{%- if enable_teams and use_postgresql %}
+"""Database login commands (Keelstone).
+
+    {{ project_slug }} cmd rotate-database-passwords    set new passwords for both logins
+
+The passwords of the owner login (POSTGRES_USER) and of the application login
+(POSTGRES_APP_USER) live in PostgreSQL: changing them in backend/.env alone breaks the
+connection. This command sets them in the database with the current credentials; then the new
+values go into backend/.env and the stack is restarted. See docs/en/guides/configuration.md.
+"""
+
+import asyncio
+import os
+
+import asyncpg
+import click
+from sqlalchemy.engine import make_url
+
+from app.commands import command, error, info, success
+from app.core.config import WEAK_SECRET_RULE, database_password_problem, is_weak_secret, settings
+from app.db.tenancy import password_statement
+
+
+async def rotate_passwords(dsn: str, passwords: dict[str, str]) -> list[str]:
+    """Set each role's new password in one transaction; the roles changed.
+
+    All or nothing: a failure leaves every password as it was.
+    """
+    connection = await asyncpg.connect(dsn)
+    try:
+        async with connection.transaction():
+            for role, password in passwords.items():
+                await connection.execute(password_statement(role, password))
+    finally:
+        await connection.close()
+    return list(passwords)
+
+
+def _owner_dsn() -> str:
+    """The current owner login, as asyncpg takes it."""
+    return make_url(settings.DATABASE_URL).set(drivername="postgresql").render_as_string(hide_password=False)
+
+
+# The new passwords come from the environment or from a prompt that does not echo them, never
+# from options: a command line shows in the shell history and in the process list.
+NEW_PASSWORD_VARIABLES = {
+    "POSTGRES_PASSWORD": "NEW_POSTGRES_PASSWORD",
+    "POSTGRES_APP_PASSWORD": "NEW_POSTGRES_APP_PASSWORD",
+}
+
+
+def _new_password(name: str) -> str:
+    variable = NEW_PASSWORD_VARIABLES[name]
+    return os.environ.get(variable) or click.prompt(f"New {name}", hide_input=True, confirmation_prompt=True)
+
+
+def _problems(new: dict[str, str]) -> list[str]:
+    problems = [f"{name} {problem}" for name, value in new.items() if (problem := database_password_problem(value))]
+    weak = [name for name, value in new.items() if is_weak_secret(value)]
+    if weak:
+        problems.append(f"{', '.join(weak)} {WEAK_SECRET_RULE} (openssl rand -hex 32)")
+    if len(set(new.values())) < len(new):
+        problems.append("the two logins need different passwords")
+    return problems
+
+
+@command("rotate-database-passwords", help="Set new passwords for the owner and application logins")
+def rotate_database_passwords() -> None:
+    """Connect with the current POSTGRES_PASSWORD and set both new passwords.
+
+    The new values are read from NEW_POSTGRES_PASSWORD and NEW_POSTGRES_APP_PASSWORD, or asked
+    for without echo. They follow the rule of deployed secrets in every environment (the
+    command exists to replace weak ones) and the rule of database passwords. It prints no
+    password.
+    """
+    if settings.POSTGRES_USER == settings.POSTGRES_APP_USER:
+        error("Not changed: POSTGRES_USER and POSTGRES_APP_USER name the same login.")
+        raise SystemExit(1)
+    new = {name: _new_password(name) for name in NEW_PASSWORD_VARIABLES}
+    if problems := _problems(new):
+        error(f"Not changed: {'; '.join(problems)}")
+        raise SystemExit(1)
+    roles = {settings.POSTGRES_USER: new["POSTGRES_PASSWORD"], settings.POSTGRES_APP_USER: new["POSTGRES_APP_PASSWORD"]}
+    try:
+        changed = asyncio.run(rotate_passwords(_owner_dsn(), roles))
+    except (OSError, asyncpg.PostgresError, ValueError) as failure:
+        error(f"Not changed: {type(failure).__name__}: {failure}")
+        raise SystemExit(1) from None
+    success(f"New passwords set for {', '.join(changed)}.")
+    info("Now write them to POSTGRES_PASSWORD and POSTGRES_APP_PASSWORD in backend/.env and restart the stack.")
+{%- endif %}

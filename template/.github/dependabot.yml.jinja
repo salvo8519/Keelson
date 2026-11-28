@@ -1,7 +1,8 @@
 # Keelstone: version updates for every pinned dependency of the project. Actions are pinned to
 # commit SHAs and Python and frontend packages to uv.lock and bun.lock; Dependabot proposes the
 # updates as pull requests, which run the full pipeline. Base images are pinned by tag: pin
-# them by digest (`image:tag@sha256:...`) once, and Dependabot keeps tag and digest current.
+# them by digest (`image:tag@sha256:...`) once, as CONTRIBUTING.md, Container images, describes,
+# and Dependabot keeps tag and digest current (it never adds a missing digest).
 # A cooldown leaves a new release a few days before it is proposed.
 version: 2
 updates:

@@ -96,6 +96,8 @@
   "Please confirm your password": "Conferma la password",
   "Recover Password": "Recupera password",
   "Registration received. If the address is new, you can sign in now; otherwise check your e-mail.": "Registrazione ricevuta. Se l'indirizzo è nuovo puoi accedere subito; altrimenti controlla la tua e-mail.",
+  "Remember your password?": "Ricordi la password?",
+  "Required to change the email address.": "Necessaria per cambiare l'indirizzo email.",
   "Reset Password": "Reimposta password",
   "Revoke": "Revoca",
   "Revoked": "Revocata",
@@ -145,5 +147,13 @@
   "or": "oppure",
   "Welcome back.": "Bentornato.",
   "Hello, {{name}}": "Ciao, {{name}}",
-  "Version {{version}}": "Versione {{version}}"
+  "Version {{version}}": "Versione {{version}}",
+  "Check the new address for a confirmation link": "Controlla il nuovo indirizzo: ti abbiamo inviato un link di conferma",
+  "Confirm email address": "Conferma l'indirizzo email",
+  "Email address confirmed": "Indirizzo email confermato",
+  "Your account now uses this email address.": "Il tuo account ora usa questo indirizzo email.",
+  "Confirm to make this the email address of your account.": "Conferma per rendere questo l'indirizzo email del tuo account.",
+  "Your account signs in through single sign-on: if you signed in more than 5 minutes ago, sign out and sign in again before changing the email address.": "Il tuo account accede tramite single sign-on: se hai effettuato l'accesso più di 5 minuti fa, esci e accedi di nuovo prima di cambiare l'indirizzo email.",
+  "Required to delete the account.": "Necessaria per eliminare l'account.",
+  "Your account signs in through single sign-on: if you signed in more than 5 minutes ago, sign out and sign in again before deleting the account.": "Il tuo account accede tramite single sign-on: se hai effettuato l'accesso più di 5 minuti fa, esci e accedi di nuovo prima di eliminare l'account."
 }

@@ -8,6 +8,7 @@ httpx mock transport that keeps the state of one node.
 import hashlib
 import json
 import os
+import secrets
 import time
 import uuid
 from pathlib import Path
@@ -15,9 +16,11 @@ from pathlib import Path
 import boto3
 import httpx
 import pytest
+from click.testing import CliRunner
 from moto import mock_aws
 
-from app.commands.storage import GarageError, bootstrap_garage
+from app.commands import storage as storage_commands
+from app.commands.storage import GarageError, bootstrap_garage, garage_bootstrap
 from app.core.config import settings
 from app.services import file_storage
 from app.services.file_storage import (
@@ -212,4 +215,89 @@ async def test_garage_bootstrap_refuses_keys_garage_cannot_import() -> None:
     async with httpx.AsyncClient(transport=httpx.MockTransport(FakeGarage().handle), base_url="http://g") as client:
         with pytest.raises(GarageError):
             await bootstrap_garage(client, bucket="acme", access_key="minioadmin", secret_key="x")
+
+
+# The values of garage/development.env, published with the project.
+DEVELOPMENT_GARAGE_ENV = Path(__file__).resolve().parents[2] / "garage" / "development.env"
+
+
+def _published(name: str) -> str:
+    lines = DEVELOPMENT_GARAGE_ENV.read_text(encoding="utf-8").splitlines()
+    return next(line.partition("=")[2].strip() for line in lines if line.startswith(f"{name}="))
+
+
+@pytest.fixture
+def garage_reached(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """The administration API, replaced: records that the bootstrap got past its checks."""
+    reached: list[str] = []
+
+    async def wait(client: httpx.AsyncClient, timeout: float) -> None:
+        reached.append("garage")
+
+    async def bootstrap(client: httpx.AsyncClient, **kwargs: object) -> list[str]:
+        return []
+
+    monkeypatch.setattr(storage_commands, "_wait_for_garage", wait)
+    monkeypatch.setattr(storage_commands, "bootstrap_garage", bootstrap)
+    return reached
+
+
+def _bootstrap(env: dict[str, str]) -> tuple[int, str]:
+    result = CliRunner().invoke(garage_bootstrap, [], env=env)
+    return result.exit_code, result.output
+
+
+@pytest.mark.parametrize("environment", ["staging", "production"])
+def test_deployed_garage_bootstrap_refuses_the_published_development_secrets(
+    environment: str, monkeypatch: pytest.MonkeyPatch, garage_reached: list[str]
+) -> None:
+    """An operator who copies garage/development.env to production gets no stack."""
+    monkeypatch.setattr(settings, "ENVIRONMENT", environment)
+    code, output = _bootstrap(
+        {"GARAGE_ADMIN_TOKEN": _published("GARAGE_ADMIN_TOKEN"), "GARAGE_RPC_SECRET": _published("GARAGE_RPC_SECRET")}
+    )
+    assert code == 1
+    assert "GARAGE_ADMIN_TOKEN, GARAGE_RPC_SECRET must be set to real secrets" in output
+    assert garage_reached == [], "refused before Garage is called"
+
+
+@pytest.mark.parametrize("weak", ["GARAGE_ADMIN_TOKEN", "GARAGE_RPC_SECRET"])
+def test_deployed_garage_bootstrap_refuses_each_weak_secret(
+    weak: str, monkeypatch: pytest.MonkeyPatch, garage_reached: list[str]
+) -> None:
+    monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+    env = {"GARAGE_ADMIN_TOKEN": secrets.token_hex(32), "GARAGE_RPC_SECRET": secrets.token_hex(32), weak: "0" * 64}
+    code, output = _bootstrap(env)
+    assert code == 1
+    assert f"{weak} must be set to real secrets" in output
+    assert garage_reached == []
+
+
+def test_deployed_garage_bootstrap_refuses_an_empty_admin_token(
+    monkeypatch: pytest.MonkeyPatch, garage_reached: list[str]
+) -> None:
+    monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+    code, output = _bootstrap({"GARAGE_ADMIN_TOKEN": " ", "GARAGE_RPC_SECRET": secrets.token_hex(32)})
+    assert code == 1
+    assert "GARAGE_ADMIN_TOKEN must be set to real secrets" in output
+
+
+def test_deployed_garage_bootstrap_runs_with_real_secrets(
+    monkeypatch: pytest.MonkeyPatch, garage_reached: list[str]
+) -> None:
+    monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+    code, output = _bootstrap({"GARAGE_ADMIN_TOKEN": secrets.token_hex(32), "GARAGE_RPC_SECRET": secrets.token_hex(32)})
+    assert code == 0, output
+    assert garage_reached == ["garage"]
+
+
+def test_development_garage_bootstrap_accepts_the_published_secrets(
+    monkeypatch: pytest.MonkeyPatch, garage_reached: list[str]
+) -> None:
+    monkeypatch.setattr(settings, "ENVIRONMENT", "local")
+    code, output = _bootstrap(
+        {"GARAGE_ADMIN_TOKEN": _published("GARAGE_ADMIN_TOKEN"), "GARAGE_RPC_SECRET": _published("GARAGE_RPC_SECRET")}
+    )
+    assert code == 0, output
+    assert garage_reached == ["garage"]
 {%- endif %}

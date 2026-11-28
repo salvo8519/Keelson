@@ -32,8 +32,11 @@ def upgrade() -> None:
     op.execute("SET LOCAL check_function_bodies = off")
     for statement in segregation_statements(_tables()):
         op.execute(statement)
+    # Straight to the driver: the SCRAM verifier of the password holds ":", which op.execute
+    # (text()) would read as bind parameters. Offline mode (--sql) cannot emit it.
+    connection = op.get_bind()
     for statement in login_statements(settings.POSTGRES_APP_USER, settings.POSTGRES_APP_PASSWORD):
-        op.execute(statement)
+        connection.exec_driver_sql(statement)
 
 
 def downgrade() -> None:

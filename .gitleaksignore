@@ -1,0 +1,9 @@
+# Findings of the Keelstone history that are not secrets, one fingerprint each
+# (commit:file:rule:line), so that any other finding still fails the scan.
+# Do not quote the flagged text in these comments: the scan reads this file too.
+#
+# A comment in the log redaction module lists the field names treated as secrets;
+# the generic rule reads one of those names as a value.
+677f975d8c3ec129c7901387bf8c37468165865d:template/backend/app/core/logging.py:generic-api-key:211
+# The first version of this file quoted those names in its comment.
+66c718061f5fff9ba66489c3063bf0256fd213e3:.gitleaksignore:generic-api-key:5

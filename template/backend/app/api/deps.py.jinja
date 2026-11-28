@@ -17,7 +17,7 @@ from fastapi import Depends
 from fastapi import Header
 {%- endif %}
 {%- if use_jwt %}
-from fastapi import WebSocket, Cookie, WebSocketException
+from fastapi import BackgroundTasks, WebSocket, Cookie, WebSocketException
 from fastapi.security import OAuth2PasswordBearer
 {%- endif %}
 {%- if use_jwt or use_api_key %}
@@ -75,9 +75,13 @@ from app.services.conversation_share import ConversationShareService
 {%- if use_jwt %}
 
 
-def get_user_service(db: DBSession) -> UserService:
-    """Create UserService instance with database session."""
-    return UserService(db)
+def get_user_service(db: DBSession, background: BackgroundTasks) -> UserService:
+    """Create UserService instance with database session.
+
+    Keelstone: account e-mails are sent as background tasks, after the request's transaction
+    committed and the response was sent (``UserService._mail``).
+    """
+    return UserService(db, background)
 
 {%- if enable_session_management %}
 
@@ -105,9 +109,9 @@ async def get_system_db_session(request: Request) -> AsyncGenerator[AsyncSession
 SystemDBSession = Annotated[AsyncSession, Depends(get_system_db_session, scope="function")]
 
 
-def get_auth_user_service(db: SystemDBSession) -> UserService:
+def get_auth_user_service(db: SystemDBSession, background: BackgroundTasks) -> UserService:
     """Users looked up by e-mail or token, before authentication."""
-    return UserService(db)
+    return UserService(db, background)
 
 
 AuthUserSvc = Annotated[UserService, Depends(get_auth_user_service)]
@@ -278,7 +282,7 @@ BillingSvc = Annotated[BillingService, Depends(get_billing_service)]
 {%- if use_jwt %}
 from app.core.exceptions import AuthenticationError, AuthorizationError, NotFoundError
 from app.core.logging import acting_admin_var
-from app.core.security import ACCESS, read_session_token
+from app.core.security import ACCESS, SessionClaims, read_session_token
 from app.db.models.user import User, UserRole
 from app.core.session_cookies import ACCESS_COOKIE, require_trusted_origin, trusted_origin
 
@@ -322,6 +326,11 @@ async def get_current_user(
     )
     if not user.is_active:
         raise AuthenticationError(message="User account is disabled")
+    # Keelstone: this mode sets no ``request.state.session_claims``, so no request carries a
+    # sign-in time. ``UserService.confirm_identity`` would then refuse every account without a
+    # password (all of them here) with recent_sign_in_required: an address change or a deletion
+    # would be impossible. Before activating this mode, read the IdP token's ``auth_time`` into
+    # the session claims, or let the IdP re-authenticate the user (``max_age``) for these routes.
 
     return user
 {%- else %}
@@ -350,6 +359,8 @@ async def get_current_user(
     claims = read_session_token(token, ACCESS)
     if claims is None:
         raise AuthenticationError(message="Invalid or expired token")
+    # Keelstone: the claims of the request, for routes that ask for a recent sign-in.
+    request.state.session_claims = claims
 {%- if enable_teams and use_postgresql %}
     # Keelstone: the verified subject becomes the principal of the request before any query, so
     # the database applies its policies as this user (app/db/tenancy.py).
@@ -366,6 +377,9 @@ async def get_current_user(
     if not claims.is_current_for(user):
         raise AuthenticationError(message="Invalid or expired token")
     if claims.actor_id:
+        # Keelstone: an impersonation lasts as long as its administrator's rights and sessions.
+        if not await actor_still_current(claims):
+            raise AuthenticationError(message="Invalid or expired token")
         acting_admin_var.set(claims.actor_id)
         request.state.acting_admin_id = claims.actor_id
 
@@ -728,7 +742,11 @@ async def get_current_user_ws(
         if not claims.is_current_for(user):
             raise WebSocketException(code=4001, reason="Invalid or expired token")
         if claims.actor_id:
+            if not await actor_still_current(claims):
+                raise WebSocketException(code=4001, reason="Invalid or expired token")
             acting_admin_var.set(claims.actor_id)
+        # Keelstone: the route checks the session again before every turn (session_still_current).
+        websocket.state.session_claims = claims
 
         # Eagerly load all columns, then detach from session to avoid
         # "instance not bound to a Session" errors after the context manager exits
@@ -742,11 +760,15 @@ CurrentUserWS = Annotated[User, Depends(get_current_user_ws)]
 {%- if not use_delegated_auth %}
 
 
-async def session_still_current(user: User, version: int) -> bool:
+async def session_still_current(
+    user: User, version: int, claims: SessionClaims | None = None
+) -> bool:
     """Keelstone: whether the session a WebSocket was opened with is still the user's.
 
     A connection outlives its handshake: a password change, a deactivation or "sign out
-    everywhere" must also stop the turns of chats already open.
+    everywhere" must also stop the turns of chats already open. ``claims`` are those of the
+    handshake: when they name an administrator (an impersonation), the administrator must
+    still be current too (``actor_still_current``).
     """
     from app.repositories import user_repo
 
@@ -754,7 +776,34 @@ async def session_still_current(user: User, version: int) -> bool:
     # not depend on the connection's principal reaching this task.
     async with system_session("websocket: session still current") as db:
         current = await user_repo.get_by_id(db, user.id)
-    return current is not None and bool(current.is_active) and current.token_epoch == version
+    if current is None or not current.is_active or current.token_epoch != version:
+        return False
+    return claims is None or not claims.actor_id or await actor_still_current(claims)
+
+
+async def actor_still_current(claims: SessionClaims) -> bool:
+    """Keelstone: whether the administrator named by an impersonation token may still act.
+
+    The administrator must exist, be active, still be a platform administrator (the admin role
+    and the is_app_admin flag, ``User.has_role``) and be in the session version the token was
+    issued in: a demotion, a deactivation or a sign-out from every device ends the
+    impersonations they started.
+    """
+    from app.repositories import user_repo
+
+    try:
+        actor_id = UUID(str(claims.actor_id))
+    except ValueError:
+        return False
+    # The administrator need not share an organization with the user: a declared system read.
+    async with system_session("impersonation: administrator still current") as db:
+        actor = await user_repo.get_by_id(db, actor_id)
+    return (
+        actor is not None
+        and bool(actor.is_active)
+        and actor.has_role(UserRole.ADMIN)
+        and actor.token_epoch == claims.actor_version
+    )
 {%- endif %}
 {%- endif %}
 
@@ -1094,8 +1143,10 @@ AdminSvc = Annotated[AdminService, Depends(get_admin_service)]
 {%- if enable_teams and use_postgresql and use_jwt %}
 
 
-def get_admin_user_service(db: AdminDBSession) -> UserService:
-    return UserService(db)
+def get_admin_user_service(db: AdminDBSession, background: BackgroundTasks) -> UserService:
+    # Keelstone: with the background tasks, the welcome e-mail of an account an administrator
+    # creates leaves after the commit, like every other account e-mail.
+    return UserService(db, background)
 
 
 AdminUserSvc = Annotated[UserService, Depends(get_admin_user_service)]

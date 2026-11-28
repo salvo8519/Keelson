@@ -70,6 +70,13 @@ Docker daemon: on a shared host, use a secret manager or Docker secrets for the 
 settings as well.
 {% endif %}
 
+### Proxies, gateways and request bodies
+
+`DELETE /api/v1/users/me` carries the current password in its body. Some proxies, gateways and
+web application firewalls drop the body of a `DELETE` request. The route then receives no
+password and refuses the deletion (`400`): it fails closed, but users cannot delete their
+accounts. Check that every intermediary in front of the API forwards `DELETE` bodies.
+
 ### Render
 
 1. Create Web Service → docker, point at `backend/Dockerfile`.

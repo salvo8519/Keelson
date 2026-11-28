@@ -2,6 +2,9 @@
 {% if use_database or enable_redis -%}
 # ruff: noqa: I001 - Imports structured for Jinja2 template conditionals
 {% endif %}
+import re
+from collections import Counter
+from itertools import pairwise
 from pathlib import Path
 from typing import Annotated, Literal
 from urllib.parse import quote
@@ -47,9 +50,11 @@ class McpServerConfig(BaseModel):
 
 
 # Keelstone: secrets that must be real wherever the application is deployed, one rule for all
-# of them. A value is refused when it is empty, a stand-in from this file, .env.example or the
-# Kubernetes secret ("change-me...", "CHANGE_ME_IN_PRODUCTION", "...xxx") or a well-known
-# password. Settings absent from a project, and optional ones left unset (None), are skipped.
+# of them (is_weak_secret). A value is refused when it is empty, a stand-in from this file,
+# .env.example or the Kubernetes secret ("change-me...", "CHANGE_ME_IN_PRODUCTION", "..._xxx"),
+# a well-known password, shorter or less varied than the minimum below, or made mostly of
+# well-known words, published values, the project name, runs or repetitions. Settings absent
+# from a project, and optional ones left unset (None), are skipped.
 DEPLOYED_ENVIRONMENTS = frozenset({"staging", "production"})
 SECRETS_WHEN_DEPLOYED = (
     "SECRET_KEY",
@@ -68,11 +73,140 @@ SECRETS_WHEN_DEPLOYED = (
 # held by a browser or a program until it expires; refresh tokens carry the long sessions.
 MAX_DEPLOYED_ACCESS_TOKEN_MINUTES = 60
 # Credentials that may be left empty (S3 from the instance role, for example) but, when set,
-# must not be a stand-in: the Kubernetes secret ships them as "CHANGE_ME".
-OPTIONAL_SECRETS_WHEN_DEPLOYED = ("S3_ACCESS_KEY", "S3_SECRET_KEY")
+# must be real: the Kubernetes secret ships the S3 keys as "CHANGE_ME", garage/development.env
+# publishes development keys, .env.example ships the Stripe keys as "..._xxx", and the shared
+# secret of delegated sign-in, the Slack signing secret and the Stripe webhook secret verify
+# what other systems send. Settings of features a project lacks are skipped.
+OPTIONAL_SECRETS_WHEN_DEPLOYED = (
+    "S3_ACCESS_KEY",
+    "S3_SECRET_KEY",
+    "S3_RAG_ACCESS_KEY",
+    "S3_RAG_SECRET_KEY",
+    "IDP_SHARED_SECRET",
+    "QDRANT_API_KEY",
+    "SLACK_SIGNING_SECRET",
+    "STRIPE_SECRET_KEY",
+    "STRIPE_WEBHOOK_SECRET",
+    "RESEND_API_KEY",
+)
+# Settings named like secrets that the rule does not check, each with the reason;
+# tests/test_production_settings.py fails on a secret-named setting that is in none of the two
+# lists above, not here and not DATA_ENCRYPTION_KEYS (checked entry by entry).
+SECRETS_NOT_CHECKED_WHEN_DEPLOYED = {
+    # Issued by a provider, which refuses a wrong one; no stand-in is published for them.
+    "SENTRY_DSN": "issued by the provider",
+    "ANTHROPIC_API_KEY": "issued by the provider",
+    "COHERE_API_KEY": "issued by the provider",
+    "GOOGLE_API_KEY": "issued by the provider",
+    "GOOGLE_CLIENT_SECRET": "issued by the provider",
+    "HF_TOKEN": "issued by the provider",
+    "LANGCHAIN_API_KEY": "issued by the provider",
+    "LLAMAPARSE_API_KEY": "issued by the provider",
+    "LOGFIRE_TOKEN": "issued by the provider",
+    "OPENAI_API_KEY": "issued by the provider",
+    "OPENAI_COMPATIBLE_API_KEY": "issued by the provider",
+    "OPENROUTER_API_KEY": "issued by the provider",
+    "PREFECT_API_KEY": "issued by the provider",
+    "SLACK_APP_TOKEN": "issued by the provider",
+    "SLACK_BOT_TOKEN": "issued by the provider",
+    "TAVILY_API_KEY": "issued by the provider",
+    "VOYAGE_API_KEY": "issued by the provider",
+    # The mail server sets its password; the application only presents it.
+    "SMTP_PASSWORD": "set by the mail server",
+    # Public by design: Stripe publishes it in the browser.
+    "STRIPE_PUBLISHABLE_KEY": "public by design",
+    # The Milvus axis is not reachable; its default becomes optional when it is (follow-up issue).
+    "MILVUS_TOKEN": "axis not reachable",
+}
 # Compared after _normalise_secret, so "CHANGE_ME", "change_this" and "Change-Me" all match.
-_PLACEHOLDER_MARKERS = ("changeme", "changethis", "xxx")
+_PLACEHOLDER_MARKERS = ("changeme", "changethis")
+# "xxx" only as the whole value or its tail after a separator ("sk_test_xxx", "whsec_xxx"):
+# inside a random key, three x in a row occur in about one key in three hundred.
+_PLACEHOLDER_TAIL = re.compile(r"(?:^|[_.-])x{3,}$", re.IGNORECASE)
 _WELL_KNOWN_SECRETS = frozenset({"postgres", "password", "admin", "secret", "redis", "root"})
+# The least a deployed secret may be. Every generator of the project reaches it: openssl rand
+# -hex 32 (64 hexadecimal digits), make prod-local (48 or more), and so do the secrets issued by
+# providers (an AWS secret access key has 40 characters, a Stripe key more than 100).
+MIN_DEPLOYED_SECRET_LENGTH = 32
+MIN_DEPLOYED_SECRET_DISTINCT_CHARACTERS = 8
+# Access key ids name a key rather than prove it, and their format is fixed by the service: GK
+# and 24 hexadecimal digits for Garage, 20 characters for AWS. They follow the same rule with
+# this shorter minimum.
+DEPLOYED_KEY_IDS = frozenset({"S3_ACCESS_KEY", "S3_RAG_ACCESS_KEY"})
+MIN_DEPLOYED_KEY_ID_LENGTH = 16
+# Keys that sign tokens or encrypt stored secrets need more, in every environment.
+MIN_SIGNING_KEY_LENGTH = 32
+# The values of garage/development.env, published with the project. The backend image does not
+# contain the file: tests/test_production_settings.py keeps this copy equal to it.
+PUBLISHED_DEVELOPMENT_SECRETS = frozenset(
+    {
+        "0000000000000000000000000000000000000000000000000000000000000000",
+        "GK000000000000000000000000",
+        "development-only",
+    }
+)
+# Words a person types instead of a secret ("password12345678", "P@ssw0rd123456789",
+# "development-only-2"). A value is weak when these words, the published values and the project
+# name cover at least MIN_WORD_SHARE of it, after _normalise_secret and with common letter
+# substitutions undone ("0" for "o", "@" for "a"...). A word occurring by chance in a random key
+# ("whsec_" followed by "ret" spells "secret") covers a small share of it, so vendor keys and
+# generated values are not refused.
+WELL_KNOWN_SECRET_WORDS = (
+    "password",
+    "passwd",
+    "secret",
+    "admin",
+    "changeme",
+    "changeit",
+    "letmein",
+    "welcome",
+    "qwerty",
+    "default",
+    "example",
+    "sample",
+    "dummy",
+    "test",
+    "demo",
+    "development",
+    "production",
+    "staging",
+    "postgres",
+    "valkey",
+    "garage",
+    # Phrases of stand-ins ("your-api-key-goes-here", "replace_me_with_a_real_key").
+    "your",
+    "goes",
+    "here",
+    "replace",
+    "change",
+    "please",
+    "insecure",
+    "real",
+    "fake",
+    "placeholder",
+)
+MIN_WORD_SHARE = 0.3
+# The project's own name, which people put in a secret ("acme_service_secret_key"); only when
+# it is long enough not to occur in a random value by chance.
+MIN_PROJECT_SECRET_WORD_LENGTH = 6
+# Common substitutions of letters, undone before the words are looked for; "1" is read both as
+# "l" and as "i".
+_LEET = str.maketrans({"@": "a", "$": "s", "0": "o", "3": "e", "4": "a", "5": "s", "7": "t"})
+# A value made mostly of runs ("0123456789abcdef", "abcdefghabcdefgh") or of keyboard
+# neighbours ("qwertyuiopasdfgh", "1q2w3e4r5t6y7u8i9o"): weak when at least this share of
+# neighbouring characters are next to each other in the alphabet, among the digits or on the
+# keyboard (same row, or the keys touching on the row below). A random value of 16 characters
+# reaches it about once in a million draws, of 32 or more practically never.
+_KEYBOARD_ROWS = ("1234567890", "qwertyuiop", "asdfghjkl", "zxcvbnm")
+_MAX_SEQUENTIAL_SHARE = 0.75
+# A value made mostly of one repeated piece ("dummydummy123456", "changeit-changeit"): weak when
+# copies of a piece of 3 characters or more cover this share of it. Checked on values up to
+# _MAX_REPEAT_SCAN characters: longer ones are not typed, and the scan grows with the square.
+_MIN_REPEATED_SHARE = 0.6
+_MAX_REPEAT_SCAN = 40
+# A value made mostly of doubled characters ("zzyyxxwwvvuu1122"): weak when at least this share
+# of neighbouring characters are equal. A random value of 32 characters has about one in twenty.
+_MIN_DOUBLED_SHARE = 0.4
 
 
 def _normalise_secret(value: str) -> str:
@@ -87,7 +221,130 @@ def is_placeholder_secret(value: str) -> bool:
         not normalised
         or normalised in _WELL_KNOWN_SECRETS
         or any(marker in normalised for marker in _PLACEHOLDER_MARKERS)
+        or _PLACEHOLDER_TAIL.search(value.strip()) is not None
     )
+
+
+PROJECT_SECRET_WORD = _normalise_secret("{{ project_slug }}")
+# Compared like the stand-ins, so "Development_Only" is the published "development-only".
+_PUBLISHED_NORMALISED = frozenset(_normalise_secret(value) for value in PUBLISHED_DEVELOPMENT_SECRETS)
+_REFUSED_WORDS = (
+    *WELL_KNOWN_SECRET_WORDS,
+    *_PUBLISHED_NORMALISED,
+    *((PROJECT_SECRET_WORD,) if len(PROJECT_SECRET_WORD) >= MIN_PROJECT_SECRET_WORD_LENGTH else ()),
+)
+# Keys side by side on a row, and a key with the two keys above it ("q" touches "1" and "2").
+_NEIGHBOURS = frozenset(
+    pair
+    for touching in (
+        *(pairwise(row) for row in _KEYBOARD_ROWS),
+        *(
+            ((key, upper[index]), *(((key, upper[index + 1]),) if index + 1 < len(upper) else ()))
+            for upper, lower in pairwise(_KEYBOARD_ROWS)
+            for index, key in enumerate(lower)
+        ),
+    )
+    for first, second in touching
+    for pair in ((first, second), (second, first))
+)
+
+
+def _is_sequential(first: str, second: str) -> bool:
+    return abs(ord(first) - ord(second)) == 1 or (first, second) in _NEIGHBOURS
+
+
+def _mostly_runs(normalised: str) -> bool:
+    pairs = list(pairwise(normalised))
+    sequential = sum(1 for first, second in pairs if _is_sequential(first, second))
+    return bool(pairs) and sequential >= _MAX_SEQUENTIAL_SHARE * len(pairs)
+
+
+def _readings(value: str) -> tuple[str, ...]:
+    """The value as compared with the words: normalised, and with substitutions undone."""
+    undone = value.lower().translate(_LEET)
+    return (
+        _normalise_secret(value),
+        *(_normalise_secret(undone.replace("1", letter)) for letter in ("l", "i")),
+    )
+
+
+def _word_share(reading: str) -> float:
+    """The share of the reading covered by refused words, every occurrence counted once."""
+    covered: set[int] = set()
+    for word in _REFUSED_WORDS:
+        start = reading.find(word)
+        while start != -1:
+            covered.update(range(start, start + len(word)))
+            start = reading.find(word, start + 1)
+    return len(covered) / len(reading) if reading else 0.0
+
+
+def _mostly_repeated(normalised: str) -> bool:
+    size_of_value = len(normalised)
+    if size_of_value > _MAX_REPEAT_SCAN:
+        return False
+    for size in range(3, size_of_value // 2 + 1):
+        pieces = Counter(normalised[start : start + size] for start in range(size_of_value - size + 1))
+        for piece, overlapping in pieces.most_common():
+            if overlapping * size < _MIN_REPEATED_SHARE * size_of_value:
+                break
+            if normalised.count(piece) * size >= _MIN_REPEATED_SHARE * size_of_value:
+                return True
+    return False
+
+
+def _mostly_doubled(normalised: str) -> bool:
+    pairs = list(pairwise(normalised))
+    return bool(pairs) and sum(first == second for first, second in pairs) >= _MIN_DOUBLED_SHARE * len(pairs)
+
+
+def is_weak_secret(value: str, *, min_length: int = MIN_DEPLOYED_SECRET_LENGTH) -> bool:
+    """True for a value a deployed environment must not use as a secret.
+
+    A floor against stand-ins and typed values, not a measure of randomness: a value that passes
+    may still be guessable. Generate secrets with ``openssl rand -hex 32``.
+    """
+    value = value.strip()
+    normalised = _normalise_secret(value)
+    return (
+        is_placeholder_secret(value)
+        or len(value) < min_length
+        or len(set(value)) < MIN_DEPLOYED_SECRET_DISTINCT_CHARACTERS
+        or any(_word_share(reading) >= MIN_WORD_SHARE for reading in _readings(value))
+        or _mostly_runs(normalised)
+        or _mostly_repeated(normalised)
+        or _mostly_doubled(normalised)
+    )
+
+
+def _min_length(name: str) -> int:
+    return MIN_DEPLOYED_KEY_ID_LENGTH if name in DEPLOYED_KEY_IDS else MIN_DEPLOYED_SECRET_LENGTH
+
+
+# Keelstone: the database passwords reach PostgreSQL through two drivers, asyncpg (the
+# application) and libpq (Alembic, psql), which prepare non-ASCII passwords (SASLprep)
+# differently: with one of those, one driver cannot sign in. Printable ASCII is prepared the
+# same way by both, and every generator of the project produces it.
+DATABASE_PASSWORDS = ("POSTGRES_PASSWORD", "POSTGRES_APP_PASSWORD")
+_PRINTABLE_ASCII = re.compile(r"[\x20-\x7e]*")
+
+
+def database_password_problem(value: str) -> str | None:
+    """Why a database password cannot be used, or None (also cmd rotate-database-passwords)."""
+    if not _PRINTABLE_ASCII.fullmatch(value):
+        return "must be printable ASCII (asyncpg and libpq prepare other characters differently)"
+    if value != value.strip():
+        return "must not begin or end with a space"
+    return None
+
+
+# The text of the refusal, after the names of the refused settings.
+WEAK_SECRET_RULE = (
+    f"must be set to real secrets: at least {MIN_DEPLOYED_SECRET_LENGTH} characters, "
+    f"{MIN_DEPLOYED_SECRET_DISTINCT_CHARACTERS} of them different ({MIN_DEPLOYED_KEY_ID_LENGTH} for an "
+    "access key id), no stand-in, and not made mostly of well-known words, published development "
+    "values, the project name, runs of neighbouring characters, repetitions or doubled characters"
+)
 
 
 def find_env_file() -> Path | None:
@@ -211,16 +468,16 @@ class Settings(BaseSettings):
         env = info.data.get("ENVIRONMENT", "local") if info.data else "local"
         if env in DEPLOYED_ENVIRONMENTS and not v:
             raise ValueError(f"DATA_ENCRYPTION_KEYS must be set in {env}: openssl rand -hex 32")
-        if any(len(key) < 32 for key in v):
-            raise ValueError("each DATA_ENCRYPTION_KEYS entry must be at least 32 characters")
+        if any(len(key) < MIN_SIGNING_KEY_LENGTH for key in v):
+            raise ValueError(f"each DATA_ENCRYPTION_KEYS entry must be at least {MIN_SIGNING_KEY_LENGTH} characters")
         return v
 
     @field_validator("SECRET_KEY")
     @classmethod
     def validate_secret_key(cls, v: str) -> str:
         """Validate SECRET_KEY is secure in production."""
-        if len(v) < 32:
-            raise ValueError("SECRET_KEY must be at least 32 characters long")
+        if len(v) < MIN_SIGNING_KEY_LENGTH:
+            raise ValueError(f"SECRET_KEY must be at least {MIN_SIGNING_KEY_LENGTH} characters long")
         return v
 {%- endif %}
 
@@ -844,27 +1101,39 @@ class Settings(BaseSettings):
 {%- endif %}
 
     @model_validator(mode="after")
+    def check_database_logins(self) -> "Settings":
+        """Keelstone: passwords both drivers can use, and two distinct logins."""
+        for name in DATABASE_PASSWORDS:
+            value = getattr(self, name, None)
+            if isinstance(value, str) and (problem := database_password_problem(value)):
+                raise ValueError(f"{name} {problem}")
+        app_user = getattr(self, "POSTGRES_APP_USER", None)
+        if app_user is not None and app_user == self.POSTGRES_USER:
+            raise ValueError(
+                "POSTGRES_APP_USER must differ from POSTGRES_USER: the application login must not "
+                "own the tables, or row level security does not apply to it"
+            )
+        return self
+
+    @model_validator(mode="after")
     def refuse_development_settings(self) -> "Settings":
         """Keelstone: a deployed environment starts only with real secrets and without debug."""
         if self.ENVIRONMENT not in DEPLOYED_ENVIRONMENTS:
             return self
-        placeholders = [
+        weak = [
             name
             for name in SECRETS_WHEN_DEPLOYED
-            if isinstance(value := getattr(self, name, None), str) and is_placeholder_secret(value)
+            if isinstance(value := getattr(self, name, None), str) and is_weak_secret(value)
         ]
-        placeholders += [
+        weak += [
             name
             for name in OPTIONAL_SECRETS_WHEN_DEPLOYED
-            if (value := getattr(self, name, None)) and is_placeholder_secret(value)
+            if (value := getattr(self, name, None)) and is_weak_secret(value, min_length=_min_length(name))
         ]
-        if any(is_placeholder_secret(key) for key in getattr(self, "DATA_ENCRYPTION_KEYS", [])):
-            placeholders.append("DATA_ENCRYPTION_KEYS")
-        if placeholders:
-            raise ValueError(
-                f"{', '.join(placeholders)} must be set to real secrets in {self.ENVIRONMENT}: "
-                "openssl rand -hex 32"
-            )
+        if any(is_weak_secret(key) for key in getattr(self, "DATA_ENCRYPTION_KEYS", [])):
+            weak.append("DATA_ENCRYPTION_KEYS")
+        if weak:
+            raise ValueError(f"{', '.join(weak)} {WEAK_SECRET_RULE} in {self.ENVIRONMENT} (openssl rand -hex 32)")
         if self.DEBUG:
             raise ValueError(f"DEBUG must be false in {self.ENVIRONMENT}")
         lifetime = getattr(self, "ACCESS_TOKEN_EXPIRE_MINUTES", None)

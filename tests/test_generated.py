@@ -83,6 +83,43 @@ def test_kubernetes_secret_stand_ins_do_not_start_in_production(render: Render) 
     assert outcome["started"] == [], outcome
 
 
+# Run in the generated backend: the secrets written by `make prod-local` start production.
+_PROD_LOCAL_PROBE = """
+import json, sys
+from app.core.config import Settings
+
+generated = json.load(sys.stdin)
+values = {name: value for name, value in generated.items() if name in Settings.model_fields}
+values["DATA_ENCRYPTION_KEYS"] = values["DATA_ENCRYPTION_KEYS"].split(",")
+Settings(_env_file=None, ENVIRONMENT="production", CORS_ORIGINS=["https://a.example"], **values)
+print(json.dumps(sorted(values)))
+"""
+
+
+def test_prod_local_secrets_start_in_production(render: Render) -> None:
+    """Every secret `make prod-local` generates passes the deployed-secret rule (Keelstone)."""
+    project = render({"project_name": "acme_service"})
+    backend = project / "backend"
+    _run(["make", "-s", ".env.prod-local"], project)
+    generated = dict(
+        line.split("=", 1)
+        for line in (project / ".env.prod-local").read_text(encoding="utf-8").splitlines()
+        if "=" in line and not line.startswith("#")
+    )
+    _run(["uv", "sync", "--quiet"], backend)
+    result = subprocess.run(
+        ["uv", "run", "python", "-c", _PROD_LOCAL_PROBE],
+        cwd=backend,
+        input=json.dumps(generated),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr[-3000:]
+    checked = set(json.loads(result.stdout.strip().splitlines()[-1]))
+    assert {"SECRET_KEY", "POSTGRES_PASSWORD", "S3_ACCESS_KEY", "S3_SECRET_KEY"} <= checked
+
+
 def test_default_project_frontend_passes_its_checks(render: Render) -> None:
     """The official React frontend: Biome, translations, tsc and Vite against the Keelstone API."""
     frontend = render({"project_name": "acme_service"}) / "frontend"
@@ -172,6 +209,18 @@ def test_default_project_compose_stacks_are_valid(render: Render) -> None:
         assert password not in json.dumps([redis["command"], redis["healthcheck"]]), name
         app = resolved[name]["services"]["app"]
         assert app["environment"]["FORWARDED_ALLOW_IPS"] == proxy_subnet, name
+        # The bootstrap checks the Garage secrets the garage service runs with, and the API
+        # waits for it: weak or published values stop the stack.
+        services = resolved[name]["services"]
+        garage, bootstrap = (
+            services["garage"]["environment"],
+            services["garage-init"]["environment"],
+        )
+        for secret in ("GARAGE_RPC_SECRET", "GARAGE_ADMIN_TOKEN"):
+            assert bootstrap[secret] == garage[secret], (name, secret)
+        assert bootstrap["ENVIRONMENT"] == "production", name
+        waits_for = app["depends_on"]["garage-init"]["condition"]
+        assert waits_for == "service_completed_successfully", name
         assert "--forwarded-allow-ips" not in " ".join(app["command"]), name
     incomplete = project / ".env.incomplete"
     incomplete.write_text(

@@ -24,10 +24,21 @@ class RateLimitResult:
     retry_after_seconds: int | None = None
 
 
+class RateLimitStorageUnavailable(Exception):
+    """Keelstone: the storage could not count a call (Redis does not answer).
+
+    Upstream's Redis storage allowed the call itself (failing open) for every category. The
+    service now decides per category (``FAIL_CLOSED_CATEGORIES`` in ``rules.py``): the sign-in
+    and re-authentication routes refuse, the others are allowed.
+    """
+
+
 class RateLimitStorage(Protocol):
     async def increment_and_check(
         self, key: str, limit: int, period_seconds: int
-    ) -> RateLimitResult: ...
+    ) -> RateLimitResult:
+        """Count a call. Raises ``RateLimitStorageUnavailable`` when it cannot count."""
+        ...
 
 
 {%- if enable_redis %}
@@ -47,6 +58,9 @@ class RedisSlidingWindowStorage:
         window_start_ms = now_ms - (period_seconds * 1000)
         member = f"{now_ms}:{secrets.token_hex(4)}"
 
+        # Keelstone: a Redis error is raised as RateLimitStorageUnavailable instead of allowing the
+        # call here, so that the service can refuse it for the categories that fail closed. The
+        # lookup of the oldest call is covered too: upstream let its error become a 500.
         try:
             pipe = self.redis.pipeline()
             pipe.zremrangebyscore(key, 0, window_start_ms)
@@ -55,21 +69,13 @@ class RedisSlidingWindowStorage:
             pipe.expire(key, period_seconds + 1)
             results = await pipe.execute()
             current_count: int = results[2]
-        except Exception:
-            # Fail open: a Redis outage must not take the whole API down with
-            # it. The exception is logged in full because the alternative —
-            # silently unlimited traffic — is worth paging about.
-            logger.exception("rate_limit_redis_error")
-            return RateLimitResult(
-                allowed=True,
-                current_count=0,
-                limit=limit,
-                reset_at=datetime.now(UTC),
-                retry_after_seconds=None,
-            )
+            oldest = None
+            if current_count > limit:
+                oldest = await self.redis.zrange(key, 0, 0, withscores=True)
+        except Exception as exc:
+            raise RateLimitStorageUnavailable(str(exc)) from exc
 
         if current_count > limit:
-            oldest = await self.redis.zrange(key, 0, 0, withscores=True)
             if oldest:
                 oldest_ts_ms = oldest[0][1]
                 retry_after = max(1, int((oldest_ts_ms + period_seconds * 1000 - now_ms) / 1000))
@@ -135,7 +141,7 @@ def get_storage() -> RateLimitStorage:
     client from lifespan state — it opens its own connection from
     ``REDIS_URL``. Connecting is lazy inside redis-py, so this does no I/O and
     cannot fail here; a Redis that is actually unreachable surfaces per-call in
-    ``RedisSlidingWindowStorage.increment_and_check``, which fails open.
+    ``RedisSlidingWindowStorage.increment_and_check`` as ``RateLimitStorageUnavailable``.
     """
 {%- if enable_redis %}
     return RedisSlidingWindowStorage(

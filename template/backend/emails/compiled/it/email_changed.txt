@@ -1,0 +1,9 @@
+Subject: L'indirizzo email del tuo account [[app_name]] è cambiato
+
+Ciao [[name]],
+
+l'indirizzo email del tuo account [[app_name]] ora è [[new_email]]. Questo indirizzo non riceve più i suoi messaggi, i link per reimpostare la password né i link di accesso.
+
+Se non hai fatto tu questa modifica, contatta subito gli amministratori di [[app_name]]: qualcun altro potrebbe controllare il tuo account.
+
+Il team di [[app_name]]

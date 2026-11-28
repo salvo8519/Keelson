@@ -119,7 +119,7 @@ function RecoverPassword() {
           </div>
 
           <div className="text-center text-sm">
-            Remember your password?{" "}
+            {t("Remember your password?")}{" "}
             <RouterLink to="/login" className="underline underline-offset-4">
               {t("Log in")}
             </RouterLink>

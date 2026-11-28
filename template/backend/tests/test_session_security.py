@@ -4,6 +4,7 @@ The database side (the version raised by a password change, under row level secu
 ``tests/test_session_revocation_postgres.py``.
 """
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -23,6 +24,7 @@ from app.core.exceptions import NotFoundError
 from app.core.session_cookies import ACCESS_COOKIE, REFRESH_COOKIE
 from app.main import app
 from app.services.rate_limit import DEFAULT_RATE_LIMITS, RateLimitCategory
+from tests.fakes import FailingRedis
 from tests.overrides import override_user_service
 
 pytestmark = pytest.mark.anyio
@@ -225,7 +227,7 @@ async def test_an_impersonation_token_names_the_administrator(client: AsyncClien
     assert response.status_code == 200, response.text
     claims = jwt.decode(response.json()["access_token"], options={"verify_signature": False})
     assert claims["sub"] == str(user.id)
-    assert claims["act"] == {"sub": str(admin.id)}
+    assert claims["act"] == {"sub": str(admin.id), "ver": admin.token_epoch}
 
 
 async def test_actions_and_logs_under_impersonation_name_the_administrator(
@@ -235,8 +237,9 @@ async def test_actions_and_logs_under_impersonation_name_the_administrator(
     from app.core.logging import ContextFilter
     from app.core.security import create_access_token
 
-    admin_id = uuid4()
-    token = create_access_token(str(user.id), version=user.token_epoch, actor=admin_id)
+    admin = _user(email="root@example.com", role="admin", is_app_admin=True)
+    admin_id = admin.id
+    token = create_access_token(str(user.id), version=user.token_epoch, actor=admin)
     seen: dict[str, object] = {}
 
     @app.get("/_test/impersonation")
@@ -250,9 +253,10 @@ async def test_actions_and_logs_under_impersonation_name_the_administrator(
         return {}
 
     try:
-        response = await client.get(
-            "/_test/impersonation", headers={"Authorization": f"Bearer {token}"}
-        )
+        with patch.object(deps, "actor_still_current", AsyncMock(return_value=True)):
+            response = await client.get(
+                "/_test/impersonation", headers={"Authorization": f"Bearer {token}"}
+            )
     finally:
         app.router.routes.pop()
 
@@ -296,3 +300,300 @@ async def test_registering_a_known_address_tells_its_owner_and_creates_nothing()
     create.assert_not_awaited()
     email.send_account_exists.assert_awaited_once()
     assert email.send_account_exists.await_args.kwargs["language"] == "it"
+
+
+# --- Refresh token rotation (app/core/revoked_tokens.py) ----------------------------------
+
+
+def _refresh_claims(session_id: str | None = None):
+    from app.core.security import REFRESH, create_refresh_token, read_session_token
+
+    claims = read_session_token(create_refresh_token(uuid4(), version=0, session_id=session_id), REFRESH)
+    assert claims is not None
+    return claims
+
+
+async def test_a_rotation_keeps_the_session_and_gives_a_new_token_id() -> None:
+    first = _refresh_claims()
+    rotated = _refresh_claims(first.session_id)
+
+    assert first.session_id and rotated.session_id == first.session_id
+    assert rotated.token_id != first.token_id
+
+
+async def test_a_sign_in_time_is_set_at_sign_in_and_kept_by_rotations() -> None:
+    from app.core.security import ACCESS, REFRESH, issue_session_tokens, read_session_token
+
+    user = SimpleNamespace(id=uuid4(), token_epoch=0)
+    access, refresh = issue_session_tokens(user)
+    started = read_session_token(refresh, REFRESH)
+    assert started is not None and started.signed_in_at is not None
+    assert abs(started.signed_in_at - datetime.now(UTC).timestamp()) < 5
+
+    access, rotated = issue_session_tokens(user, started.session_id, started.signed_in_at - 600)
+    for token, kind in ((rotated, REFRESH), (access, ACCESS)):
+        claims = read_session_token(token, kind)
+        assert claims is not None and claims.signed_in_at == started.signed_in_at - 600
+
+
+async def test_a_token_exchanged_again_after_the_grace_window_ends_its_session() -> None:
+    from app.core import revoked_tokens
+    from tests.fakes import MemoryRedis
+
+    store = MemoryRedis()
+    first = _refresh_claims()
+    sibling = _refresh_claims(first.session_id)
+    other_session = _refresh_claims()
+
+    assert await revoked_tokens.rotate(store, first)
+    store.now += revoked_tokens.REUSE_GRACE.total_seconds()
+    assert await revoked_tokens.rotate(store, first), "a concurrent renewal within the window"
+    store.now += 1
+    assert not await revoked_tokens.rotate(store, first), "a reuse after the window"
+
+    assert await revoked_tokens.is_revoked(store, sibling)
+    assert not await revoked_tokens.is_revoked(store, other_session)
+
+
+class InterleavingRedis:
+    """A Redis whose every operation yields to the other tasks first, as network calls do, with
+    a clock that answers the next value of ``times`` at every ``TIME``."""
+
+    def __init__(self, times: list[float]) -> None:
+        from tests.fakes import MemoryRedis
+
+        self.inner = MemoryRedis()
+        self.times = times
+
+    async def set(self, key: str, value: str, ttl: int | None = None, *, only_if_absent: bool = False) -> bool:
+        await asyncio.sleep(0)
+        return await self.inner.set(key, value, ttl, only_if_absent=only_if_absent)
+
+    async def get(self, key: str) -> str | None:
+        await asyncio.sleep(0)
+        return await self.inner.get(key)
+
+    async def exists(self, key: str) -> bool:
+        await asyncio.sleep(0)
+        return await self.inner.exists(key)
+
+    async def time(self) -> float:
+        await asyncio.sleep(0)
+        return self.times.pop(0)
+
+
+async def test_concurrent_exchanges_record_the_first_one_only() -> None:
+    """Two exchanges at once: both are renewals of one session, and the later one does not move
+    the start of the grace window (a read then a write would let it, and a reuse inside the
+    moved window would be accepted)."""
+    from app.core import revoked_tokens
+
+    grace = revoked_tokens.REUSE_GRACE.total_seconds()
+    start = 1_000_000.0
+    store = InterleavingRedis([start, start + grace - 1, start + grace + 1, start + grace + 1])
+    first = _refresh_claims()
+    sibling = _refresh_claims(first.session_id)
+
+    together = await asyncio.gather(revoked_tokens.rotate(store, first), revoked_tokens.rotate(store, first))
+
+    assert together == [True, True]
+    assert await store.inner.get(revoked_tokens.ROTATED_PREFIX + str(first.token_id)) == repr(start)
+    assert not await revoked_tokens.rotate(store, first), "a reuse after the window of the first exchange"
+    assert await revoked_tokens.is_revoked(store.inner, sibling)
+
+
+async def test_concurrent_reuses_after_the_window_both_end_the_session() -> None:
+    from app.core import revoked_tokens
+
+    grace = revoked_tokens.REUSE_GRACE.total_seconds()
+    store = InterleavingRedis([0.0, grace + 1, grace + 1, grace + 1, grace + 1])
+    first = _refresh_claims()
+    assert await revoked_tokens.rotate(store, first)
+
+    replayed = await asyncio.gather(revoked_tokens.rotate(store, first), revoked_tokens.rotate(store, first))
+
+    assert replayed == [False, False]
+    assert await revoked_tokens.is_revoked(store.inner, first)
+
+
+async def test_the_grace_window_follows_the_clock_of_redis_not_of_the_replica(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Replicas with clocks set apart agree: only the time of Redis is read."""
+    import time
+
+    from app.core import revoked_tokens
+    from tests.fakes import MemoryRedis
+
+    store = MemoryRedis()
+    first = _refresh_claims()
+    assert await revoked_tokens.rotate(store, first)
+
+    monkeypatch.setattr(time, "time", lambda: store.now + 3600)
+    assert await revoked_tokens.rotate(store, first), "a replica one hour ahead, within the window"
+    monkeypatch.undo()
+    store.now += revoked_tokens.REUSE_GRACE.total_seconds() + 1
+    monkeypatch.setattr(time, "time", lambda: store.now - 3600)
+    assert not await revoked_tokens.rotate(store, first), "a replica one hour behind, after the window"
+
+
+async def test_a_token_expired_by_the_clock_of_redis_is_refused() -> None:
+    """A replica whose clock is behind Redis still finds the token valid; Redis decides."""
+    from app.core import revoked_tokens
+    from tests.fakes import MemoryRedis
+
+    store = MemoryRedis()
+    claims = _refresh_claims()
+    store.now = claims.expires_at - 1
+    assert not await revoked_tokens.is_revoked(store, claims)
+
+    store.now = claims.expires_at + 1
+
+    assert await revoked_tokens.is_revoked(store, claims)
+
+
+async def test_the_keys_of_a_token_outlive_it_by_the_clock_skew() -> None:
+    from app.core import revoked_tokens
+    from tests.fakes import MemoryRedis
+
+    store = MemoryRedis()
+    claims = _refresh_claims()
+    store.now = claims.expires_at - 30
+    skew = int(revoked_tokens.MAX_CLOCK_SKEW.total_seconds())
+
+    assert await revoked_tokens.rotate(store, claims)
+    await revoked_tokens.revoke(store, claims)
+
+    assert store.ttls[revoked_tokens.ROTATED_PREFIX + str(claims.token_id)] == 30 + skew
+    assert store.ttls[revoked_tokens.KEY_PREFIX + str(claims.token_id)] == 30 + skew
+    assert (store.ttls[revoked_tokens.SESSION_PREFIX + str(claims.session_id)] or 0) >= (
+        settings.REFRESH_TOKEN_EXPIRE_MINUTES * 60 + skew
+    )
+
+
+class BrokenClockRedis(FailingRedis):
+    """A Redis whose ``TIME`` fails; the other operations work."""
+
+    def __init__(self) -> None:
+        super().__init__("time")
+
+
+async def test_without_the_clock_of_redis_a_refresh_fails_closed() -> None:
+    """No answer from Redis: no token is renewed, and signing out still ends the session. The
+    error of the store is a 503 of the application, not an unhandled exception."""
+    from app.core import revoked_tokens
+    from app.core.exceptions import StoreUnavailableError
+    from tests.fakes import MemoryRedis
+
+    broken = BrokenClockRedis()
+    claims = _refresh_claims()
+    for call in (revoked_tokens.rotate, revoked_tokens.is_revoked, revoked_tokens.revoke):
+        with pytest.raises(StoreUnavailableError) as unavailable:
+            await call(broken, claims)
+        assert (unavailable.value.status_code, unavailable.value.code) == (503, "SESSION_STORE_UNAVAILABLE")
+
+    healthy = MemoryRedis()
+    healthy.values = broken.inner.values
+    assert await revoked_tokens.is_revoked(healthy, claims), "the session was ended before the failure"
+
+
+async def test_a_refresh_without_the_clock_of_redis_issues_no_token(users, user) -> None:
+    from httpx import ASGITransport
+
+    from app.core.security import issue_session_tokens
+
+    _, refresh = issue_session_tokens(user)
+    app.dependency_overrides[deps.get_redis] = BrokenClockRedis
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app, raise_app_exceptions=False), base_url="http://test"
+        ) as ac:
+            body = await ac.post(f"{API}/auth/refresh", json={"refresh_token": refresh})
+            cookie = await ac.post(
+                f"{API}/auth/session/refresh",
+                headers={"Cookie": f"{REFRESH_COOKIE}={refresh}", "Origin": TRUSTED},
+            )
+    finally:
+        app.dependency_overrides.pop(deps.get_redis, None)
+
+    for response in (body, cookie):
+        assert response.status_code == 503, response.text
+        assert response.json()["code"] == "SESSION_STORE_UNAVAILABLE"
+        assert int(response.headers["Retry-After"]) > 0
+        assert "access_token" not in response.text
+        assert response.headers.get_list("set-cookie") == []
+
+
+async def test_a_failed_lookup_of_a_revocation_is_not_a_valid_token(users, user) -> None:
+    """The clock of Redis answers but the lookup of the revocations does not: the token is not
+    taken for valid (no fail open), and the refresh answers 503."""
+    from httpx import ASGITransport
+
+    from app.core import revoked_tokens
+    from app.core.exceptions import StoreUnavailableError
+    from app.core.security import issue_session_tokens
+
+    with pytest.raises(StoreUnavailableError):
+        await revoked_tokens.is_revoked(FailingRedis("exists"), _refresh_claims())
+
+    _, refresh = issue_session_tokens(user)
+    app.dependency_overrides[deps.get_redis] = lambda: FailingRedis("exists")
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app, raise_app_exceptions=False), base_url="http://test"
+        ) as ac:
+            response = await ac.post(f"{API}/auth/refresh", json={"refresh_token": refresh})
+    finally:
+        app.dependency_overrides.pop(deps.get_redis, None)
+
+    assert response.status_code == 503, response.text
+    assert response.json()["code"] == "SESSION_STORE_UNAVAILABLE"
+    assert "access_token" not in response.text
+
+
+async def test_signing_out_while_redis_is_down_says_the_session_was_not_ended(users, user) -> None:
+    """A program learns that its sign-out was not recorded; a browser is signed out all the
+    same (its cookies are removed) and learns that the refresh token was not revoked."""
+    from httpx import ASGITransport
+
+    from app.core.i18n import gettext
+    from app.core.security import issue_session_tokens
+    from tests.fakes import DownRedis
+
+    _, refresh = issue_session_tokens(user)
+    app.dependency_overrides[deps.get_redis] = DownRedis
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app, raise_app_exceptions=False), base_url="http://test"
+        ) as ac:
+            program = await ac.post(f"{API}/auth/logout", json={"refresh_token": refresh})
+            browser = await ac.post(
+                f"{API}/auth/session/logout",
+                headers={"Cookie": f"{REFRESH_COOKIE}={refresh}", "Origin": TRUSTED, "Accept-Language": "it"},
+            )
+    finally:
+        app.dependency_overrides.pop(deps.get_redis, None)
+
+    for response in (program, browser):
+        assert response.status_code == 503, response.text
+        assert response.json()["code"] == "SESSION_STORE_UNAVAILABLE"
+        assert int(response.headers["Retry-After"]) > 0
+    for response in (program, browser):
+        assert response.json()["details"]["revocation_recorded"] is False
+    assert browser.json()["detail"] == gettext(
+        "Sessions cannot be renewed or ended right now. Try again in a few minutes.", "it"
+    )
+    cleared = " ".join(browser.headers.get_list("set-cookie"))
+    for cookie in (ACCESS_COOKIE, REFRESH_COOKIE):
+        assert f'{cookie}=""' in cleared or f"{cookie}=;" in cleared, cleared
+
+
+async def test_a_token_without_ids_counts_as_revoked() -> None:
+    from dataclasses import replace
+
+    from app.core import revoked_tokens
+    from tests.fakes import MemoryRedis
+
+    claims = _refresh_claims()
+    for legacy in (replace(claims, session_id=None), replace(claims, token_id=None)):
+        assert await revoked_tokens.is_revoked(MemoryRedis(), legacy)

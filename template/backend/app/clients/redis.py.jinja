@@ -55,9 +55,20 @@ class RedisClient:
         key: str,
         value: str,
         ttl: int | None = None,
-    ) -> None:
-        """Set a value with optional TTL (in seconds)."""
-        await self.raw.set(key, value, ex=ttl)
+        *,
+        only_if_absent: bool = False,
+    ) -> bool:
+        """Set a value with optional TTL (in seconds).
+
+        Keelstone: with ``only_if_absent`` the key is written only when it does not exist
+        (``SET NX``, atomic); returns whether it was written.
+        """
+        return bool(await self.raw.set(key, value, ex=ttl, nx=only_if_absent))
+
+    async def time(self) -> float:
+        """Keelstone: the clock of the Redis server, in seconds (one clock for every replica)."""
+        seconds, microseconds = await self.raw.time()
+        return seconds + microseconds / 1_000_000
 
     async def delete(self, key: str) -> int:
         """Delete a key. Returns number of keys deleted."""

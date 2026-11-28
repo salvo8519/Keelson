@@ -22,17 +22,48 @@ from app.core.security import issue_session_tokens
 from app.core.session_cookies import ACCESS_COOKIE, set_session_cookies
 from app.core.user_content import avatar_response
 from app.db.models.user import UserRole
-from app.schemas.user import UpdatePassword, UserCreate, UserRead, UserUpdate, UserUpdateMe
+from app.schemas.user import (
+    AccountDeletion,
+    UpdatePassword,
+    UserCreate,
+    UserMe,
+    UserRead,
+    UserUpdate,
+    UserUpdateMe,
+)
+{%- if enable_email %}
+from app.schemas.user import EmailChangeAccepted, EmailChangeRequest
+{%- endif %}
+{%- if enable_rate_limiting %}
+from app.services.rate_limit import RateLimitCategory, make_user_rate_limit_dep
+
+# Keelstone: the routes that ask the caller to prove their identity again count every attempt
+# against one budget per user shared by all of them, so that a session cannot guess the password
+# on one route after exhausting another, and per client IP (category ``reauth``). They do not
+# use the sign-in limit (``auth``): behind a shared address, one user's attempts would lock
+# colleagues out of signing in. While the limiter cannot count, they answer 503.
+ReauthLimit = make_user_rate_limit_dep(RateLimitCategory.REAUTH)
+{%- if enable_email %}
+# A change request also sends e-mail to an address the caller chooses: limited per user too.
+EmailChangeUserLimit = make_user_rate_limit_dep(RateLimitCategory.EMAIL_CHANGE)
+{%- endif %}
+{%- endif %}
 
 router = APIRouter()
 
 
-@router.get("/me", response_model=UserRead)
+@router.get("/me", response_model=UserMe)
 async def read_current_user(
     current_user: CurrentUser,
+    user_service: UserSvc,
 ) -> Any:
-    """Get current user profile."""
-    return current_user
+    """Get current user profile.
+
+    \f
+    Keelstone: ``has_password`` tells the profile form whether a change of address asks for the
+    current password or for a recent sign-in.
+    """
+    return await user_service.read_me(current_user)
 
 
 @router.patch("/me", response_model=UserRead)
@@ -45,12 +76,56 @@ async def update_current_user(
 
     \f
     Keelstone: only profile fields. Upstream accepted ``UserUpdate`` here, so a user could set a
-    new password without the current one and change their own account status.
+    new password without the current one, change their own account status and move the
+    account onto an address they do not control (``POST /users/me/email`` confirms it first).
     """
     return await user_service.update_me(current_user, user_in)
 
 
-@router.patch("/me/password", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
+{%- if enable_email %}
+
+
+@router.post(
+    "/me/email",
+    response_model=EmailChangeAccepted,
+    status_code=status.HTTP_202_ACCEPTED,
+{%- if enable_rate_limiting %}
+    dependencies=[ReauthLimit, EmailChangeUserLimit],
+{%- endif %}
+)
+async def request_email_change(
+    request: Request,
+    body: EmailChangeRequest,
+    current_user: CurrentUser,
+    user_service: UserSvc,
+) -> Any:
+    """Change the current user's e-mail address: a confirmation link is sent to the new one.
+
+    The address changes when the link is followed (``POST /auth/email/confirm``). The answer
+    is the same for every address, so it does not tell whether an address has an account; the
+    current address is told of the request.
+
+    The current password is required when the account has one (400 when it is missing or
+    wrong); an account without a password needs a sign-in within the last 5 minutes (403 with
+    the reason ``recent_sign_in_required`` otherwise: sign in again).
+    """
+    claims = getattr(request.state, "session_claims", None)
+    await user_service.confirm_identity(
+        current_user, body.current_password, claims.signed_in_at if claims else None
+    )
+    await user_service.request_email_change(current_user, body.email)
+    return EmailChangeAccepted()
+{%- endif %}
+
+
+@router.patch(
+    "/me/password",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+{%- if enable_rate_limiting %}
+    dependencies=[ReauthLimit],
+{%- endif %}
+)
 async def update_current_user_password(
     request: Request,
     response: Response,
@@ -69,14 +144,38 @@ async def update_current_user_password(
         set_session_cookies(response, *issue_session_tokens(current_user))
 
 
-@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
+@router.delete(
+    "/me",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+{%- if enable_rate_limiting %}
+    dependencies=[ReauthLimit],
+{%- endif %}
+)
 async def delete_current_user(
+    request: Request,
     current_user: CurrentUser,
     user_service: UserSvc,
+    body: AccountDeletion | None = None,
 ) -> None:
-    """Delete the current user's account. Administrators cannot delete themselves."""
+    """Delete the current user's account. Administrators cannot delete themselves.
+
+    The current password is required when the account has one (400 when it is missing or
+    wrong); an account without a password needs a sign-in within the last 5 minutes (403 with
+    the reason ``recent_sign_in_required`` otherwise: sign in again).
+
+    \f
+    Keelstone: upstream deleted the account on the session alone, so a stolen cookie or an
+    unlocked computer was enough to destroy it.
+    """
     if current_user.has_role(UserRole.ADMIN):
         raise BadRequestError(message="Administrators cannot delete their own account")
+    claims = getattr(request.state, "session_claims", None)
+    await user_service.confirm_identity(
+        current_user,
+        body.current_password if body else None,
+        claims.signed_in_at if claims else None,
+    )
     await user_service.delete(current_user.id)
 
 

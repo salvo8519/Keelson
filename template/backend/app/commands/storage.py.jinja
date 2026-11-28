@@ -17,7 +17,7 @@ import click
 import httpx
 
 from app.commands import command, error, info, success, warning
-from app.core.config import settings
+from app.core.config import DEPLOYED_ENVIRONMENTS, WEAK_SECRET_RULE, is_weak_secret, settings
 from app.db.session import system_session
 from app.services.file_storage import STORAGE_BACKENDS
 from app.services.storage_migration import BATCH_SIZE, cleanup, migrate_object, objects_to_migrate
@@ -217,11 +217,34 @@ async def _wait_for_garage(client: httpx.AsyncClient, timeout: float) -> None:
 @command("garage-bootstrap", help="Prepare a Garage server: layout, application key and bucket")
 @click.option("--admin-url", envvar="GARAGE_ADMIN_URL", default="http://garage:3903", show_default=True)
 @click.option("--admin-token", envvar="GARAGE_ADMIN_TOKEN", required=True, help="Or GARAGE_ADMIN_TOKEN")
+@click.option(
+    "--rpc-secret",
+    envvar="GARAGE_RPC_SECRET",
+    default="",
+    help="Or GARAGE_RPC_SECRET; not used, only checked in staging and production",
+)
 @click.option("--zone", default="dc1", show_default=True)
 @click.option("--capacity-gb", default=10, show_default=True, type=click.IntRange(1))
 @click.option("--timeout", default=60, show_default=True, type=click.IntRange(1))
-def garage_bootstrap(admin_url: str, admin_token: str, zone: str, capacity_gb: int, timeout: int) -> None:
-    """Idempotent: run it at every start (the Compose stacks do, in an init container)."""
+def garage_bootstrap(
+    admin_url: str, admin_token: str, rpc_secret: str, zone: str, capacity_gb: int, timeout: int
+) -> None:
+    """Idempotent: run it at every start (the Compose stacks do, in an init container).
+
+    In staging and production it first refuses weak Garage secrets, by the rule of the
+    application's own (``is_weak_secret``): the API waits for this command, so a deployment
+    with the published development values of garage/development.env does not start.
+    """
+    if settings.ENVIRONMENT in DEPLOYED_ENVIRONMENTS:
+        weak = [
+            name
+            for name, value in (("GARAGE_ADMIN_TOKEN", admin_token), ("GARAGE_RPC_SECRET", rpc_secret))
+            # The RPC secret is checked when given: the Compose stacks always give it.
+            if (value or name == "GARAGE_ADMIN_TOKEN") and is_weak_secret(value)
+        ]
+        if weak:
+            error(f"Garage bootstrap refused: {', '.join(weak)} {WEAK_SECRET_RULE} in {settings.ENVIRONMENT}")
+            raise SystemExit(1)
 
     async def _run() -> list[str]:
         headers = {"Authorization": f"Bearer {admin_token}"}

@@ -1,0 +1,11 @@
+Subject: A new email address was requested for your [[app_name]] account
+
+Hi [[name]],
+
+Someone signed in to your [[app_name]] account asked to change its email address to [[new_email]]. The address changes only if the link sent to that address is followed; until then this address stays in force.
+
+If this was you, there is nothing to do. If it was not you, sign in, change your password and sign out of every device at once: the request was made from a session of your account.
+
+[[login_url]]
+
+— The [[app_name]] Team

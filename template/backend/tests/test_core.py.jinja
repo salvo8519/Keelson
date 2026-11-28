@@ -164,6 +164,92 @@ class TestRateLimit:
         # A different caller is unaffected.
         await check_rate_limit(category=RateLimitCategory.AUTH, client_ip="198.51.100.4")
 
+    @pytest.mark.anyio
+    async def test_credential_categories_fail_closed_when_the_storage_is_down(self, monkeypatch):
+        """Keelstone: sign-in and re-authentication answer 503 while the limiter cannot count;
+        every other category is allowed, as upstream allowed them all."""
+        from app.core.exceptions import StoreUnavailableError
+        from app.services.rate_limit import FAIL_CLOSED_CATEGORIES
+        from app.services.rate_limit import service as rate_limit_service
+        from app.services.rate_limit.storage import RateLimitStorageUnavailable
+
+        class Down:
+            async def increment_and_check(self, key, limit, period_seconds):
+                raise RateLimitStorageUnavailable("connection refused")
+
+        monkeypatch.setattr(rate_limit_service, "_storage", Down())
+        assert FAIL_CLOSED_CATEGORIES == {RateLimitCategory.AUTH, RateLimitCategory.REAUTH}
+        for category in FAIL_CLOSED_CATEGORIES:
+            with pytest.raises(StoreUnavailableError) as refused:
+                await check_rate_limit(category=category, client_ip="203.0.113.7", user_id="u")
+            assert refused.value.status_code == 503
+            assert refused.value.details == {"category": category, "reason": "rate_limit_unavailable"}
+        for category in set(DEFAULT_RATE_LIMITS) - FAIL_CLOSED_CATEGORIES:
+            await check_rate_limit(category=category, client_ip="203.0.113.7", user_id="u", org_id="o")
+        assert await rate_limit_service.first_in_window("sample", 60)
+        assert not await rate_limit_service.first_in_window("sample", 60), "sampled in this process"
+
+    def test_the_local_sampler_samples_once_per_window_in_bounded_memory(self, monkeypatch):
+        """Keelstone: the fallback of ``first_in_window`` during an outage keeps its bound."""
+        from app.services.rate_limit import service as rate_limit_service
+
+        clock = [1000.0]
+        monkeypatch.setattr(rate_limit_service.time, "monotonic", lambda: clock[0])
+        sampler = rate_limit_service.LocalSampler(max_keys=3)
+
+        assert [sampler.first("a", 60) for _ in range(50)] == [True] + [False] * 49
+        clock[0] += 60
+        assert sampler.first("a", 60), "a new window"
+        for n in range(100):
+            sampler.first(f"key-{n}", 60)
+        assert len(sampler) == 3
+
+    @pytest.mark.anyio
+    async def test_a_user_refused_per_user_does_not_use_up_the_address(self):
+        """Keelstone: behind one address, a user who keeps trying after their own 429 does not
+        consume the budget of their colleagues."""
+        rule = DEFAULT_RATE_LIMITS[RateLimitCategory.REAUTH]
+        assert rule.per_user and rule.per_ip and rule.per_ip > rule.per_user
+        for _ in range(rule.per_user * 3):
+            with contextlib.suppress(RateLimitError):
+                await check_rate_limit(category=RateLimitCategory.REAUTH, client_ip="203.0.113.7", user_id="eager")
+
+        remaining = rule.per_ip - rule.per_user
+        colleagues = [f"colleague-{n}" for n in range(-(-remaining // rule.per_user))]
+        allowed = 0
+        for colleague in colleagues:
+            for _ in range(rule.per_user):
+                if allowed == remaining:
+                    break
+                await check_rate_limit(category=RateLimitCategory.REAUTH, client_ip="203.0.113.7", user_id=colleague)
+                allowed += 1
+        assert allowed == remaining
+        with pytest.raises(RateLimitError) as refused:
+            await check_rate_limit(category=RateLimitCategory.REAUTH, client_ip="203.0.113.7", user_id="late")
+        assert refused.value.details["scope"] == "ip"
+
+{%- if enable_redis %}
+
+    @pytest.mark.anyio
+    async def test_a_redis_error_is_reported_not_allowed_by_the_storage(self):
+        """The storage reports the outage (also on the lookup of the oldest call, which upstream
+        let through as a 500); the service decides per category."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        from app.services.rate_limit.storage import RateLimitStorageUnavailable, RedisSlidingWindowStorage
+
+        broken = MagicMock()
+        broken.pipeline.return_value.execute = AsyncMock(side_effect=ConnectionError("down"))
+        with pytest.raises(RateLimitStorageUnavailable):
+            await RedisSlidingWindowStorage(broken).increment_and_check("k", 1, 60)
+
+        over = MagicMock()
+        over.pipeline.return_value.execute = AsyncMock(return_value=[0, 1, 2, True])
+        over.zrange = AsyncMock(side_effect=ConnectionError("down"))
+        with pytest.raises(RateLimitStorageUnavailable):
+            await RedisSlidingWindowStorage(over).increment_and_check("k", 1, 60)
+{%- endif %}
+
 {%- endif %}
 
 

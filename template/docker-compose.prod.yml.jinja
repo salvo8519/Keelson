@@ -757,9 +757,9 @@ services:
   garage:
     image: {{ garage_image }}
     container_name: {{ project_slug }}_garage
-    environment:
-      - GARAGE_RPC_SECRET=${GARAGE_RPC_SECRET:?GARAGE_RPC_SECRET is required (openssl rand -hex 32)}
-      - GARAGE_ADMIN_TOKEN=${GARAGE_ADMIN_TOKEN:?GARAGE_ADMIN_TOKEN is required}
+    environment: &garage-secrets
+      GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:?GARAGE_RPC_SECRET is required (openssl rand -hex 32)}
+      GARAGE_ADMIN_TOKEN: ${GARAGE_ADMIN_TOKEN:?GARAGE_ADMIN_TOKEN is required (openssl rand -hex 32)}
     volumes:
       - ./garage/garage.toml:/etc/garage.toml:ro
       - garage_meta:/var/lib/garage/meta
@@ -782,8 +782,11 @@ services:
     env_file:
       - ./backend/.env
       - ./garage/storage.env
+    # The same values the garage service receives: the bootstrap refuses weak ones, and the API
+    # waits for the bootstrap, so a stack with the development values of Garage does not start.
     environment:
-      - ENVIRONMENT=production
+      <<: *garage-secrets
+      ENVIRONMENT: production
     networks:
       - backend-internal
     depends_on:

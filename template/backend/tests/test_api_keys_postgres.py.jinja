@@ -87,6 +87,39 @@ async def test_refusals_of_one_key_are_audited_once_a_minute(sessions) -> None:
     assert denied == 1
 
 
+{%- if enable_rate_limiting %}
+
+
+async def test_refusals_stay_sampled_while_the_limiter_is_down(sessions, monkeypatch) -> None:
+    """Without Redis, refusals of a known prefix still write one audit row a minute, not one per
+    request (each one opens a system session)."""
+    from app.services.rate_limit import service as rate_limit_service
+    from app.services.rate_limit.storage import RateLimitStorageUnavailable
+
+    class Down:
+        async def increment_and_check(self, key, limit, period_seconds):
+            raise RateLimitStorageUnavailable("connection refused")
+
+    monkeypatch.setattr(rate_limit_service, "_storage", Down())
+    async with sessions() as session:
+        org, user = await _org_and_user(session)
+        key, token = await _create(session, org, user)
+        await session.commit()
+    wrong = token[:-1] + ("A" if token[-1] != "A" else "B")
+    for _ in range(50):
+        async with sessions() as session:
+            with pytest.raises(AuthenticationError):
+                await ApiKeyService(session).authenticate(wrong)
+    async with sessions() as session:
+        denied = await session.scalar(
+            select(func.count()).where(
+                AppAdminAuditLog.action == "api_key.denied", AppAdminAuditLog.target_id == str(key.id)
+            )
+        )
+    assert denied == 1
+{%- endif %}
+
+
 async def test_wrong_secret_is_refused_and_audited(sessions) -> None:
     """The refusal survives the rollback of the request that raised it."""
     async with sessions() as session:

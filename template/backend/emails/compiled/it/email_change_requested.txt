@@ -1,0 +1,11 @@
+Subject: Richiesto un nuovo indirizzo email per il tuo account [[app_name]]
+
+Ciao [[name]],
+
+qualcuno che ha effettuato l'accesso al tuo account [[app_name]] ha chiesto di cambiarne l'indirizzo email in [[new_email]]. L'indirizzo cambia solo se viene seguito il link inviato a quell'indirizzo; fino ad allora resta in vigore questo.
+
+Se sei stato tu, non devi fare nulla. Se non sei stato tu, accedi, cambia subito la password ed esci da tutti i dispositivi: la richiesta è partita da una sessione del tuo account.
+
+[[login_url]]
+
+Il team di [[app_name]]
